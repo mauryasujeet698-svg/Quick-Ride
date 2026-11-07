@@ -6,7 +6,7 @@ Google sign-in authenticates a user; it does not grant privileged access. New us
 
 ## Current database safeguards
 
-- RLS is enabled on all 26 current public tables.
+- RLS is enabled on all 28 current public tables.
 - Client roles cannot insert rides directly; booking is handled by the server-side booking function.
 - Client roles cannot directly assign rides, update authoritative ride states, set fares or write commission/ledger entries.
 - Admin configuration and driver approvals are routed through role-checked server functions.
@@ -15,6 +15,8 @@ Google sign-in authenticates a user; it does not grant privileged access. New us
 - Ride offers are expiring records; assignment is performed under row locking.
 - Ride-chain acceptance is provisional until the active trip completes.
 - Pickup OTPs are stored as bcrypt hashes; failed attempts are rate-limited.
+- Device push tokens are stored in `device_push_tokens` with RLS limited to the authenticated owner; the server sender reads them only through the service-role key.
+- The `send-push` Edge Function has gateway JWT verification disabled only because it requires an exact service-role bearer token before doing any work; the Firebase service-account JSON stays in Supabase secrets.
 - Security and health advisors returned no findings at the latest check.
 
 ## Location privacy
