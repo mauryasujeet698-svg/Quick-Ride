@@ -93,7 +93,7 @@ class QuickRideNotifications {
         (state) {
           final user = state.session?.user;
           if (user != null) {
-            unawaited(_registerToken(user.id));
+            unawaited(_registerToken());
           }
         },
       );
@@ -121,7 +121,7 @@ class QuickRideNotifications {
 
       _initialized = true;
       final user = QuickRideBackend.client.auth.currentUser;
-      if (user != null) await _registerToken(user.id);
+      if (user != null) await _registerToken();
       return true;
     } catch (error, stack) {
       debugPrint('Quick-Ride push initialization failed: $error\n$stack');
@@ -135,7 +135,7 @@ class QuickRideNotifications {
     return value;
   }
 
-  static Future<void> _registerToken(String userId) async {
+  static Future<void> _registerToken() async {
     final messaging = _messaging;
     if (messaging == null || !QuickRideBackend.isInitialized) return;
     try {
