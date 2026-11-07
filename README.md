@@ -29,7 +29,7 @@ Flutter workspace, Riverpod 3, go_router, shared domain/auth/design packages, Su
 
 The connected Supabase project is in Mumbai (ap-south-1) on PostgreSQL 17 with PostGIS in the extensions schema.
 
-The schema contains 27 public application tables with RLS enabled. Major modules include:
+The schema contains 27 public application tables with RLS enabled. Supabase security and health advisors report no current findings; performance advisories are limited to duplicate permissive profile SELECT policies and unused indexes on an empty pre-pilot database. Major modules include:
 - Pincode service-area catalog and geographic coverage boundaries.
 - Effective-dated subscription/commission/hybrid configurations and fare rules.
 - Driver document and service-pincode verification.
