@@ -39,9 +39,11 @@ class QuickRideMaps {
   static DateTime _lastGeocodeRequest =
       DateTime.fromMillisecondsSinceEpoch(0);
 
-  static TileLayer openStreetMapLayer() => TileLayer(
+  static TileLayer openStreetMapLayer({
+    required String appPackageName,
+  }) => TileLayer(
         urlTemplate: tileUrlTemplate,
-        userAgentPackageName: userAgentPackageName,
+        userAgentPackageName: appPackageName,
         maxZoom: 19,
       );
 
