@@ -1,41 +1,56 @@
 # Quick-Ride
 
-Independent on-demand ride-hailing platform for India. Designed around real-time driver discovery, reliable dispatch, configurable fares, trip safety and independent driver-partners.
+Independent on-demand ride-hailing platform designed for India, with real-time driver discovery, smart dispatch, configurable commercial rules, trip tracking and operations controls.
 
-> **Status:** Foundation stage. Initial Supabase schema and security baseline are deployed. Flutter apps, dispatch services, admin tooling and production integrations are not yet implemented.
+> Current status: Backend foundations and three Flutter app shells are in active development on feature/platform-core. This is not a production release.
 
 ## Product principles
-- On-demand rides, not scheduled carpooling.
-- Original requirements, schema, APIs and implementation.
-- Configurable service areas, vehicle categories, fare rules and driver business models.
-- Google sign-in through Supabase Auth; privileged roles and driver approval are server-controlled.
-- Guest browsing is supported; sign-in is required for booking and protected actions.
-- Start with a modular backend; split services only when measured scale requires it.
 
-## Planned apps
-| App | Responsibilities |
+- On-demand rides with customer and driver experiences.
+- Subscription, commission or hybrid model configurable independently per service pincode.
+- India-wide architecture; service areas are activated independently.
+- Google sign-in through Supabase Auth; authentication does not grant driver or administrator privileges.
+- Guest users can explore; sign-in is required for booking and protected actions.
+- Modular backend; avoid premature microservices.
+
+## Applications
+
+| App | Responsibility |
 | --- | --- |
-| Customer | Pickup/destination, fare estimate, ride request, driver details, live tracking, trip OTP, history, support and safety |
-| Driver | Onboarding, verification, online/offline, GPS, offers, navigation, trip lifecycle and earnings |
-| Admin / operations | Driver verification, service areas, categories, fares, ride monitoring, support and reports |
+| Customer | Service-area lookup, pickup/destination, fare quote, booking, driver tracking, OTP, history, support and safety |
+| Driver | Onboarding, service-area applications, availability, GPS, offers, navigation, ride lifecycle and earnings |
+| Admin | Service areas and pincodes, commercial model, geographic boundaries, driver verification, operations and reporting |
 
 ## Technology
-Flutter, feature-first Clean Architecture, Riverpod, go_router, Supabase Auth/Postgres/PostGIS/Realtime/Edge Functions, Mapbox and Firebase Cloud Messaging.
 
-## Deployed backend foundation
-- Supabase project Quick ride, Mumbai region; PostgreSQL 17.
-- PostGIS installed in the extensions schema.
-- Ten tables: profiles, user_roles, driver_profiles, service_areas, vehicle_categories, fare_configs, rides, ride_offers, driver_locations and ride_events.
-- RLS enabled on all ten tables.
-- Role assignment, driver approval, ride assignment and ride-state transitions are not client-controlled.
-- Active service configuration can be read without login.
-- Driver location access is limited to the driver and customers with an active assigned ride.
+Flutter workspace, Riverpod 3, go_router, shared domain/auth/design packages, Supabase Auth/PostgreSQL/PostGIS/Realtime/Edge Functions, Mapbox and Firebase Cloud Messaging.
 
-See [Google Sign-In Setup](docs/GOOGLE_AUTH_SETUP.md) for the OAuth configuration that must be completed in the owner accounts. Database migrations are stored under supabase/migrations and are aligned to the remote Supabase migration versions.\n\n## Next milestones
-1. Confirm pilot city, vehicle categories, fare policy, cancellation rules, driver commercial model and payment/settlement responsibilities.
-2. Configure Google OAuth in Google Cloud and Supabase Auth.
-3. Build customer and driver Flutter apps with guest browsing.
-4. Implement server-side pricing, dispatch, expiring offers, atomic assignment and ride transitions.
-5. Add operations tooling, verification, maps, push, safety workflows and production testing.
+## Backend foundation
 
-Never commit Supabase service-role/secret keys, Google client secrets, signing keystores or FCM service-account files. No open-source license has been selected; all rights are reserved until one is added.
+The connected Supabase project is in Mumbai (ap-south-1) on PostgreSQL 17 with PostGIS in the extensions schema.
+
+The schema currently contains 26 public tables with RLS enabled. Major modules include:
+- Pincode service-area catalog and geographic coverage boundaries.
+- Effective-dated subscription/commission/hybrid configurations.
+- Fare rules and snapshots.
+- Driver document and service-pincode verification.
+- Nearby-driver dispatch, expiring offers and ride chaining.
+- GPS trace, pickup OTP, ride lifecycle and audit trail.
+- Payment records, commission records and ledger entries.
+
+Deployed Edge Functions:
+- admin-service-areas
+- ride-booking
+- driver-ride-actions
+
+Critical booking, driver eligibility, dispatch acceptance and trip transitions are server-authoritative. Deployed function source is in supabase/functions; generated database types are in supabase/types.
+
+## Development
+
+Active platform integration branch: feature/platform-core.
+
+See the development status, architecture, security, Google sign-in setup and owner setup documents in docs/.
+
+No service areas, fare rules, pincode boundaries, admin account or production credentials have been seeded yet. Mapbox server secrets, OAuth, FCM, payment provider and release signing remain owner setup steps.
+
+Never commit Supabase service-role keys, database passwords, OAuth client secrets, signing keystores or FCM service-account keys. No open-source license has been selected; all rights are reserved unless a license is added.
