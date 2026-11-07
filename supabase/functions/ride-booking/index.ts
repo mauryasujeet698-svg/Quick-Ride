@@ -98,7 +98,7 @@ Deno.serve(async (req: Request) => {
     const tokenBytes = new Uint8Array(32);
     crypto.getRandomValues(tokenBytes);
     const token = btoa(String.fromCharCode(...tokenBytes))
-      .replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
     const tokenHash = await sha256Hex(token);
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString();
@@ -117,7 +117,7 @@ Deno.serve(async (req: Request) => {
     });
     if (insertError) return error(500, "SHARE_LINK_CREATE_FAILED", "Unable to create a trip-share link");
 
-    const baseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\\/+$/, "");
+    const baseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
     if (!baseUrl) return error(500, "SERVER_CONFIG", "Supabase URL is not configured");
     const shareUrl = baseUrl + "/functions/v1/ride-share?token=" + encodeURIComponent(token);
     const { error: auditError } = await db.from("ride_safety_events").insert({
