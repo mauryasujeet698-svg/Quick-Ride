@@ -6,12 +6,12 @@ Last updated: 2026-11-07
 
 - Active development branch: `feature/platform-core`.
 - The connected Supabase project is healthy in `ap-south-1` (Mumbai), PostgreSQL 17.
-- The public schema contains 27 application tables. Row-level security is enabled on all 27 tables.
+- The public schema contains 27 application tables. Row-level security is enabled on all 27 tables. Supabase security and health advisors report no current findings. Performance advisories remain limited to duplicate permissive SELECT policies on the profile tables and unused indexes on this empty pre-pilot database; no unindexed foreign keys remain.
 - A new private `ride_share_links` table stores only SHA-256 token hashes. Direct `anon` and `authenticated` table access is revoked; the share snapshot SQL function is SECURITY INVOKER and executable only by `service_role`.
 - Four Supabase Edge Functions are ACTIVE:
   - `admin-service-areas` version 11 — JWT verification enabled.
-  - `ride-booking` version 4 — JWT verification enabled.
-  - `driver-ride-actions` version 4 — JWT verification enabled.
+  - `ride-booking` version 5 — JWT verification enabled.
+  - `driver-ride-actions` version 5 — JWT verification enabled.
   - `ride-share` version 1 — JWT verification disabled only because it validates a high-entropy, expiring bearer token itself. No ride data is returned without a valid link token.
 - Customer app source includes service-area lookup, pickup/destination map selection and markers, server-calculated fare quote with route line, ride booking, pickup OTP, active-ride Realtime tracking, driver/vehicle details, route distance and ETA, ride history, cancellation reasons, ride-linked support, emergency dialer and revocable live-trip sharing.
 - Driver app source includes Google sign-in, vehicle application, service-pincode requests, private KYC uploads, document status, online/offline controls, GPS sharing, ride and chain offers, pickup/destination Mapbox navigation, OTP-based ride lifecycle, earnings/commission summary, payment/ledger status and emergency dialer.
