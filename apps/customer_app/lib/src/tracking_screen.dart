@@ -572,9 +572,9 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                                 ),
                               MarkerLayer(
                                 markers: [
-                                  if (_position(ride['pickup']) case final p?)
+                                  if (_position(ride['pickup']) case final pickupPoint?)
                                     Marker(
-                                      point: p,
+                                      point: pickupPoint,
                                       width: 36,
                                       height: 40,
                                       child: const Icon(
@@ -583,9 +583,9 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                                         size: 36,
                                       ),
                                     ),
-                                  if (_position(ride['destination']) case final p?)
+                                  if (_position(ride['destination']) case final destinationPoint?)
                                     Marker(
-                                      point: p,
+                                      point: destinationPoint,
                                       width: 36,
                                       height: 40,
                                       child: const Icon(
@@ -594,9 +594,9 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                                         size: 36,
                                       ),
                                     ),
-                                  if (_position(location) case final p?)
+                                  if (_position(location) case final driverPoint?)
                                     Marker(
-                                      point: p,
+                                      point: driverPoint,
                                       width: 42,
                                       height: 42,
                                       child: const Icon(
