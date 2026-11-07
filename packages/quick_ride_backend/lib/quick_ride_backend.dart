@@ -20,7 +20,7 @@ class QuickRideBackend {
     if (!environment.supabaseConfigured) return false;
     await Supabase.initialize(
       url: environment.supabaseUrl,
-      anonKey: environment.supabaseAnonKey,
+      publishableKey: environment.supabasePublishableKey,
       authOptions: const FlutterAuthClientOptions(
         authFlowType: AuthFlowType.pkce,
       ),
