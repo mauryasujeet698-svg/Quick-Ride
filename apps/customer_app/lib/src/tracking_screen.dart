@@ -10,6 +10,7 @@ import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_core/quick_ride_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CustomerRideTrackingScreen extends StatefulWidget {
   const CustomerRideTrackingScreen({super.key, required this.rideId});
@@ -448,6 +449,63 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     return '${minutes ~/ 60}h ${minutes % 60}m';
   }
 
+  Future<void> _openEmergencyDialer() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Emergency assistance'),
+        content: const Text(
+          'For an immediate emergency in India, call 112. '
+          'Quick-Ride will try to record an SOS event for this active ride, '
+          'then open your phone dialer. You must confirm the call in the dialer. '
+          'Quick-Ride is not an emergency dispatch service.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Open 112 dialer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    var recorded = false;
+    try {
+      await QuickRideBackend.invoke(
+        'ride-booking',
+        body: {
+          'action': 'safety_event',
+          'rideId': widget.rideId,
+        },
+      ).timeout(const Duration(seconds: 3));
+      recorded = true;
+    } catch (_) {
+      // Do not prevent the customer from reaching the public emergency number.
+    }
+
+    var dialerOpened = false;
+    try {
+      dialerOpened = await launchUrl(Uri(scheme: 'tel', path: '112'));
+    } catch (_) {
+      dialerOpened = false;
+    }
+    if (!mounted) return;
+
+    final message = !dialerOpened
+        ? 'Could not open the phone dialer. Please dial 112 manually.'
+        : recorded
+            ? 'SOS event recorded. Confirm the emergency call in your phone dialer.'
+            : 'Emergency dialer opened. SOS could not be recorded; confirm the call in your phone dialer.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   Future<void> _centerOnDriver() async {
     final point = _position(_driverLocation) ??
         _position(_ride?['pickup']) ??
@@ -732,6 +790,41 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                                         style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
                                       ),
                                     ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Emergency assistance',
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  const Text('For immediate danger in India, call the official emergency number 112.'),
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      onPressed: _active ? _openEmergencyDialer : null,
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: colors.error,
+                                        foregroundColor: colors.onError,
+                                      ),
+                                      icon: const Icon(Icons.call_rounded),
+                                      label: const Text('Emergency · Call 112'),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Quick-Ride can record the SOS event when online, but it does not contact emergency responders on your behalf.',
+                                    style: Theme.of(context).textTheme.bodySmall,
                                   ),
                                 ],
                               ),
