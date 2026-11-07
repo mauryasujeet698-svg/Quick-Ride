@@ -7,8 +7,14 @@ class QuickRideEnvironment {
 
   factory QuickRideEnvironment.fromBuildDefines() {
     return const QuickRideEnvironment(
-      supabaseUrl: String.fromEnvironment('SUPABASE_URL'),
-      supabaseAnonKey: String.fromEnvironment('SUPABASE_ANON_KEY'),
+      supabaseUrl: String.fromEnvironment(
+        'SUPABASE_URL',
+        defaultValue: 'https://czbelhtemzklcmssumpc.supabase.co',
+      ),
+      supabaseAnonKey: String.fromEnvironment(
+        'SUPABASE_ANON_KEY',
+        defaultValue: 'sb_publishable_0es_pudIg1ghhsSciZL_Sw_LGaiO7zh',
+      ),
       mapboxPublicToken: String.fromEnvironment('MAPBOX_PUBLIC_TOKEN'),
     );
   }
