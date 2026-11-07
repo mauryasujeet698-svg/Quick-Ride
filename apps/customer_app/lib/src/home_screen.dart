@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 
@@ -61,12 +62,20 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           const SizedBox(height: 8),
           const Text('Explore service availability before signing in. Booking requires an account.'),
           const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: QuickRideBackend.isInitialized
+                ? () => context.push('/book')
+                : null,
+            icon: const Icon(Icons.directions_car_filled_outlined),
+            label: const Text('Book a ride'),
+          ),
+          const SizedBox(height: 20),
           TextField(
             controller: pin,
             keyboardType: TextInputType.number,
             maxLength: 6,
             decoration: const InputDecoration(
-              labelText: 'Pickup pincode',
+              labelText: 'Check service by pincode',
               prefixIcon: Icon(Icons.location_on_outlined),
               counterText: '',
             ),
@@ -79,12 +88,18 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               future: areas,
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
-                  if (snapshot.hasError) return Text('Service lookup failed: ' + snapshot.error.toString());
+                  if (snapshot.hasError) {
+                    return Text('Service lookup failed: ' + snapshot.error.toString());
+                  }
                   return const Center(child: CircularProgressIndicator());
                 }
-                final rows = snapshot.data!.where((item) =>
-                    pin.text.isEmpty || item['pincode'].toString().startsWith(pin.text)).toList();
-                if (rows.isEmpty) return const Text('No active service area matches this pincode.');
+                final rows = snapshot.data!
+                    .where((item) => pin.text.isEmpty ||
+                        item['pincode'].toString().startsWith(pin.text))
+                    .toList();
+                if (rows.isEmpty) {
+                  return const Text('No active service area matches this pincode.');
+                }
                 return Column(
                   children: rows.map((item) {
                     final area = item['service_areas'] as Map<String, dynamic>;
@@ -99,12 +114,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 );
               },
             ),
-          const SizedBox(height: 20),
-          const ListTile(
-            leading: Icon(Icons.map_outlined),
-            title: Text('Live pickup and driver tracking'),
-            subtitle: Text('Available after service-area boundaries and Mapbox credentials are configured.'),
-          ),
         ],
       ),
     );
