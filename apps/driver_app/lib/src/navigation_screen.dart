@@ -377,7 +377,7 @@ class _DriverRideNavigationScreenState
                               },
                             ),
                             children: [
-                              QuickRideMaps.openStreetMapLayer(),
+                              QuickRideMaps.openStreetMapLayer(appPackageName: 'in.quickride.driver'),
                               if (_routePoints.length >= 2)
                                 PolylineLayer(
                                   polylines: [
