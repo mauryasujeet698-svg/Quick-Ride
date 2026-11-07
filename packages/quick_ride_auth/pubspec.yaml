@@ -7,3 +7,5 @@ dependencies:
   supabase_flutter: ^2.18.3
   quick_ride_backend:
     path: ../quick_ride_backend
+  quick_ride_notifications:
+    path: ../quick_ride_notifications
