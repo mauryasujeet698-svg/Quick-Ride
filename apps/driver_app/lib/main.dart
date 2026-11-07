@@ -6,6 +6,7 @@ import 'package:quick_ride_core/quick_ride_core.dart';
 import 'package:quick_ride_design_system/quick_ride_design_system.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'src/home_screen.dart';
+import 'src/navigation_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,12 @@ class QuickRideDriverApp extends StatelessWidget {
   const QuickRideDriverApp({super.key});
   static final router = GoRouter(routes: [
     GoRoute(path: '/', builder: (_, __) => const DriverHomeScreen()),
+    GoRoute(
+      path: '/ride/:rideId/navigation',
+      builder: (_, state) => DriverRideNavigationScreen(
+        rideId: state.pathParameters['rideId']!,
+      ),
+    ),
   ]);
 
   @override
