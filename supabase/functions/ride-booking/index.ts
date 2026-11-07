@@ -84,6 +84,22 @@ Deno.serve(async (req: Request) => {
     return reply(200, { result: data });
   }
 
+  if (action === "revoke_share_links") {
+    const rideId = String(body.rideId ?? "");
+    if (!rideId) return error(400, "RIDE_REQUIRED", "rideId is required");
+    const { data: ride, error: rideError } = await db.from("rides")
+      .select("id,customer_id")
+      .eq("id", rideId).eq("customer_id", user.id).maybeSingle();
+    if (rideError) return error(500, "RIDE_LOOKUP_FAILED", "Unable to verify this ride");
+    if (!ride) return error(404, "RIDE_NOT_FOUND", "Ride not found");
+    const { data, error: revokeError } = await db.from("ride_share_links")
+      .update({ revoked_at: new Date().toISOString() })
+      .eq("ride_id", rideId).eq("created_by", user.id)
+      .is("revoked_at", null).select("id");
+    if (revokeError) return error(500, "SHARE_LINK_REVOKE_FAILED", "Unable to revoke trip-share links");
+    return reply(200, { revoked_count: data?.length ?? 0 });
+  }
+
   if (action === "create_share_link") {
     const rideId = String(body.rideId ?? "");
     if (!rideId) return error(400, "RIDE_REQUIRED", "rideId is required");
