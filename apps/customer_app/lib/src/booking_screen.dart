@@ -172,8 +172,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       TapInteraction.onMap((context) {
         final coordinates = context.point.coordinates;
         _setPoint(
-          longitude: coordinates.lng,
-          latitude: coordinates.lat,
+          longitude: coordinates.lng.toDouble(),
+          latitude: coordinates.lat.toDouble(),
           pickup: _selectPickup,
         );
       }),
