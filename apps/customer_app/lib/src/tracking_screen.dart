@@ -164,27 +164,27 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     if (pickup != null) {
       options.add(CircleAnnotationOptions(
         geometry: Point(coordinates: pickup),
-        circleColor: Colors.green.value,
+        circleColor: Colors.green.toARGB32(),
         circleRadius: 9,
-        circleStrokeColor: Colors.white.value,
+        circleStrokeColor: Colors.white.toARGB32(),
         circleStrokeWidth: 2,
       ));
     }
     if (destination != null) {
       options.add(CircleAnnotationOptions(
         geometry: Point(coordinates: destination),
-        circleColor: Colors.red.value,
+        circleColor: Colors.red.toARGB32(),
         circleRadius: 9,
-        circleStrokeColor: Colors.white.value,
+        circleStrokeColor: Colors.white.toARGB32(),
         circleStrokeWidth: 2,
       ));
     }
     if (driverLocation != null) {
       options.add(CircleAnnotationOptions(
         geometry: Point(coordinates: driverLocation),
-        circleColor: Colors.blue.value,
+        circleColor: Colors.blue.toARGB32(),
         circleRadius: 11,
-        circleStrokeColor: Colors.white.value,
+        circleStrokeColor: Colors.white.toARGB32(),
         circleStrokeWidth: 3,
       ));
     }
