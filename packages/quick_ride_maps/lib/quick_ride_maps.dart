@@ -30,4 +30,19 @@ class QuickRideMaps {
       ),
     );
   }
+
+  static Stream<Position> watchDriverPosition() {
+    return Geolocator.getPositionStream(
+      locationSettings: AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+        intervalDuration: const Duration(seconds: 5),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'Quick-Ride driver location',
+          notificationText: 'Location is shared while you are online or completing a ride.',
+          enableWakeLock: true,
+        ),
+      ),
+    );
+  }
 }
