@@ -80,7 +80,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (action === "list_documents") {
-    if (!driver) return fail(409, "DRIVER_PROFILE_REQUIRED", "Submit a driver application first");
+    if (!driver) return respond(200, { documents: [] });
     const { data, error } = await db.from("driver_documents")
       .select("id,document_type,verification_status,document_number_last4,issued_at,expires_at,review_note,reviewed_at,created_at")
       .eq("driver_id", user.id)
