@@ -20,6 +20,49 @@ async function sha256(value: string) {
   return [...new Uint8Array(digest)].map((v) => v.toString(16).padStart(2, "0")).join("");
 }
 
+
+async function notifyUsers(
+  url: string,
+  serviceKey: string,
+  userIds: string[],
+  appRole: "customer" | "driver" | "admin",
+  title: string,
+  message: string,
+  data: Record<string, string>,
+) {
+  const recipients = [...new Set(userIds)].filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  if (!recipients.length) return;
+  try {
+    const result = await fetch(`${url}/functions/v1/send-push`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${serviceKey}`,
+        "apikey": serviceKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userIds: recipients, appRole, title, body: message, data }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!result.ok) console.warn("Push notification was not delivered", result.status);
+  } catch (cause) {
+    console.warn("Push notification request failed", String(cause));
+  }
+}
+
+async function notifyOfferedDrivers(db: any, url: string, serviceKey: string, rideId: string) {
+  const { data: offers } = await db.from("ride_offers")
+    .select("driver_id").eq("ride_id", rideId).eq("status", "offered");
+  const { data: chainOffers } = await db.from("ride_chain_offers")
+    .select("driver_id").eq("next_ride_id", rideId).eq("status", "offered");
+  const recipients = [
+    ...(offers ?? []).map((row: { driver_id: string }) => row.driver_id),
+    ...(chainOffers ?? []).map((row: { driver_id: string }) => row.driver_id),
+  ];
+  await notifyUsers(url, serviceKey, recipients, "driver", "New Quick-Ride request",
+    "A nearby trip is available. Open Quick-Ride to review and respond.",
+    { type: "ride_offer", ride_id: rideId });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return fail(405, "METHOD_NOT_ALLOWED", "Use POST");
@@ -77,6 +120,16 @@ Deno.serve(async (req: Request) => {
       },
     }).select("id,event_type,created_at").single();
     if (eventError) return fail(500, "SAFETY_EVENT_FAILED", "The SOS event could not be recorded");
+    const { data: adminRoles } = await db.from("user_roles")
+      .select("user_id").in("role", ["admin", "operations"]);
+    await notifyUsers(
+      url, serviceKey,
+      (adminRoles ?? []).map((row: { user_id: string }) => row.user_id),
+      "admin",
+      "Quick-Ride safety alert",
+      "A ride SOS event has been recorded. Review the safety queue.",
+      { type: "safety_alert", ride_id: rideId, safety_event_id: String(event.id) },
+    );
     return respond(201, {
       safety_event: event,
       emergency_number: "112",
@@ -310,8 +363,20 @@ Deno.serve(async (req: Request) => {
     if (action === "accept_offer") {
       const offerId = String(body.offerId ?? "");
       if (!offerId) return fail(400, "OFFER_REQUIRED", "offerId is required");
+      const { data: offer } = await db.from("ride_offers")
+        .select("ride_id").eq("id", offerId).eq("driver_id", user.id).maybeSingle();
       const { data, error } = await db.rpc("accept_ride_offer", { p_offer_id: offerId, p_driver_id: user.id });
       if (error) return fail(409, "OFFER_NOT_ACCEPTED", error.message);
+      if (offer?.ride_id) {
+        const { data: ride } = await db.from("rides").select("customer_id")
+          .eq("id", offer.ride_id).maybeSingle();
+        if (ride?.customer_id) await notifyUsers(
+          url, serviceKey, [String(ride.customer_id)], "customer",
+          "Your driver is assigned",
+          "A driver accepted your Quick-Ride request.",
+          { type: "driver_assigned", ride_id: String(offer.ride_id) },
+        );
+      }
       return respond(200, { result: data });
     }
 
@@ -323,6 +388,7 @@ Deno.serve(async (req: Request) => {
       const { data, error } = await db.rpc("reject_ride_offer", { p_offer_id: offerId, p_driver_id: user.id });
       if (error) return fail(409, "OFFER_NOT_REJECTED", error.message);
       const dispatch = await dispatchNext(db, String(offer.ride_id));
+      await notifyOfferedDrivers(db, url, serviceKey, String(offer.ride_id));
       return respond(200, { result: data, dispatch });
     }
 
@@ -347,6 +413,7 @@ Deno.serve(async (req: Request) => {
       }).eq("id", chainOfferId).eq("driver_id", user.id).eq("status", "offered").select("id").maybeSingle();
       if (error || !data) return fail(409, "CHAIN_OFFER_NOT_REJECTED", error?.message ?? "Offer is no longer available");
       const { data: next, error: nextError } = await db.rpc("create_ride_chain_offer_batch", { p_next_ride_id: offer.next_ride_id });
+      await notifyOfferedDrivers(db, url, serviceKey, String(offer.next_ride_id));
       return respond(200, { status: "rejected", next_chain_dispatch: nextError ? { status: "unavailable" } : next });
     }
 
@@ -359,6 +426,8 @@ Deno.serve(async (req: Request) => {
         if (!/^\d{6}$/.test(otp)) return fail(400, "INVALID_OTP", "Enter the six-digit pickup OTP");
         otpHash = await sha256(otp);
       }
+      const { data: rideBefore } = await db.from("rides").select("customer_id")
+        .eq("id", rideId).eq("driver_id", user.id).maybeSingle();
       const { data, error } = await db.rpc("driver_ride_transition", {
         p_ride_id: rideId,
         p_driver_id: user.id,
@@ -367,17 +436,39 @@ Deno.serve(async (req: Request) => {
       });
       if (error) return fail(409, "RIDE_TRANSITION_FAILED", error.message);
       if (data?.ok !== true) return fail(409, String(data?.code ?? "RIDE_TRANSITION_REJECTED"), "The ride cannot move to this status");
+      if (rideBefore?.customer_id) {
+        const eventMessages: Record<string, { title: string; body: string }> = {
+          arriving: { title: "Your driver is on the way", body: "Your Quick-Ride driver is heading to the pickup point." },
+          arrived: { title: "Your driver has arrived", body: "Your driver is waiting at the pickup point." },
+          start: { title: "Your ride has started", body: "Your Quick-Ride trip is now in progress." },
+          cancel: { title: "Driver cancelled the ride", body: "Your driver cancelled this trip. Open Quick-Ride for the latest status." },
+        };
+        const notice = eventMessages[String(action)];
+        if (notice) await notifyUsers(
+          url, serviceKey, [String(rideBefore.customer_id)], "customer",
+          notice.title, notice.body,
+          { type: `ride_${String(action)}`, ride_id: rideId },
+        );
+      }
       return respond(200, { result: data });
     }
 
     if (action === "complete") {
       const rideId = String(body.rideId ?? "");
       if (!rideId) return fail(400, "RIDE_REQUIRED", "rideId is required");
+      const { data: rideBefore } = await db.from("rides").select("customer_id")
+        .eq("id", rideId).eq("driver_id", user.id).maybeSingle();
       const { data, error } = await db.rpc("finish_ride_from_track", {
         p_ride_id: rideId,
         p_driver_id: user.id,
       });
       if (error) return fail(409, "RIDE_COMPLETION_FAILED", error.message);
+      if (rideBefore?.customer_id) await notifyUsers(
+        url, serviceKey, [String(rideBefore.customer_id)], "customer",
+        "Your ride is complete",
+        "Your Quick-Ride trip has been marked complete.",
+        { type: "ride_completed", ride_id: rideId },
+      );
       return respond(200, { result: data });
     }
 
