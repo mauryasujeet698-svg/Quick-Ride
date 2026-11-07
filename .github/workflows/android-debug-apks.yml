@@ -1,7 +1,5 @@
 name: Build Quick-Ride Android QA APKs
 on:
-  push:
-    branches: ['feature/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
