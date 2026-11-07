@@ -45,13 +45,10 @@ class QuickRideMaps {
         maxZoom: 19,
       );
 
-  static Widget attributionControl() => RichAttributionWidget(
-        attributions: [
-          TextSourceAttribution(
-            '© OpenStreetMap contributors',
-            prependCopyright: false,
-          ),
-        ],
+  static Widget attributionControl() => SimpleAttributionWidget(
+        source: const Text('OpenStreetMap contributors'),
+        backgroundColor: Colors.white.withValues(alpha: 0.85),
+        onTap: () {},
       );
 
   static Future<geo.Position> currentPosition() async {
