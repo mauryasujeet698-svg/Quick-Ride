@@ -6,6 +6,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_core/quick_ride_core.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CustomerRideTrackingScreen extends StatefulWidget {
   const CustomerRideTrackingScreen({super.key, required this.rideId});
@@ -21,6 +22,12 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
 
   MapboxMap? _map;
   CircleAnnotationManager? _circleManager;
+  CircleAnnotation? _pickupAnnotation;
+  CircleAnnotation? _destinationAnnotation;
+  CircleAnnotation? _driverAnnotation;
+  RealtimeChannel? _rideChangesChannel;
+  RealtimeChannel? _driverLocationChannel;
+  String? _subscribedDriverId;
   Timer? _refreshTimer;
   Map<String, dynamic>? _tracking;
   bool _loading = true;
@@ -43,6 +50,15 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
           ? Map<String, dynamic>.from(_driver!['location'] as Map)
           : null;
 
+  String? get _driverId => _driver?['id']?.toString();
+
+  bool get _driverLocationIsStale {
+    final recordedAt = DateTime.tryParse(_driverLocation?['recorded_at']?.toString() ?? '');
+    if (recordedAt == null) return true;
+    return DateTime.now().toUtc().difference(recordedAt.toUtc()) >
+        const Duration(seconds: 45);
+  }
+
   bool get _active => const {
         'requested',
         'searching',
@@ -56,8 +72,11 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
   @override
   void initState() {
     super.initState();
+    _ensureRideChangesSubscription();
     unawaited(_refresh());
-    _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+    // Realtime is the primary update path. This slower poll repairs missed
+    // events after a short connection interruption or app resume.
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_active) {
         unawaited(_refresh(silent: true));
       } else {
@@ -69,7 +88,66 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    final rideChannel = _rideChangesChannel;
+    final driverChannel = _driverLocationChannel;
+    if (QuickRideBackend.isInitialized && rideChannel != null) {
+      unawaited(QuickRideBackend.client.removeChannel(rideChannel).then<void>((_) {}));
+    }
+    if (QuickRideBackend.isInitialized && driverChannel != null) {
+      unawaited(QuickRideBackend.client.removeChannel(driverChannel).then<void>((_) {}));
+    }
     super.dispose();
+  }
+
+  void _ensureRideChangesSubscription() {
+    if (!QuickRideBackend.isInitialized ||
+        QuickRideAuth.currentUser == null ||
+        _rideChangesChannel != null) {
+      return;
+    }
+    _rideChangesChannel = QuickRideBackend.client
+        .channel('customer-ride-${widget.rideId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'rides',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: widget.rideId,
+          ),
+          callback: (_) => unawaited(_refresh(silent: true)),
+        )
+        .subscribe();
+  }
+
+  Future<void> _syncDriverLocationSubscription() async {
+    final driverId = _active ? _driverId : null;
+    if (driverId == _subscribedDriverId) return;
+
+    final previous = _driverLocationChannel;
+    _driverLocationChannel = null;
+    _subscribedDriverId = null;
+    if (previous != null) {
+      await QuickRideBackend.client.removeChannel(previous);
+    }
+    if (driverId == null || !QuickRideBackend.isInitialized) return;
+
+    _subscribedDriverId = driverId;
+    _driverLocationChannel = QuickRideBackend.client
+        .channel('customer-driver-location-${widget.rideId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'driver_locations',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'driver_id',
+            value: driverId,
+          ),
+          callback: (_) => unawaited(_refresh(silent: true)),
+        )
+        .subscribe();
   }
 
   Future<void> _refresh({bool silent = false}) async {
@@ -102,6 +180,8 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
         _loading = false;
         _error = null;
       });
+      _ensureRideChangesSubscription();
+      await _syncDriverLocationSubscription();
       await _syncMap();
       if (!_active) _refreshTimer?.cancel();
     } catch (error) {
@@ -147,6 +227,17 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     }
   }
 
+  Future<CircleAnnotation> _upsertCircle(
+    CircleAnnotation? existing,
+    CircleAnnotationOptions options,
+  ) async {
+    final manager = _circleManager!;
+    if (existing == null) return manager.create(options);
+    existing.geometry = options.geometry;
+    await manager.update(existing);
+    return existing;
+  }
+
   Future<void> _syncMap() async {
     final manager = _circleManager;
     final tracking = _tracking;
@@ -160,37 +251,45 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     final destination = _position(ride['destination']);
     final driverLocation = driver == null ? null : _position(driver['location']);
 
-    final options = <CircleAnnotationOptions>[];
     if (pickup != null) {
-      options.add(CircleAnnotationOptions(
-        geometry: Point(coordinates: pickup),
-        circleColor: Colors.green.toARGB32(),
-        circleRadius: 9,
-        circleStrokeColor: Colors.white.toARGB32(),
-        circleStrokeWidth: 2,
-      ));
+      _pickupAnnotation = await _upsertCircle(
+        _pickupAnnotation,
+        CircleAnnotationOptions(
+          geometry: Point(coordinates: pickup),
+          circleColor: Colors.green.toARGB32(),
+          circleRadius: 9,
+          circleStrokeColor: Colors.white.toARGB32(),
+          circleStrokeWidth: 2,
+        ),
+      );
     }
     if (destination != null) {
-      options.add(CircleAnnotationOptions(
-        geometry: Point(coordinates: destination),
-        circleColor: Colors.red.toARGB32(),
-        circleRadius: 9,
-        circleStrokeColor: Colors.white.toARGB32(),
-        circleStrokeWidth: 2,
-      ));
+      _destinationAnnotation = await _upsertCircle(
+        _destinationAnnotation,
+        CircleAnnotationOptions(
+          geometry: Point(coordinates: destination),
+          circleColor: Colors.red.toARGB32(),
+          circleRadius: 9,
+          circleStrokeColor: Colors.white.toARGB32(),
+          circleStrokeWidth: 2,
+        ),
+      );
     }
     if (driverLocation != null) {
-      options.add(CircleAnnotationOptions(
-        geometry: Point(coordinates: driverLocation),
-        circleColor: Colors.blue.toARGB32(),
-        circleRadius: 11,
-        circleStrokeColor: Colors.white.toARGB32(),
-        circleStrokeWidth: 3,
-      ));
+      _driverAnnotation = await _upsertCircle(
+        _driverAnnotation,
+        CircleAnnotationOptions(
+          geometry: Point(coordinates: driverLocation),
+          circleColor: Colors.blue.toARGB32(),
+          circleRadius: 11,
+          circleStrokeColor: Colors.white.toARGB32(),
+          circleStrokeWidth: 3,
+        ),
+      );
+    } else if (_driverAnnotation != null) {
+      await manager.delete(_driverAnnotation!);
+      _driverAnnotation = null;
     }
-
-    await manager.deleteAll();
-    if (options.isNotEmpty) await manager.createMulti(options);
 
     if (!_cameraInitialized) {
       final center = driverLocation ?? pickup ?? destination;
@@ -418,7 +517,9 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                                           child: Text(
                                             location == null
                                                 ? 'Waiting for a recent driver location update.'
-                                                : 'Driver location received ' + (DateTime.tryParse(location['recorded_at'].toString())?.toLocal().toString().substring(0, 16) ?? 'recently') + '.',
+                                                : _driverLocationIsStale
+                                                    ? 'Driver location is delayed. Last update: ' + (DateTime.tryParse(location['recorded_at'].toString())?.toLocal().toString().substring(0, 16) ?? 'unknown')
+                                                    : 'Driver location is live · updated ' + (DateTime.tryParse(location['recorded_at'].toString())?.toLocal().toString().substring(0, 16) ?? 'recently'),
                                             style: Theme.of(context).textTheme.bodySmall,
                                           ),
                                         ),
