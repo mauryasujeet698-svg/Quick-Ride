@@ -321,14 +321,40 @@ Deno.serve(async (req: Request) => {
         "chain_offer_ttl_seconds",
       ];
       const updates: Record<string, number> = {};
+      const ranges: Record<string, [number, number]> = {
+        initial_radius_m: [100, 50000],
+        max_radius_m: [100, 100000],
+        radius_step_m: [100, 25000],
+        offer_batch_size: [1, 50],
+        offer_ttl_seconds: [5, 180],
+        location_max_age_seconds: [5, 600],
+        chain_pickup_distance_m: [100, 15000],
+        chain_offer_ttl_seconds: [10, 600],
+      };
       for (const key of allowed) {
         if (body[key] !== undefined) {
-          if (typeof body[key] !== "number" || !Number.isInteger(body[key])) return fail(400, `${key} must be an integer`);
+          if (typeof body[key] !== "number" || !Number.isSafeInteger(body[key])) {
+            return fail(400, `${key} must be a whole number`);
+          }
+          const [minimum, maximum] = ranges[key];
+          if ((body[key] as number) < minimum || (body[key] as number) > maximum) {
+            return fail(400, `${key} must be between ${minimum} and ${maximum}`);
+          }
           updates[key] = body[key] as number;
         }
       }
       if (!Object.keys(updates).length) return fail(400, "At least one dispatch setting is required");
-      const { data: before } = await admin.from("service_area_dispatch_configs").select("*").eq("pincode_id", pincodeId).maybeSingle();
+      const { data: before, error: beforeError } = await admin.from("service_area_dispatch_configs")
+        .select("*").eq("pincode_id", pincodeId).maybeSingle();
+      if (beforeError) return fail(500, "Unable to read current dispatch settings");
+      const merged = {
+        initial_radius_m: Number(before?.initial_radius_m ?? 2000),
+        max_radius_m: Number(before?.max_radius_m ?? 15000),
+        ...updates,
+      };
+      if (merged.max_radius_m < merged.initial_radius_m) {
+        return fail(400, "Maximum search radius must be greater than or equal to initial search radius");
+      }
       const { data, error } = await admin.from("service_area_dispatch_configs")
         .upsert({ pincode_id: pincodeId, ...updates }, { onConflict: "pincode_id" }).select("*").single();
       if (error) return fail(400, error.message);
