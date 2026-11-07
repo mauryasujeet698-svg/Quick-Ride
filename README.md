@@ -40,8 +40,8 @@ The schema contains 27 public application tables with RLS enabled. Supabase secu
 
 Deployed Supabase Edge Functions:
 - `admin-service-areas` (v11, JWT verified)
-- `ride-booking` (v4, JWT verified)
-- `driver-ride-actions` (v4, JWT verified)
+- `ride-booking` (v5, JWT verified)
+- `driver-ride-actions` (v5, JWT verified)
 - `ride-share` (v1, JWT disabled; every request must present a valid high-entropy share token)
 
 Critical booking, fare, driver eligibility, dispatch acceptance and trip transitions are server-authoritative. The ride-share endpoint validates the token hash, expiration and revocation state before returning its restricted live-trip snapshot. Function source is in `supabase/functions`; database migrations are in `supabase/migrations`.
