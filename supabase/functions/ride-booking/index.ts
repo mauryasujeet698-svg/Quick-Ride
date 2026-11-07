@@ -37,6 +37,61 @@ async function sha256Hex(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+
+async function notifyUsers(
+  url: string,
+  serviceKey: string,
+  userIds: string[],
+  appRole: "customer" | "driver" | "admin",
+  title: string,
+  message: string,
+  data: Record<string, string>,
+) {
+  const recipients = [...new Set(userIds)].filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  if (!recipients.length) return;
+  try {
+    const result = await fetch(`${url}/functions/v1/send-push`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${serviceKey}`,
+        "apikey": serviceKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userIds: recipients,
+        appRole,
+        title,
+        body: message,
+        data,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!result.ok) console.warn("Push notification was not delivered", result.status);
+  } catch (cause) {
+    console.warn("Push notification request failed", String(cause));
+  }
+}
+
+async function notifyOfferedDrivers(db: any, url: string, serviceKey: string, rideId: string) {
+  const { data: offers } = await db.from("ride_offers")
+    .select("driver_id").eq("ride_id", rideId).eq("status", "offered");
+  const { data: chainOffers } = await db.from("ride_chain_offers")
+    .select("driver_id").eq("next_ride_id", rideId).eq("status", "offered");
+  const recipients = [
+    ...(offers ?? []).map((row: { driver_id: string }) => row.driver_id),
+    ...(chainOffers ?? []).map((row: { driver_id: string }) => row.driver_id),
+  ];
+  await notifyUsers(
+    url,
+    serviceKey,
+    recipients,
+    "driver",
+    "New Quick-Ride request",
+    "A nearby trip is available. Open Quick-Ride to review and respond.",
+    { type: "ride_offer", ride_id: rideId },
+  );
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return error(405, "METHOD_NOT_ALLOWED", "Use POST");
@@ -347,6 +402,7 @@ Deno.serve(async (req: Request) => {
 
     let otpForCustomer: string | undefined;
     if (bookingResult.created === true) {
+      await notifyOfferedDrivers(db, url, serviceKey, String(ride.id));
       otpForCustomer = otp;
     } else if (["requested", "searching", "offered"].includes(String(ride.status))) {
       const { error: rotateError } = await db.rpc("rotate_ride_pickup_otp", {
