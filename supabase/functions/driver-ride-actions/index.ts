@@ -85,9 +85,28 @@ Deno.serve(async (req: Request) => {
     if (commissionError || ridesError || subscriptionError || paymentError || ledgerError) {
       return fail(500, "EARNINGS_LOOKUP_FAILED", "Unable to load driver earnings and settlement records");
     }
-    const totals: Record<string, { completed_rides: number; gross_fare: number; platform_commission: number; after_commission: number }> = {};
-    for (const row of commissions ?? []) {
-      const currency = String(row.currency ?? "INR");
+
+    // Summarize the same recent completed-ride window for every commercial
+    // model. Subscription-only rides have no ride_commissions row, so gross
+    // fare must come from completed rides and commission defaults to zero.
+    const commissionByRide = new Map((commissions ?? []).map((row) => [
+      String(row.ride_id),
+      {
+        amount: Number(row.commission_amount ?? 0),
+        currency: String(row.currency ?? "INR"),
+      },
+    ]));
+    const totals: Record<string, {
+      completed_rides: number;
+      gross_fare: number;
+      platform_commission: number;
+      after_commission: number;
+    }> = {};
+    for (const ride of completedRides ?? []) {
+      const currency = String(ride.currency ?? "INR");
+      const commission = commissionByRide.get(String(ride.id));
+      const gross = Number(ride.final_fare ?? 0);
+      const fee = commission?.currency === currency ? commission.amount : 0;
       const value = totals[currency] ?? {
         completed_rides: 0,
         gross_fare: 0,
@@ -95,20 +114,23 @@ Deno.serve(async (req: Request) => {
         after_commission: 0,
       };
       value.completed_rides += 1;
-      value.gross_fare += Number(row.fare_amount ?? 0);
-      value.platform_commission += Number(row.commission_amount ?? 0);
-      value.after_commission += Number(row.fare_amount ?? 0) - Number(row.commission_amount ?? 0);
+      value.gross_fare += gross;
+      value.platform_commission += fee;
+      value.after_commission += gross - fee;
       totals[currency] = value;
     }
+
     return respond(200, {
       totals,
+      summary_window: "latest_30_completed_rides",
+      recent_window_ride_count: (completedRides ?? []).length,
       completed_ride_count: completedRideCount ?? (completedRides ?? []).length,
       recent_completed_rides: completedRides ?? [],
       commissions: commissions ?? [],
       subscriptions: subscriptions ?? [],
       payments: payments ?? [],
       ledger: ledger ?? [],
-      settlement_note: "Displayed fare and commission totals are accounting records, not confirmation of a bank payout. Check each settlement and payment status.",
+      settlement_note: "Fare and commission totals summarize the latest 30 completed rides. They are accounting records, not confirmation of a bank payout.",
     });
   }
 
