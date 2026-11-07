@@ -13,18 +13,20 @@ Never commit service-role credentials to GitHub or include them in Flutter appli
   - `in.quickride.admin://login-callback`
 - Assign the initial Admin role manually to a trusted user UUID. New Google users receive only the customer role.
 
-## Mapbox
+## OpenStreetMap maps, geocoding and routing
 
-- Configure `MAPBOX_ACCESS_TOKEN` as a Supabase Edge Function secret for server-side Directions API calls.
-- Supply `MAPBOX_PUBLIC_TOKEN` as a build-time define for native map rendering.
-- Configure a restricted `MAPBOX_DOWNLOADS_TOKEN` with Mapbox native SDK downloads read scope in GitHub Actions. Do not expose this download token inside the app bundle.
+- Customer and Driver maps use the open-source Flutter `flutter_map` package and OpenStreetMap raster tiles. Route calculation uses OSRM; map-tap reverse geocoding uses Nominatim.
+- No Mapbox account, API key or SDK download token is needed for QA builds.
+- QA defaults: `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, `https://router.project-osrm.org` and `https://nominatim.openstreetmap.org`.
+- Optional client build-time overrides: `OSM_TILE_URL`, `OSRM_BASE_URL` and `NOMINATIM_BASE_URL`. The server-side `ride-booking` Edge Function reads optional `OSRM_BASE_URL`; without it, it uses the OSRM public demo endpoint.
+- Public OSM tile, Nominatim and OSRM demo services have usage limits and no production availability commitment. Use appropriately hosted or self-hosted services before commercial scale. Keep the visible OpenStreetMap attribution and follow each service's usage policy.
 
 ## GitHub Actions Android QA APKs
 
 Open repository **Settings → Secrets and variables → Actions**:
 
 - Add repository **variable** `SUPABASE_URL` with value `https://czbelhtemzklcmssumpc.supabase.co`.
-- Add repository **secret** `MAPBOX_DOWNLOADS_TOKEN` (required for native SDK dependency download). Add `MAPBOX_PUBLIC_TOKEN` to enable maps at runtime; it is optional for a compile-only QA build. Supabase public settings have safe in-repository defaults and can be overridden when rotated.
+- No mapping secret is required for QA APK compilation. For production, set `OSRM_BASE_URL` as a Supabase Edge Function secret and pass `OSM_TILE_URL`, `OSRM_BASE_URL` and `NOMINATIM_BASE_URL` as client build-time defines when using non-default map services. Supabase public settings have safe in-repository defaults and can be overridden when rotated.
 - Do not paste keys into source files, commits or chat messages.
 
 Then open **Actions → Build Quick-Ride Android QA APKs → Run workflow** on `feature/platform-core`. A successful run uploads the Customer, Driver and Admin debug APKs as `quick-ride-android-qa-apks`. These are QA/debug builds, not Play Store release APKs.
@@ -57,5 +59,5 @@ Then open **Actions → Build Quick-Ride Android QA APKs → Run workflow** on `
 ## Release
 
 - Configure Android package signing and keep signing keystores/passwords in GitHub Actions secrets.
-- Use separate restricted Mapbox server and public tokens.
+- Configure reliable hosted or self-hosted OSM tile, routing and geocoding services for production; do not rely on community demo endpoints for commercial availability.
 - Complete physical-device location, background operation, notification, battery and network recovery tests before public release.
