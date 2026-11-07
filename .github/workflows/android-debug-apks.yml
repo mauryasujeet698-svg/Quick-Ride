@@ -1,15 +1,6 @@
 name: Build Quick-Ride Android QA APKs
 on:
   workflow_dispatch:
-  push:
-    branches: ['feature/platform-core']
-    paths:
-      - '.github/workflows/android-debug-apks.yml'
-      - 'apps/**'
-      - 'packages/**'
-      - 'scripts/**'
-      - 'supabase/functions/**'
-      - 'supabase/migrations/**'
 permissions:
   contents: read
 jobs:
