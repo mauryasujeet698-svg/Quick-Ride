@@ -10,7 +10,6 @@ dependencies:
   flutter_riverpod: ^3.5.0
   go_router: ^18.1.3
   geolocator: ^14.1.2
-  flutter_mapbox: ^1.0.1
   file_picker: ^13.3.2
   supabase_flutter: ^2.18.3
   url_launcher: ^6.3.3
