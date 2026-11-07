@@ -53,10 +53,11 @@ Current Edge Functions:
 - admin-service-areas: pincode and commercial management, boundary management, driver approvals.
 - ride-booking: quote, booking, cancellation and initial dispatch.
 - driver-ride-actions: onboarding, pincode requests, location, offers, ride transitions and completion.
+- ride-share: public read-only trip page protected by a random 256-bit bearer token; the database stores only a SHA-256 token hash, links expire after 12 hours, and the customer can revoke or replace them.
 
 ## Live location and privacy
 
-Driver location is accepted only for verified drivers with an approved availability state. Ride GPS points are stored while a ride is in progress. Customer access to precise driver location is restricted to an assigned active ride. Realtime is used for live state; push notifications will complement it.
+Driver location is accepted only for verified drivers with an approved availability state. Ride GPS points are stored while a ride is in progress. Customer access to precise driver location is restricted to an assigned active ride. Realtime is used for live state; push notifications will complement it. Trip-share access is a separate bearer-link path with expiration and revocation, and returns no customer phone number or profile data.
 
 ## External setup
 
