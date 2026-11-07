@@ -84,6 +84,34 @@ Deno.serve(async (req: Request) => {
     return reply(200, { result: data });
   }
 
+  if (action === "safety_event") {
+    const rideId = String(body.rideId ?? "");
+    if (!rideId) return error(400, "RIDE_REQUIRED", "rideId is required");
+    const { data: ride, error: rideError } = await db.from("rides")
+      .select("id,status,customer_id")
+      .eq("id", rideId).eq("customer_id", user.id).maybeSingle();
+    if (rideError) return error(500, "RIDE_LOOKUP_FAILED", "Unable to verify this ride");
+    if (!ride || !["accepted", "driver_arriving", "arrived", "in_progress"].includes(String(ride.status))) {
+      return error(409, "RIDE_NOT_ACTIVE", "Safety events can only be recorded for an active assigned ride");
+    }
+    const { data: event, error: eventError } = await db.from("ride_safety_events").insert({
+      ride_id: rideId,
+      actor_user_id: user.id,
+      event_type: "sos_triggered",
+      details: {
+        source: "customer_app",
+        action: "open_india_emergency_dialer",
+        recorded_at: new Date().toISOString(),
+      },
+    }).select("id,event_type,created_at").single();
+    if (eventError) return error(500, "SAFETY_EVENT_FAILED", "The SOS event could not be recorded");
+    return reply(201, {
+      safety_event: event,
+      emergency_number: "112",
+      note: "The emergency number must still be dialled by the customer. Quick-Ride does not directly dispatch public emergency services.",
+    });
+  }
+
   const mapboxToken = Deno.env.get("MAPBOX_ACCESS_TOKEN");
   if (!mapboxToken) {
     return error(503, "MAPS_NOT_CONFIGURED", "Ride quotes and bookings are disabled until the Mapbox server token is configured in Supabase Edge Function secrets");
