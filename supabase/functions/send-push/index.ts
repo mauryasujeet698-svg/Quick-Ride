@@ -23,10 +23,14 @@ function base64Url(bytes: Uint8Array): string {
 function encodeJson(value: Json): string {
   return base64Url(new TextEncoder().encode(JSON.stringify(value)));
 }
-function decodePrivateKey(pem: string): Uint8Array {
+function decodePrivateKey(pem: string): ArrayBuffer {
   const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
   const binary = atob(clean);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes.buffer;
 }
 
 async function googleAccessToken(account: {
@@ -34,7 +38,7 @@ async function googleAccessToken(account: {
   private_key: string;
 }): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  if (cachedAccessToken && cachedAccessTokenExpiresAt > now + 60) return cachedAccessToken;
+  if (cachedAccessToken && cachedAccessTokenExpiresAt > now + 60) return cachedAccessToken as string;
 
   const header = encodeJson({ alg: "RS256", typ: "JWT" });
   const claims = encodeJson({
