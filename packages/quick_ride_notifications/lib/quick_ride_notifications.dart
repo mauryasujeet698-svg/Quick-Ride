@@ -37,11 +37,15 @@ class QuickRideNotifications {
   static StreamSubscription<AuthState>? _authSubscription;
   static StreamSubscription<String>? _tokenSubscription;
   static StreamSubscription<RemoteMessage>? _openedSubscription;
+  static StreamSubscription<RemoteMessage>? _foregroundSubscription;
   static RemoteMessage? _initialMessage;
   static final StreamController<RemoteMessage> _openedMessages =
       StreamController<RemoteMessage>.broadcast();
+  static final StreamController<RemoteMessage> _foregroundMessages =
+      StreamController<RemoteMessage>.broadcast();
 
   static Stream<RemoteMessage> get openedMessages => _openedMessages.stream;
+  static Stream<RemoteMessage> get foregroundMessages => _foregroundMessages.stream;
 
   static Future<bool> initialize({required String appRole}) async {
     if (!const {'customer', 'driver', 'admin'}.contains(appRole)) {
@@ -77,6 +81,9 @@ class QuickRideNotifications {
 
       _openedSubscription ??= FirebaseMessaging.onMessageOpenedApp.listen(
         _openedMessages.add,
+      );
+      _foregroundSubscription ??= FirebaseMessaging.onMessage.listen(
+        _foregroundMessages.add,
       );
       _initialMessage = await _messaging!.getInitialMessage();
 
@@ -164,9 +171,11 @@ class QuickRideNotifications {
     await _authSubscription?.cancel();
     await _tokenSubscription?.cancel();
     await _openedSubscription?.cancel();
+    await _foregroundSubscription?.cancel();
     _authSubscription = null;
     _tokenSubscription = null;
     _openedSubscription = null;
+    _foregroundSubscription = null;
     _messaging = null;
     _appRole = null;
     _initialized = false;
