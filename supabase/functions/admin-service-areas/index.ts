@@ -302,6 +302,36 @@ Deno.serve(async (req: Request) => {
       return response(200, { service_pincode: data });
     }
 
+    if (action === "dashboard_summary") {
+      const [rides, activeRides, completedRides, drivers, pendingDrivers, activePincodes, commissions] = await Promise.all([
+        admin.from("rides").select("id", { count: "exact", head: true }),
+        admin.from("rides").select("id", { count: "exact", head: true }).in("status", ["accepted", "driver_arriving", "arrived", "in_progress"]),
+        admin.from("rides").select("id", { count: "exact", head: true }).eq("status", "completed"),
+        admin.from("driver_profiles").select("user_id", { count: "exact", head: true }),
+        admin.from("driver_profiles").select("user_id", { count: "exact", head: true }).eq("verification_status", "pending"),
+        admin.from("service_area_pincodes").select("id", { count: "exact", head: true }).eq("is_active", true),
+        admin.from("ride_commissions").select("commission_amount,currency"),
+      ]);
+      if (rides.error || activeRides.error || completedRides.error || drivers.error ||
+          pendingDrivers.error || activePincodes.error || commissions.error) {
+        return fail(500, "Unable to load operations summary");
+      }
+      const totals: Record<string, number> = {};
+      for (const row of commissions.data ?? []) {
+        const currency = String(row.currency ?? "INR");
+        totals[currency] = (totals[currency] ?? 0) + Number(row.commission_amount ?? 0);
+      }
+      return response(200, {
+        rides_total: rides.count ?? 0,
+        rides_active: activeRides.count ?? 0,
+        rides_completed: completedRides.count ?? 0,
+        drivers_total: drivers.count ?? 0,
+        drivers_pending_review: pendingDrivers.count ?? 0,
+        pincodes_active: activePincodes.count ?? 0,
+        commission_totals: totals,
+      });
+    }
+
     return fail(400, "Unsupported action");
   } catch (error) {
     console.error("admin-service-areas failed", error);
