@@ -53,6 +53,65 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return fail(400, "INVALID_JSON", "Request body must be valid JSON"); }
   const action = body.action;
 
+  if (action === "get_earnings") {
+    if (!driver || driver.verification_status !== "approved") {
+      return fail(403, "APPROVED_DRIVER_REQUIRED", "Earnings are available after driver approval");
+    }
+    const [
+      { data: commissions, error: commissionError },
+      { data: completedRides, error: ridesError, count: completedRideCount },
+      { data: subscriptions, error: subscriptionError },
+      { data: payments, error: paymentError },
+      { data: ledger, error: ledgerError },
+    ] = await Promise.all([
+      db.from("ride_commissions")
+        .select("ride_id,fare_amount,commission_amount,currency,settlement_status,created_at")
+        .eq("driver_id", user.id).order("created_at", { ascending: false }).limit(50),
+      db.from("rides")
+        .select("id,completed_at,final_fare,estimated_fare,actual_distance_m,actual_duration_s,currency", { count: "exact" })
+        .eq("driver_id", user.id).eq("status", "completed")
+        .order("completed_at", { ascending: false }).limit(30),
+      db.from("driver_subscriptions")
+        .select("id,status,period_start,period_end,amount,currency,pincode_id,created_at")
+        .eq("driver_id", user.id).order("created_at", { ascending: false }).limit(12),
+      db.from("payment_records")
+        .select("id,payment_purpose,payment_method,status,amount,currency,captured_at,created_at")
+        .or(`payer_user_id.eq.${user.id},payee_user_id.eq.${user.id}`)
+        .order("created_at", { ascending: false }).limit(20),
+      db.from("ledger_entries")
+        .select("id,entry_type,direction,amount,currency,status,description,created_at")
+        .eq("owner_user_id", user.id).order("created_at", { ascending: false }).limit(30),
+    ]);
+    if (commissionError || ridesError || subscriptionError || paymentError || ledgerError) {
+      return fail(500, "EARNINGS_LOOKUP_FAILED", "Unable to load driver earnings and settlement records");
+    }
+    const totals: Record<string, { completed_rides: number; gross_fare: number; platform_commission: number; after_commission: number }> = {};
+    for (const row of commissions ?? []) {
+      const currency = String(row.currency ?? "INR");
+      const value = totals[currency] ?? {
+        completed_rides: 0,
+        gross_fare: 0,
+        platform_commission: 0,
+        after_commission: 0,
+      };
+      value.completed_rides += 1;
+      value.gross_fare += Number(row.fare_amount ?? 0);
+      value.platform_commission += Number(row.commission_amount ?? 0);
+      value.after_commission += Number(row.fare_amount ?? 0) - Number(row.commission_amount ?? 0);
+      totals[currency] = value;
+    }
+    return respond(200, {
+      totals,
+      completed_ride_count: completedRideCount ?? (completedRides ?? []).length,
+      recent_completed_rides: completedRides ?? [],
+      commissions: commissions ?? [],
+      subscriptions: subscriptions ?? [],
+      payments: payments ?? [],
+      ledger: ledger ?? [],
+      settlement_note: "Displayed fare and commission totals are accounting records, not confirmation of a bank payout. Check each settlement and payment status.",
+    });
+  }
+
   if (action === "apply_driver") {
     const categoryId = Number(body.vehicleCategoryId);
     const registration = typeof body.vehicleRegistration === "string" ? body.vehicleRegistration.trim().toUpperCase() : "";
