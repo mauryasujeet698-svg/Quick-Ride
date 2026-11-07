@@ -237,26 +237,96 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
         ),
       );
 
-  @override
-  Widget build(BuildContext context) {
-    if (!QuickRideBackend.isInitialized) {
-      return const Scaffold(
-        body: Center(child: Text('Quick-Ride backend is not configured.')),
-      );
-    }
-    if (QuickRideAuth.currentUser == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Operations')),
-        body: Center(
-          child: FilledButton.icon(
-            onPressed: () => QuickRideAuth.signInWithGoogle(
-              redirectTo: 'in.quickride.admin://login-callback',
-            ),
-            icon: const Icon(Icons.login),
-            label: const Text('Sign in with Google'),
-          ),
+  Widget _previewMetric(String label, IconData icon) => Card(
+        child: ListTile(
+          leading: CircleAvatar(child: Icon(icon)),
+          title: Text('—', style: Theme.of(context).textTheme.titleLarge),
+          subtitle: Text(label),
         ),
       );
+
+  Widget _previewScreen() => Scaffold(
+        appBar: AppBar(
+          title: const Text('Operations preview'),
+          leading: IconButton(
+            onPressed: () => context.pop(),
+            icon: const Icon(Icons.arrow_back),
+          ),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(18),
+          children: [
+            Text(
+              'Platform pulse',
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'This is the read-only layout preview. Live platform figures '
+              'appear after an administrator signs in and Supabase is configured.',
+            ),
+            const SizedBox(height: 16),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              childAspectRatio: 1.65,
+              children: [
+                _previewMetric('Total rides', Icons.route_outlined),
+                _previewMetric('Active rides', Icons.directions_car_outlined),
+                _previewMetric('Completed rides', Icons.check_circle_outline),
+                _previewMetric('Registered drivers', Icons.people_outline),
+                _previewMetric('Pending driver reviews', Icons.fact_check_outlined),
+                _previewMetric('Active pincodes', Icons.location_on_outlined),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text('Operational queues',
+                style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.verified_user_outlined),
+                title: Text('Driver approvals'),
+                subtitle: Text('KYC and profile review queue'),
+                trailing: Text('Preview'),
+              ),
+            ),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.location_on_outlined),
+                title: Text('Pincode applications'),
+                subtitle: Text('Pending service-area requests'),
+                trailing: Text('Preview'),
+              ),
+            ),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.support_agent_outlined),
+                title: Text('Support tickets'),
+                subtitle: Text('Customer and driver support queue'),
+                trailing: Text('Preview'),
+              ),
+            ),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.sos_outlined),
+                title: Text('Safety events'),
+                subtitle: Text('SOS and safety review queue'),
+                trailing: Text('Preview'),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    if (!QuickRideBackend.isInitialized ||
+        QuickRideAuth.currentUser == null) {
+      return _previewScreen();
     }
     final summary = _summary ?? const <String, dynamic>{};
     final commission = summary['commission_totals'] as Map<String, dynamic>? ?? {};
