@@ -4,32 +4,33 @@ Last updated: 2026-11-07
 
 ## Current state
 
-- Platform backend foundation is deployed in Supabase and source migrations are tracked in `feature/platform-core`.
-- The schema contains 26 public tables with RLS enabled; the Supabase security and health advisors returned no findings in the last recorded check. This is an automated advisory result, not a complete security audit.
-- Three server-side Edge Functions are deployed: `admin-service-areas`, `ride-booking`, and `driver-ride-actions`.
-- Customer app: ride-first home screen, guest service-area lookup, vehicle categories from Supabase, Google sign-in entry points, pickup/destination and quote/booking flow, booking pickup OTP, live ride-status subscription, ride history, early-stage cancellation, support requests tied to a selected ride, and profile/navigation screens.
-- Driver app: Google sign-in, driver application, service-pincode requests, approval state, availability, GPS updates, ride/chain offers and trip lifecycle controls.
-- Admin app: service-area and pincode setup, boundary and commercial configuration, driver review and service-pincode operations.
-- Flutter static analysis has passed for all three apps on a recent CI run. The latest smoke-test run is being rechecked after correcting a scroll-dependent customer test.
-- Android QA workflow is present and creates Customer, Driver and Admin debug APK artifacts when its required GitHub Actions values are configured.
+- Platform backend foundation is deployed in Supabase and source migrations are tracked on `feature/platform-core`.
+- The schema has 26 public application tables with RLS enabled. Security and health advisors returned no findings after the latest tracking and driver-document policy changes. Automated advisor output is not a substitute for a full security audit.
+- Three Edge Functions are deployed: `admin-service-areas`, `ride-booking`, and `driver-ride-actions`. The branch now contains updated source for driver document registration and Admin document review; redeployment of these updated function versions is the next backend-code deployment step.
+- Customer app: guest service-area lookup, vehicle categories, pickup/destination selection, fare quote and booking, pickup OTP, active-ride tracking map, driver and vehicle details, ride history, early-stage cancellation, ride-specific support requests and profile/navigation screens.
+- Driver app: Google sign-in, vehicle application, service-pincode requests, private PDF/JPG/PNG KYC upload, document status, availability, GPS updates, ride/chain offers and trip lifecycle.
+- Admin app: service-area/pincode setup, boundaries and pincode-level commercial configuration, driver application review, time-limited private document previews, individual document approval/rejection and service-pincode review.
+- Flutter formatting, static analysis and smoke tests have passed for the document-upload source commit. The following commit, which tightens Storage upload policy to require a pending driver application, is in its CI run.
+- Android QA workflow builds Customer, Driver and Admin debug APKs when the required GitHub Actions configuration is present. APKs have not been produced yet because those values are still missing.
 
-## Backend safeguards retained
+## Backend safeguards
 
-- Authenticated clients cannot create rides directly; booking is routed through the server-side Edge Function and database function.
-- Commercial configuration is pincode-scoped and effective-dated; the ride stores a snapshot of the fare and commercial terms used at booking.
-- Dispatch eligibility includes approved drivers, approved pincode membership, fresh GPS, matching vehicle class and any applicable active subscription.
-- Ride-chain acceptance remains provisional until the current ride completes.
+- Ride booking remains server-authoritative; authenticated clients cannot directly create rides.
+- Fare and commercial terms are snapshotted on each ride; subscription, commission and hybrid models are independently configured by service pincode.
+- Dispatch eligibility checks driver approval, service-pincode approval, fresh GPS, vehicle class and any applicable active subscription.
+- Ride chaining remains provisional until the current ride completes.
 - Pickup OTP hashes are stored server-side and attempts are rate-limited.
-- Final fare reconciliation is server-side, using the recorded GPS trace when sufficient points exist and the saved route estimate otherwise.
-- Customer driver-location reads are restricted by RLS to an active ride between that customer and driver.
+- Customer tracking data is returned by a SECURITY INVOKER RPC that checks authenticated customer ownership. Driver location is returned only for an active ride and only when the GPS fix is recent.
+- Driver KYC files live in a private Storage bucket, limited to PDF/JPG/PNG and 5 MB. Upload is restricted to the signed-in owner's folder and a pending driver profile. Metadata is registered server-side. Admin receives short-lived signed URLs, and driver approval is blocked until a valid driving licence, vehicle RC and insurance are approved.
 
-## Not yet ready for live pilot
+## Still needed before a real pilot
 
-- No active service areas, verified pincode polygons, fare rules, admin account, approved driver accounts or driver pincode memberships have been seeded.
-- The `MAPBOX_ACCESS_TOKEN` Edge Function secret is not configured. The public Mapbox token and native SDK download token are not available in the GitHub Actions environment.
+- No service areas, verified pincode polygons, fare rules, Admin account, approved driver accounts or approved driver service-pincode memberships have been seeded.
+- `MAPBOX_ACCESS_TOKEN` must be set as a Supabase Edge Function secret. Mobile Mapbox public token and native SDK download token are owner-supplied.
 - Google OAuth provider settings and native deep-link registrations still require owner configuration.
-- FCM push notifications and payment provider integration/webhooks have not been implemented/configured.
-- Android QA APKs have not yet been produced: the last build attempt stopped at preflight because the required GitHub Actions variable/secrets were empty.
-- Background GPS and poor-network recovery have not been verified on physical devices. Load testing, full operational support tooling, analytics and production signing remain outstanding.
+- Updated Edge Function versions need deployment and verification against configured test users.
+- FCM push delivery and payment-provider integration/webhooks have not been implemented.
+- Android QA APKs remain blocked by missing GitHub Actions variable/secrets; no APK artifact has been produced.
+- Physical-device background GPS, battery, location permission and poor-network recovery testing, load testing, operational analytics and production signing remain outstanding.
 
-See `docs/SECRETS_AND_OWNER_SETUP.md` for required owner actions before building and testing on a phone.
+See `docs/SECRETS_AND_OWNER_SETUP.md` and `docs/KYC_AND_DRIVER_ONBOARDING.md`.
