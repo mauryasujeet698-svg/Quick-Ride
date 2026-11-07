@@ -63,6 +63,12 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           for app in customer driver admin; do
+            case "$app" in
+              customer) firebase_app_id="$FIREBASE_CUSTOMER_APP_ID" ;;
+              driver) firebase_app_id="$FIREBASE_DRIVER_APP_ID" ;;
+              admin) firebase_app_id="$FIREBASE_ADMIN_APP_ID" ;;
+              *) echo "::error::Unknown app role: $app"; exit 1 ;;
+            esac
             (
               cd "apps/${app}_app"
               mkdir -p build/symbols
@@ -76,7 +82,7 @@ jobs:
                 --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" \
                 --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
                 --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
-                --dart-define=FIREBASE_APP_ID="${FIREBASE_${app^^}_APP_ID}"
+                --dart-define=FIREBASE_APP_ID="$firebase_app_id"
             )
             mkdir -p "dist/${app}"
             for abi in armeabi-v7a arm64-v8a x86_64; do
