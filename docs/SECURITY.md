@@ -13,7 +13,7 @@ Google sign-in authenticates a user; it does not grant privileged access. Driver
 - Drivers write their own location only after approval.
 - Customer reads of driver location require an active ride assigned to that driver.
 - ride_events has an explicit deny-all client policy.
-- Explicit table grants complement RLS under Supabase's 2026 Data API exposure defaults.
+- Explicit table grants use an allow-list: public service configuration is readable; customer/driver access is granted only where required. Broad default client grants were revoked, including write access to roles, rides and audit events. RLS remains mandatory.
 
 ## Backend requirements before pilot
 Implement booking, pricing, dispatch, offer acceptance, transitions, cancellation and OTP server-side. Validate JWT identity; do not trust user IDs in request bodies. Use transactions/row locks, idempotency, rate limits, validation and audit logging. Validate coordinates and service boundaries. Return raw driver location only to the assigned customer during permitted states.
