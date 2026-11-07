@@ -559,7 +559,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                               },
                             ),
                             children: [
-                              QuickRideMaps.openStreetMapLayer(),
+                              QuickRideMaps.openStreetMapLayer(appPackageName: 'in.quickride.customer'),
                               if (_routePoints.length >= 2)
                                 PolylineLayer(
                                   polylines: [
