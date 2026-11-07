@@ -18,7 +18,7 @@ Last updated: 2026-11-07
 - Admin app source includes service-area and pincode setup, boundary activation, pincode commercial models, vehicle category management, effective-dated fare rules, per-pincode dispatch controls, driver/document/pincode review, operational dashboard, support-ticket handling and a safety-event review queue.
 - Operations polls only the safety-event queue every 30 seconds while that screen is open; it does not poll when signed out or closed.
 - Flutter CI now includes Dart formatting, static analysis, Flutter smoke tests and Deno type-checking for all four Supabase Edge Functions. Latest run is in progress: [Quick-Ride CI](https://github.com/mauryasujeet698-svg/Quick-Ride/actions/workflows/ci.yml).
-- Android QA workflow is configured to build Customer, Driver and Admin debug APKs. No APK artifact has been produced yet: the last runs stopped at the credential validation step before native compilation because the GitHub Actions build settings are empty.
+- Android QA workflow is configured as a manual build for Customer, Driver and Admin debug APKs. No APK artifact has been produced yet: the last run stopped at the credential validation step before native compilation because the GitHub Actions build settings are empty. Manual triggering prevents repeated failed builds while owner-only keys are not yet configured.
 
 ## Backend safeguards
 
