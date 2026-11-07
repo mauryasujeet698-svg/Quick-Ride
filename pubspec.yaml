@@ -12,3 +12,4 @@ workspace:
   - packages/quick_ride_design_system
   - packages/quick_ride_maps
   - packages/quick_ride_domain
+  - packages/quick_ride_notifications
