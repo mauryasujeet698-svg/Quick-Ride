@@ -13,7 +13,6 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final environment = QuickRideEnvironment.fromBuildDefines();
   await QuickRideBackend.initialize(environment);
-  QuickRideMaps.configureToken(environment);
   await QuickRideNotifications.initialize(appRole: 'admin');
   runApp(const ProviderScope(child: QuickRideAdminApp()));
 
