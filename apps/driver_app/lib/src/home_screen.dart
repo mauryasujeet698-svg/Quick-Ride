@@ -60,7 +60,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         } else {
           _loadCategories();
           _loadDocuments();
-          _loadEarnings(force: true);
         }
       });
       _loadCategories();
