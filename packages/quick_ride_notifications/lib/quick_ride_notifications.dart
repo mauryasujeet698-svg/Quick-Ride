@@ -36,6 +36,8 @@ class QuickRideNotifications {
   static FirebaseMessaging? _messaging;
   static StreamSubscription<AuthState>? _authSubscription;
   static StreamSubscription<String>? _tokenSubscription;
+  static StreamSubscription<String>? _unregisteredSubscription;
+  static String? _currentInstallationId;
   static StreamSubscription<RemoteMessage>? _openedSubscription;
   static StreamSubscription<RemoteMessage>? _foregroundSubscription;
   static RemoteMessage? _initialMessage;
@@ -98,9 +100,23 @@ class QuickRideNotifications {
       // Keep FCM registration-token refresh: the server's FCM HTTP v1 sender
       // targets registration tokens, not Firebase Installation IDs.
       // ignore: deprecated_member_use
-      _tokenSubscription ??= _messaging!.onTokenRefresh.listen((token) {
+      _tokenSubscription ??= _messaging!.onRegistered.listen((installationId) {
+        _currentInstallationId = installationId;
         final user = QuickRideBackend.client.auth.currentUser;
-        if (user != null) unawaited(_saveToken(user.id, token));
+        if (user != null) {
+          unawaited(_saveToken(user.id, installationId));
+        }
+      });
+      _unregisteredSubscription ??=
+          _messaging!.onUnregistered.listen((installationId) {
+        _currentInstallationId = null;
+        if (!QuickRideBackend.isInitialized) return;
+        unawaited(
+          QuickRideBackend.client
+              .from('device_push_tokens')
+              .delete()
+              .eq('token', installationId),
+        );
       });
 
       _initialized = true;
@@ -134,8 +150,10 @@ class QuickRideNotifications {
         return;
       }
       // ignore: deprecated_member_use
-      final token = await messaging.getToken();
-      if (token != null && token.isNotEmpty) await _saveToken(userId, token);
+      // Firebase Messaging 17 registers an installation ID (FID), not
+      // the legacy FCM registration token. The active onRegistered listener
+      // persists the FID for use with the FCM HTTP v1 send endpoint.
+      await messaging.register();
     } catch (error) {
       debugPrint('Quick-Ride could not register this device for push: $error');
     }
@@ -160,13 +178,15 @@ class QuickRideNotifications {
     if (user == null) return;
     try {
       // ignore: deprecated_member_use
-      final token = await _messaging?.getToken();
-      if (token == null) return;
+      final installationId = _currentInstallationId;
+      if (installationId == null) return;
       await QuickRideBackend.client
           .from('device_push_tokens')
           .delete()
           .eq('user_id', user.id)
-          .eq('token', token);
+          .eq('token', installationId);
+      await _messaging?.unregister();
+      _currentInstallationId = null;
     } catch (error) {
       debugPrint('Quick-Ride could not unregister this device: $error');
     }
@@ -175,10 +195,13 @@ class QuickRideNotifications {
   static Future<void> dispose() async {
     await _authSubscription?.cancel();
     await _tokenSubscription?.cancel();
+    await _unregisteredSubscription?.cancel();
     await _openedSubscription?.cancel();
     await _foregroundSubscription?.cancel();
     _authSubscription = null;
     _tokenSubscription = null;
+    _unregisteredSubscription = null;
+    _currentInstallationId = null;
     _openedSubscription = null;
     _foregroundSubscription = null;
     _messaging = null;
