@@ -114,7 +114,7 @@ class _RideCard extends StatelessWidget {
     final id = ride['id'].toString();
     final status = ride['status'].toString();
     final active = ['requested','searching','offered','accepted','driver_arriving','arrived','in_progress'].contains(status);
-    final canCancel = ['requested','searching','offered'].contains(status);
+    final canCancel = ['requested','searching','offered','accepted','driver_arriving','arrived'].contains(status);
     final fare = ride['final_fare'] ?? ride['estimated_fare'];
     final created = DateTime.tryParse(ride['created_at'].toString());
     final dateLabel = created == null ? '' : created.toLocal().toString().substring(0, 16);
@@ -183,10 +183,41 @@ class _RideCard extends StatelessWidget {
   }
 
   Future<void> _cancel(BuildContext context, String id) async {
+    const reasons = <String, String>{
+      'customer_changed_mind': 'I changed my mind',
+      'driver_taking_too_long': 'The driver is taking too long',
+      'pickup_or_destination_changed': 'Pickup or destination changed',
+      'booked_by_mistake': 'I booked by mistake',
+      'other': 'Other reason',
+    };
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Why are you cancelling?', style: Theme.of(sheetContext).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              ...reasons.entries.map((entry) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.radio_button_unchecked),
+                    title: Text(entry.value),
+                    onTap: () => Navigator.of(sheetContext).pop(entry.key),
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (reason == null) return;
     try {
       await QuickRideBackend.invoke(
         'ride-booking',
-        body: {'action': 'cancel', 'rideId': id, 'reason': 'customer_cancelled'},
+        body: {'action': 'cancel', 'rideId': id, 'reason': reason},
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
