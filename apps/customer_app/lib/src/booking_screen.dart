@@ -281,7 +281,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                     ),
                   ),
                   children: [
-                    QuickRideMaps.openStreetMapLayer(),
+                    QuickRideMaps.openStreetMapLayer(appPackageName: 'in.quickride.customer'),
                     if (_quoteRoutePoints.length >= 2)
                       PolylineLayer(
                         polylines: [
