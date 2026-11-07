@@ -18,10 +18,13 @@ jobs:
         run: flutter pub get
       - name: Format Dart sources
         run: dart format apps packages
-      - name: Analyze applications
+      - name: Analyze applications and shared packages
         run: |
           for app in apps/customer_app apps/driver_app apps/admin_app; do
             (cd "$app" && flutter analyze --no-pub)
+          done
+          for package in packages/*; do
+            (cd "$package" && flutter analyze --no-pub)
           done
       - uses: denoland/setup-deno@v2
         with:
@@ -31,8 +34,13 @@ jobs:
           for fn in admin-service-areas driver-ride-actions ride-booking ride-share send-push; do
             deno check --config "supabase/functions/$fn/deno.json" "supabase/functions/$fn/index.ts"
           done
-      - name: Run smoke tests
+      - name: Run application and shared-package tests
         run: |
           for app in apps/customer_app apps/driver_app apps/admin_app; do
             (cd "$app" && flutter test --no-pub)
+          done
+          for package in packages/*; do
+            if [[ -d "$package/test" ]]; then
+              (cd "$package" && flutter test --no-pub)
+            fi
           done
