@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_core/quick_ride_core.dart';
@@ -22,6 +25,8 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
 
   MapboxMap? _map;
   CircleAnnotationManager? _circleManager;
+  PolylineAnnotationManager? _routeManager;
+  PolylineAnnotation? _routeAnnotation;
   CircleAnnotation? _pickupAnnotation;
   CircleAnnotation? _destinationAnnotation;
   CircleAnnotation? _driverAnnotation;
@@ -33,6 +38,12 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
   bool _loading = true;
   bool _refreshing = false;
   bool _cameraInitialized = false;
+  bool _routeRequestInFlight = false;
+  DateTime _lastRouteFetchedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _lastRouteStatus;
+  Position? _lastRouteOrigin;
+  double? _routeDistanceMeters;
+  double? _routeDurationSeconds;
   String? _error;
 
   Map<String, dynamic>? get _ride =>
@@ -221,6 +232,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     _map = map;
     try {
       _circleManager = await map.annotations.createCircleAnnotationManager();
+      _routeManager = await map.annotations.createPolylineAnnotationManager();
       await _syncMap();
     } catch (error) {
       if (mounted) setState(() => _error = 'The tracking map could not be initialized: ' + error.toString());
@@ -291,6 +303,8 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
       _driverAnnotation = null;
     }
 
+    unawaited(_refreshRouteIfNeeded(ride, driver, pickup, destination, driverLocation));
+
     if (!_cameraInitialized) {
       final center = driverLocation ?? pickup ?? destination;
       if (center != null) {
@@ -301,6 +315,127 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
         _cameraInitialized = true;
       }
     }
+  }
+
+
+  double _distanceMeters(Position a, Position b) {
+    const earthRadius = 6371000.0;
+    final lat1 = a.lat * 0.017453292519943295;
+    final lat2 = b.lat * 0.017453292519943295;
+    final dLat = (b.lat - a.lat) * 0.017453292519943295;
+    final dLng = (b.lng - a.lng) * 0.017453292519943295;
+    final sinLat = (dLat / 2).abs();
+    final sinLng = (dLng / 2).abs();
+    final haversine = sinLat * sinLat +
+        (lat1.cos() * lat2.cos() * sinLng * sinLng);
+    final clamped = haversine.clamp(0.0, 1.0);
+    return earthRadius * 2 * math.asin(math.sqrt(clamped));
+  }
+
+  Future<void> _refreshRouteIfNeeded(
+    Map<String, dynamic> ride,
+    Map<String, dynamic>? driver,
+    Position? pickup,
+    Position? destination,
+    Position? driverLocation,
+  ) async {
+    final routeManager = _routeManager;
+    if (routeManager == null || _routeRequestInFlight || pickup == null || destination == null) {
+      return;
+    }
+    final status = ride['status']?.toString() ?? '';
+    final origin = driverLocation ?? pickup;
+    final target = status == 'in_progress' ? destination : (driverLocation == null ? destination : pickup);
+    final now = DateTime.now();
+    final statusChanged = status != _lastRouteStatus;
+    final originMoved = _lastRouteOrigin == null ||
+        _distanceMeters(_lastRouteOrigin!, origin) >= 150;
+    final intervalElapsed = now.difference(_lastRouteFetchedAt) >= const Duration(seconds: 30);
+    if (!statusChanged && !originMoved && !intervalElapsed) return;
+
+    final token = _environment.mapboxPublicToken;
+    if (!token.startsWith('pk.')) return;
+    _routeRequestInFlight = true;
+    _lastRouteFetchedAt = now;
+    _lastRouteStatus = status;
+    _lastRouteOrigin = origin;
+
+    try {
+      final coordinates = '${origin.lng},${origin.lat};${target.lng},${target.lat}';
+      final uri = Uri.https(
+        'api.mapbox.com',
+        '/directions/v5/mapbox/driving/$coordinates',
+        {
+          'access_token': token,
+          'overview': 'full',
+          'geometries': 'geojson',
+          'steps': 'false',
+          'alternatives': 'false',
+        },
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) {
+        throw StateError('Mapbox route service returned ${response.statusCode}.');
+      }
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      final routes = payload['routes'] as List<dynamic>? ?? [];
+      if (routes.isEmpty) throw StateError('No route is available for this ride.');
+      final route = Map<String, dynamic>.from(routes.first as Map);
+      final geometry = Map<String, dynamic>.from(route['geometry'] as Map);
+      final rawCoordinates = geometry['coordinates'] as List<dynamic>? ?? [];
+      final positions = rawCoordinates
+          .whereType<List<dynamic>>()
+          .where((pair) => pair.length >= 2 && pair[0] is num && pair[1] is num)
+          .map((pair) => Position(
+                (pair[0] as num).toDouble(),
+                (pair[1] as num).toDouble(),
+              ))
+          .toList();
+      if (positions.length < 2) throw StateError('Mapbox returned an incomplete route.');
+
+      final annotationOptions = PolylineAnnotationOptions(
+        geometry: LineString(coordinates: positions),
+        lineColor: Colors.blue.toARGB32(),
+        lineWidth: 6,
+        lineBorderColor: Colors.white.toARGB32(),
+        lineBorderWidth: 2,
+        lineJoin: LineJoin.round,
+      );
+      final existing = _routeAnnotation;
+      if (existing == null) {
+        _routeAnnotation = await routeManager.create(annotationOptions);
+      } else {
+        existing.geometry = annotationOptions.geometry;
+        await routeManager.update(existing);
+      }
+      if (!mounted) return;
+      setState(() {
+        _routeDistanceMeters = (route['distance'] as num?)?.toDouble();
+        _routeDurationSeconds = (route['duration'] as num?)?.toDouble();
+        _error = null;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Route/ETA temporarily unavailable: $error');
+      }
+    } finally {
+      _routeRequestInFlight = false;
+    }
+  }
+
+  String _formatRouteDistance() {
+    final meters = _routeDistanceMeters;
+    if (meters == null) return '—';
+    if (meters >= 1000) return '${(meters / 1000).toStringAsFixed(1)} km';
+    return '${meters.round()} m';
+  }
+
+  String _formatRouteEta() {
+    final seconds = _routeDurationSeconds;
+    if (seconds == null) return '—';
+    final minutes = (seconds / 60).ceil();
+    if (minutes < 60) return '$minutes min';
+    return '${minutes ~/ 60}h ${minutes % 60}m';
   }
 
   Future<void> _centerOnDriver() async {
@@ -459,6 +594,31 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                           if (_error != null) ...[
                             const SizedBox(height: 8),
                             Text(_error!, style: TextStyle(color: colors.error)),
+                          ],
+                          if (_environment.mapboxConfigured && _routeDistanceMeters != null) ...[
+                            const SizedBox(height: 12),
+                            Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.alt_route_rounded),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        ride['status'] == 'in_progress'
+                                            ? 'Route to destination'
+                                            : 'Route to pickup',
+                                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                    Text(_formatRouteDistance(), style: const TextStyle(fontWeight: FontWeight.w700)),
+                                    const SizedBox(width: 12),
+                                    Text(_formatRouteEta(), style: const TextStyle(fontWeight: FontWeight.w700)),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ],
                           if (driver != null) ...[
                             const SizedBox(height: 12),
