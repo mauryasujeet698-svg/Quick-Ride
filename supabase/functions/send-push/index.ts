@@ -79,7 +79,7 @@ async function googleAccessToken(account: {
   if (typeof payload.access_token !== "string") throw new Error("FCM_AUTH_FAILED");
   cachedAccessToken = payload.access_token;
   cachedAccessTokenExpiresAt = now + Number(payload.expires_in ?? 3600);
-  return cachedAccessToken;
+  return payload.access_token as string;
 }
 
 Deno.serve(async (req: Request) => {
