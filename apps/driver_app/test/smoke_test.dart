@@ -9,8 +9,17 @@ void main() {
     expect(find.text('Quick-Ride Driver'), findsOneWidget);
     expect(find.text('Driver partner'), findsOneWidget);
     expect(find.textContaining('Preview mode · Read only'), findsOneWidget);
-    expect(find.text('Ride management'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Trip navigation'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Trip navigation'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Sign in to activate driver features'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Sign in to activate driver features'), findsOneWidget);
     expect(find.text('Quick-Ride backend is not configured.'), findsNothing);
   });
