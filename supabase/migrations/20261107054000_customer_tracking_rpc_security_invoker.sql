@@ -1,34 +1,3 @@
-CREATE POLICY driver_profiles_customer_read_active_ride
-ON public.driver_profiles
-FOR SELECT
-TO authenticated
-USING (
-  EXISTS (
-    SELECT 1
-    FROM public.rides r
-    WHERE r.driver_id = driver_profiles.user_id
-      AND r.customer_id = (SELECT auth.uid())
-      AND r.status IN ('accepted', 'driver_arriving', 'arrived', 'in_progress')
-  )
-);
-
-CREATE POLICY profiles_customer_read_active_ride_driver
-ON public.profiles
-FOR SELECT
-TO authenticated
-USING (
-  EXISTS (
-    SELECT 1
-    FROM public.rides r
-    WHERE r.driver_id = profiles.id
-      AND r.customer_id = (SELECT auth.uid())
-      AND r.status IN ('accepted', 'driver_arriving', 'arrived', 'in_progress')
-  )
-);
-
-REVOKE SELECT (phone_e164, account_status, created_at, updated_at)
-ON public.profiles FROM authenticated;
-
 CREATE OR REPLACE FUNCTION public.get_customer_ride_tracking(p_ride_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
