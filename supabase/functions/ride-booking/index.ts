@@ -130,12 +130,20 @@ Deno.serve(async (req: Request) => {
     const rideId = String(body.rideId ?? "");
     const reason = typeof body.reason === "string" ? body.reason.slice(0, 250) : "customer_cancelled";
     if (!rideId) return error(400, "RIDE_REQUIRED", "rideId is required");
+    const { data: rideBefore } = await db.from("rides").select("driver_id")
+      .eq("id", rideId).eq("customer_id", user.id).maybeSingle();
     const { data, error: cancelError } = await db.rpc("customer_cancel_ride", {
       p_customer_id: user.id,
       p_ride_id: rideId,
       p_reason: reason,
     });
     if (cancelError) return error(409, "CANCELLATION_REJECTED", cancelError.message);
+    if (rideBefore?.driver_id) await notifyUsers(
+      url, serviceKey, [String(rideBefore.driver_id)], "driver",
+      "Ride cancelled by customer",
+      "The customer cancelled this Quick-Ride request.",
+      { type: "ride_cancelled", ride_id: rideId },
+    );
     return reply(200, { result: data });
   }
 
