@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 
@@ -21,6 +22,7 @@ class DriverRideNavigationScreen extends StatefulWidget {
 class _DriverRideNavigationScreenState
     extends State<DriverRideNavigationScreen> {
   final MapController _mapController = MapController();
+  final FlutterTts _tts = FlutterTts();
 
   StreamSubscription<dynamic>? _locationSubscription;
   LatLng? _currentPosition;
@@ -39,6 +41,8 @@ class _DriverRideNavigationScreenState
   bool _routeRequestInFlight = false;
   bool _arrived = false;
   bool _finishing = false;
+  bool _voiceGuidanceEnabled = true;
+  String? _lastAnnouncedInstruction;
   DateTime _lastRouteFetchedAt =
       DateTime.fromMillisecondsSinceEpoch(0);
   LatLng? _lastRouteOrigin;
@@ -111,6 +115,7 @@ class _DriverRideNavigationScreenState
           ? ride['destination_address']?.toString()
           : ride['pickup_address']?.toString();
 
+      await _initializeVoiceGuidance();
       final current = await QuickRideMaps.currentPosition();
       if (!mounted) return;
       final origin = LatLng(current.latitude, current.longitude);
@@ -143,12 +148,36 @@ class _DriverRideNavigationScreenState
     }
   }
 
+  Future<void> _initializeVoiceGuidance() async {
+    try {
+      await _tts.setLanguage('en-IN');
+      await _tts.setSpeechRate(0.48);
+      await _tts.setVolume(1.0);
+    } catch (_) {
+      _voiceGuidanceEnabled = false;
+    }
+  }
+
+  Future<void> _announceInstruction(String instruction) async {
+    if (!_voiceGuidanceEnabled ||
+        instruction == _lastAnnouncedInstruction) {
+      return;
+    }
+    _lastAnnouncedInstruction = instruction;
+    try {
+      await _tts.speak(instruction);
+    } catch (_) {
+      // Text guidance remains available when the device has no TTS engine.
+    }
+  }
+
   void _onLocation(dynamic position) {
     if (!mounted || _targetPosition == null) return;
     final next = LatLng(
       (position.latitude as num).toDouble(),
       (position.longitude as num).toDouble(),
     );
+    final previousInstruction = _instruction;
     setState(() {
       _currentPosition = next;
       _updateCurrentInstruction();
@@ -156,6 +185,9 @@ class _DriverRideNavigationScreenState
         _arrived = true;
       }
     });
+    if (_instruction != null && _instruction != previousInstruction) {
+      unawaited(_announceInstruction(_instruction!));
+    }
 
     if (_mapReady) _mapController.move(next, 16);
     final last = _lastRouteOrigin;
@@ -202,6 +234,9 @@ class _DriverRideNavigationScreenState
         _error = null;
       });
       _updateCurrentInstruction();
+      if (_instruction != null) {
+        unawaited(_announceInstruction(_instruction!));
+      }
       if (_mapReady && _routePoints.isNotEmpty) {
         _mapController.move(origin, 16);
       }
@@ -291,6 +326,26 @@ class _DriverRideNavigationScreenState
       appBar: AppBar(
         title: Text(_arrived ? 'Route destination reached' : targetLabel),
         actions: [
+          IconButton(
+            tooltip: _voiceGuidanceEnabled
+                ? 'Turn off voice guidance'
+                : 'Turn on voice guidance',
+            onPressed: () {
+              setState(() {
+                _voiceGuidanceEnabled = !_voiceGuidanceEnabled;
+              });
+              if (_voiceGuidanceEnabled && _instruction != null) {
+                unawaited(_announceInstruction(_instruction!));
+              } else {
+                unawaited(_tts.stop());
+              }
+            },
+            icon: Icon(
+              _voiceGuidanceEnabled
+                  ? Icons.volume_up_rounded
+                  : Icons.volume_off_rounded,
+            ),
+          ),
           IconButton(
             tooltip: 'Recenter navigation',
             onPressed: _centerMap,
