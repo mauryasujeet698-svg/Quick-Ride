@@ -190,6 +190,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       };
 
   Future<void> _getQuote() async {
+    if (QuickRideAuth.currentUser == null) {
+      setState(() => _error = 'Sign in with Google to request a fare estimate.');
+      await QuickRideAuth.signInWithGoogle(
+        redirectTo: 'in.quickride.customer://login-callback',
+      );
+      return;
+    }
     if (_pickup == null || _destination == null) {
       setState(() => _error = 'Select both pickup and destination on the map.');
       return;
