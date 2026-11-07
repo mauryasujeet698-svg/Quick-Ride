@@ -482,6 +482,70 @@ Deno.serve(async (req: Request) => {
       return response(200, { service_pincode: data });
     }
 
+    if (action === "list_safety_events") {
+      const { data, error } = await admin.from("ride_safety_events")
+        .select("id,ride_id,actor_user_id,event_type,location,details,created_at,rides(id,status,pickup_address,destination_address)")
+        .in("event_type", ["sos_triggered", "incident_reported"])
+        .order("created_at", { ascending: false }).limit(200);
+      if (error) return fail(500, "Unable to load ride safety events");
+      const events = data ?? [];
+      const eventIds = events.map((item) => String(item.id));
+      const { data: resolutions, error: resolutionError } = eventIds.length
+        ? await admin.from("ride_safety_events")
+            .select("details")
+            .eq("event_type", "safety_resolved")
+            .in("ride_id", [...new Set(events.map((item) => String(item.ride_id)))])
+        : { data: [], error: null };
+      if (resolutionError) return fail(500, "Unable to load safety-event review status");
+      const resolvedIds = new Set((resolutions ?? [])
+        .map((item) => String((item.details as Record<string, unknown> | null)?.resolved_event_id ?? ""))
+        .filter(Boolean));
+      const actorIds = [...new Set(events.map((item) => String(item.actor_user_id)))];
+      const { data: profiles, error: profileError } = actorIds.length
+        ? await admin.from("profiles").select("id,full_name").in("id", actorIds)
+        : { data: [], error: null };
+      if (profileError) return fail(500, "Unable to load safety-event actor details");
+      const names = new Map((profiles ?? []).map((profile) => [String(profile.id), profile.full_name]));
+      const unresolved = events
+        .filter((item) => !resolvedIds.has(String(item.id)))
+        .map((item) => ({
+          ...item,
+          actor_name: names.get(String(item.actor_user_id)) ?? "Quick-Ride user",
+        }));
+      return response(200, { safety_events: unresolved });
+    }
+
+    if (action === "resolve_safety_event") {
+      const eventId = String(body.eventId ?? "");
+      const note = typeof body.note === "string" ? body.note.trim().slice(0, 1000) : null;
+      if (!eventId) return fail(400, "eventId is required");
+      const { data: original, error: originalError } = await admin.from("ride_safety_events")
+        .select("id,ride_id,actor_user_id,event_type,created_at")
+        .eq("id", eventId).maybeSingle();
+      if (originalError || !original) return fail(404, "Safety event not found");
+      if (!["sos_triggered", "incident_reported"].includes(String(original.event_type))) {
+        return fail(409, "This event type cannot be resolved from the operations queue");
+      }
+      const { data: existingResolution, error: existingError } = await admin.from("ride_safety_events")
+        .select("id").eq("ride_id", original.ride_id).eq("event_type", "safety_resolved")
+        .contains("details", { resolved_event_id: eventId }).limit(1).maybeSingle();
+      if (existingError) return fail(500, "Unable to verify safety-event review status");
+      if (existingResolution) return response(200, { already_resolved: true });
+      const { data, error } = await admin.from("ride_safety_events").insert({
+        ride_id: original.ride_id,
+        actor_user_id: user.id,
+        event_type: "safety_resolved",
+        details: {
+          resolved_event_id: eventId,
+          review_note: note,
+          reviewed_at: new Date().toISOString(),
+        },
+      }).select("id,ride_id,event_type,created_at,details").single();
+      if (error) return fail(500, "Unable to record safety-event resolution");
+      await audit("safety_event.reviewed", "ride_safety_events", eventId, original, data);
+      return response(201, { resolution: data });
+    }
+
     if (action === "list_support_tickets") {
       const requestedStatus = typeof body.status === "string" ? body.status : "active";
       let request = admin.from("ride_support_tickets")
