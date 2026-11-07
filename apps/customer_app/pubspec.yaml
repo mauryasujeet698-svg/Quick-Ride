@@ -9,8 +9,6 @@ dependencies:
     sdk: flutter
   flutter_riverpod: ^3.5.0
   go_router: ^18.1.3
-  http: ^1.4.0
-  mapbox_maps_flutter: ^3.34.2
   supabase_flutter: ^2.18.3
   url_launcher: ^6.3.3
   share_plus: ^13.3.1
