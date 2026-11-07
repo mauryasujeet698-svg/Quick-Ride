@@ -1,17 +1,14 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
-import 'package:http/http.dart' as http;
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
-import 'package:quick_ride_core/quick_ride_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:quick_ride_maps/quick_ride_maps.dart';
 
 class CustomerRideTrackingScreen extends StatefulWidget {
   const CustomerRideTrackingScreen({super.key, required this.rideId});
@@ -23,15 +20,9 @@ class CustomerRideTrackingScreen extends StatefulWidget {
 }
 
 class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen> {
-  final _environment = QuickRideEnvironment.fromBuildDefines();
-
-  MapboxMap? _map;
-  CircleAnnotationManager? _circleManager;
-  PolylineAnnotationManager? _routeManager;
-  PolylineAnnotation? _routeAnnotation;
-  CircleAnnotation? _pickupAnnotation;
-  CircleAnnotation? _destinationAnnotation;
-  CircleAnnotation? _driverAnnotation;
+  final MapController _mapController = MapController();
+  bool _mapReady = false;
+  List<LatLng> _routePoints = [];
   RealtimeChannel? _rideChangesChannel;
   RealtimeChannel? _driverLocationChannel;
   String? _subscribedDriverId;
@@ -43,7 +34,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
   bool _routeRequestInFlight = false;
   DateTime _lastRouteFetchedAt = DateTime.fromMillisecondsSinceEpoch(0);
   String? _lastRouteStatus;
-  Position? _lastRouteOrigin;
+  LatLng? _lastRouteOrigin;
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
   String? _error;
@@ -223,41 +214,18 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     };
   }
 
-  Position? _position(dynamic value) {
+  LatLng? _position(dynamic value) {
     final point = _asPoint(value);
     if (point == null) return null;
-    return Position(
-      point['longitude'] as double,
+    return LatLng(
       point['latitude'] as double,
+      point['longitude'] as double,
     );
   }
 
-  Future<void> _onMapCreated(MapboxMap map) async {
-    _map = map;
-    try {
-      _circleManager = await map.annotations.createCircleAnnotationManager();
-      _routeManager = await map.annotations.createPolylineAnnotationManager();
-      await _syncMap();
-    } catch (error) {
-      if (mounted) setState(() => _error = 'The tracking map could not be initialized: ' + error.toString());
-    }
-  }
-
-  Future<CircleAnnotation> _upsertCircle(
-    CircleAnnotation? existing,
-    CircleAnnotationOptions options,
-  ) async {
-    final manager = _circleManager!;
-    if (existing == null) return manager.create(options);
-    existing.geometry = options.geometry;
-    await manager.update(existing);
-    return existing;
-  }
-
   Future<void> _syncMap() async {
-    final manager = _circleManager;
     final tracking = _tracking;
-    if (manager == null || tracking == null) return;
+    if (tracking == null) return;
 
     final ride = Map<String, dynamic>.from(tracking['ride'] as Map);
     final driver = tracking['driver'] is Map
@@ -265,69 +233,32 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
         : null;
     final pickup = _position(ride['pickup']);
     final destination = _position(ride['destination']);
-    final driverLocation = driver == null ? null : _position(driver['location']);
+    final driverLocation = driver == null
+        ? null
+        : _position(driver['location']);
 
-    if (pickup != null) {
-      _pickupAnnotation = await _upsertCircle(
-        _pickupAnnotation,
-        CircleAnnotationOptions(
-          geometry: Point(coordinates: pickup),
-          circleColor: Colors.green.toARGB32(),
-          circleRadius: 9,
-          circleStrokeColor: Colors.white.toARGB32(),
-          circleStrokeWidth: 2,
-        ),
-      );
-    }
-    if (destination != null) {
-      _destinationAnnotation = await _upsertCircle(
-        _destinationAnnotation,
-        CircleAnnotationOptions(
-          geometry: Point(coordinates: destination),
-          circleColor: Colors.red.toARGB32(),
-          circleRadius: 9,
-          circleStrokeColor: Colors.white.toARGB32(),
-          circleStrokeWidth: 2,
-        ),
-      );
-    }
-    if (driverLocation != null) {
-      _driverAnnotation = await _upsertCircle(
-        _driverAnnotation,
-        CircleAnnotationOptions(
-          geometry: Point(coordinates: driverLocation),
-          circleColor: Colors.blue.toARGB32(),
-          circleRadius: 11,
-          circleStrokeColor: Colors.white.toARGB32(),
-          circleStrokeWidth: 3,
-        ),
-      );
-    } else if (_driverAnnotation != null) {
-      await manager.delete(_driverAnnotation!);
-      _driverAnnotation = null;
-    }
+    unawaited(_refreshRouteIfNeeded(
+      ride,
+      pickup,
+      destination,
+      driverLocation,
+    ));
 
-    unawaited(_refreshRouteIfNeeded(ride, pickup, destination, driverLocation));
-
-    if (!_cameraInitialized) {
+    if (!_cameraInitialized && _mapReady) {
       final center = driverLocation ?? pickup ?? destination;
       if (center != null) {
-        await _map?.setCamera(CameraOptions(
-          center: Point(coordinates: center),
-          zoom: 14,
-        ));
+        _mapController.move(center, 14);
         _cameraInitialized = true;
       }
     }
   }
 
-
-  double _distanceMeters(Position a, Position b) {
+  double _distanceMeters(LatLng a, LatLng b) {
     const earthRadius = 6371000.0;
-    final lat1 = a.lat * 0.017453292519943295;
-    final lat2 = b.lat * 0.017453292519943295;
-    final dLat = (b.lat - a.lat) * 0.017453292519943295;
-    final dLng = (b.lng - a.lng) * 0.017453292519943295;
+    final lat1 = a.latitude * 0.017453292519943295;
+    final lat2 = b.latitude * 0.017453292519943295;
+    final dLat = (b.latitude - a.latitude) * 0.017453292519943295;
+    final dLng = (b.longitude - a.longitude) * 0.017453292519943295;
     final sinLat = (dLat / 2).abs();
     final sinLng = (dLng / 2).abs();
     final haversine = sinLat * sinLat +
@@ -338,94 +269,56 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
 
   Future<void> _refreshRouteIfNeeded(
     Map<String, dynamic> ride,
-    Position? pickup,
-    Position? destination,
-    Position? driverLocation,
+    LatLng? pickup,
+    LatLng? destination,
+    LatLng? driverLocation,
   ) async {
-    final routeManager = _routeManager;
-    if (routeManager == null || _routeRequestInFlight || pickup == null || destination == null) {
+    if (_routeRequestInFlight || pickup == null || destination == null) {
       return;
     }
     final status = ride['status']?.toString() ?? '';
-    // Only show a driver route after a driver is actually assigned and their
-    // live location is available. Before assignment, the customer sees the
-    // pickup and destination pins without a misleading driver route.
     if (driverLocation == null ||
-        !const {'accepted', 'driver_arriving', 'arrived', 'in_progress'}.contains(status)) {
-      final existing = _routeAnnotation;
-      if (existing != null) {
-        await routeManager.delete(existing);
-        _routeAnnotation = null;
+        !const {'accepted', 'driver_arriving', 'arrived', 'in_progress'}
+            .contains(status)) {
+      if (_routePoints.isNotEmpty ||
+          _routeDistanceMeters != null ||
+          _routeDurationSeconds != null) {
+        if (mounted) {
+          setState(() {
+            _routePoints = [];
+            _routeDistanceMeters = null;
+            _routeDurationSeconds = null;
+          });
+        }
       }
       return;
     }
+
     final origin = driverLocation;
     final target = status == 'in_progress' ? destination : pickup;
     final now = DateTime.now();
     final statusChanged = status != _lastRouteStatus;
     final originMoved = _lastRouteOrigin == null ||
         _distanceMeters(_lastRouteOrigin!, origin) >= 150;
-    final intervalElapsed = now.difference(_lastRouteFetchedAt) >= const Duration(seconds: 30);
+    final intervalElapsed =
+        now.difference(_lastRouteFetchedAt) >= const Duration(seconds: 30);
     if (!statusChanged && !originMoved && !intervalElapsed) return;
 
-    final token = _environment.mapboxPublicToken;
-    if (!token.startsWith('pk.')) return;
     _routeRequestInFlight = true;
     _lastRouteFetchedAt = now;
     _lastRouteStatus = status;
     _lastRouteOrigin = origin;
 
     try {
-      final coordinates = '${origin.lng},${origin.lat};${target.lng},${target.lat}';
-      final uri = Uri.https(
-        'api.mapbox.com',
-        '/directions/v5/mapbox/driving/$coordinates',
-        {
-          'access_token': token,
-          'overview': 'full',
-          'geometries': 'geojson',
-          'steps': 'false',
-          'alternatives': 'false',
-        },
+      final route = await QuickRideMaps.drivingRoute(
+        origin: origin,
+        destination: target,
       );
-      final response = await http.get(uri).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) {
-        throw StateError('Mapbox route service returned ${response.statusCode}.');
-      }
-      final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      final routes = payload['routes'] as List<dynamic>? ?? [];
-      if (routes.isEmpty) throw StateError('No route is available for this ride.');
-      final route = Map<String, dynamic>.from(routes.first as Map);
-      final geometry = Map<String, dynamic>.from(route['geometry'] as Map);
-      final rawCoordinates = geometry['coordinates'] as List<dynamic>? ?? [];
-      final positions = rawCoordinates
-          .whereType<List<dynamic>>()
-          .where((pair) => pair.length >= 2 && pair[0] is num && pair[1] is num)
-          .map((pair) => Position(
-                (pair[0] as num).toDouble(),
-                (pair[1] as num).toDouble(),
-              ))
-          .toList();
-      if (positions.length < 2) throw StateError('Mapbox returned an incomplete route.');
-
-      final annotationOptions = PolylineAnnotationOptions(
-        geometry: LineString(coordinates: positions),
-        lineColor: Colors.blue.toARGB32(),
-        lineWidth: 6,
-        lineBorderColor: Colors.white.toARGB32(),
-        lineBorderWidth: 2,
-      );
-      final existing = _routeAnnotation;
-      if (existing == null) {
-        _routeAnnotation = await routeManager.create(annotationOptions);
-      } else {
-        existing.geometry = annotationOptions.geometry;
-        await routeManager.update(existing);
-      }
       if (!mounted) return;
       setState(() {
-        _routeDistanceMeters = (route['distance'] as num?)?.toDouble();
-        _routeDurationSeconds = (route['duration'] as num?)?.toDouble();
+        _routePoints = route.points;
+        _routeDistanceMeters = route.distanceMeters;
+        _routeDurationSeconds = route.durationSeconds;
         _error = null;
       });
     } catch (error) {
@@ -612,10 +505,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
         _position(_ride?['pickup']) ??
         _position(_ride?['destination']);
     if (point == null) return;
-    await _map?.flyTo(
-      CameraOptions(center: Point(coordinates: point), zoom: 15),
-      MapAnimationOptions(duration: 700),
-    );
+    if (_mapReady) _mapController.move(point, 15);
   }
 
   String _statusLabel(String status) =>
@@ -653,73 +543,113 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                 )
               : Column(
                   children: [
-                    if (_environment.mapboxConfigured)
-                      SizedBox(
-                        height: 290,
-                        child: Stack(
-                          children: [
-                            MapWidget(
-                              key: ValueKey('ride-tracking-' + widget.rideId),
-                              viewport: CameraViewportState(
-                                center: Point(coordinates: Position(78.9629, 20.5937)),
-                                zoom: 4.5,
-                              ),
-                              onMapCreated: _onMapCreated,
+                    SizedBox(
+                      height: 290,
+                      child: Stack(
+                        children: [
+                          FlutterMap(
+                            key: ValueKey('ride-tracking-' + widget.rideId),
+                            mapController: _mapController,
+                            options: MapOptions(
+                              initialCenter: const LatLng(20.5937, 78.9629),
+                              initialZoom: 4.5,
+                              onMapReady: () {
+                                _mapReady = true;
+                                unawaited(_syncMap());
+                              },
                             ),
-                            Positioned(
-                              right: 14,
-                              bottom: 14,
-                              child: FloatingActionButton.small(
-                                heroTag: 'center-ride-map',
-                                onPressed: _centerOnDriver,
-                                child: const Icon(Icons.my_location),
-                              ),
-                            ),
-                            const Positioned(
-                              left: 14,
-                              top: 14,
-                              child: Chip(
-                                avatar: Icon(Icons.circle, color: Colors.green, size: 11),
-                                label: Text('Pickup'),
-                                backgroundColor: Colors.white,
-                              ),
-                            ),
-                            const Positioned(
-                              left: 105,
-                              top: 14,
-                              child: Chip(
-                                avatar: Icon(Icons.circle, color: Colors.red, size: 11),
-                                label: Text('Destination'),
-                                backgroundColor: Colors.white,
-                              ),
-                            ),
-                            if (driver != null && location != null)
-                              const Positioned(
-                                right: 14,
-                                top: 14,
-                                child: Chip(
-                                  avatar: Icon(Icons.circle, color: Colors.blue, size: 11),
-                                  label: Text('Driver'),
-                                  backgroundColor: Colors.white,
+                            children: [
+                              QuickRideMaps.openStreetMapLayer(),
+                              if (_routePoints.length >= 2)
+                                PolylineLayer(
+                                  polylines: [
+                                    Polyline(
+                                      points: _routePoints,
+                                      strokeWidth: 6,
+                                      color: Colors.blue,
+                                    ),
+                                  ],
                                 ),
+                              MarkerLayer(
+                                markers: [
+                                  if (_position(ride['pickup']) case final p?)
+                                    Marker(
+                                      point: p,
+                                      width: 36,
+                                      height: 40,
+                                      child: const Icon(
+                                        Icons.location_on,
+                                        color: Colors.green,
+                                        size: 36,
+                                      ),
+                                    ),
+                                  if (_position(ride['destination']) case final p?)
+                                    Marker(
+                                      point: p,
+                                      width: 36,
+                                      height: 40,
+                                      child: const Icon(
+                                        Icons.location_on,
+                                        color: Colors.red,
+                                        size: 36,
+                                      ),
+                                    ),
+                                  if (_position(location) case final p?)
+                                    Marker(
+                                      point: p,
+                                      width: 42,
+                                      height: 42,
+                                      child: const Icon(
+                                        Icons.directions_car_filled,
+                                        color: Colors.blue,
+                                        size: 32,
+                                      ),
+                                    ),
+                                ],
                               ),
-                          ],
-                        ),
-                      )
-                    else
-                      Container(
-                        width: double.infinity,
-                        height: 150,
-                        color: colors.surfaceContainerLow,
-                        alignment: Alignment.center,
-                        child: const Padding(
-                          padding: EdgeInsets.all(18),
-                          child: Text(
-                            'Add the Mapbox public token to enable the live tracking map. Ride status and driver details remain available below.',
-                            textAlign: TextAlign.center,
+                              QuickRideMaps.attributionControl(),
+                            ],
                           ),
-                        ),
+                          Positioned(
+                            right: 14,
+                            bottom: 14,
+                            child: FloatingActionButton.small(
+                              heroTag: 'center-ride-map',
+                              onPressed: _centerOnDriver,
+                              child: const Icon(Icons.my_location),
+                            ),
+                          ),
+                          const Positioned(
+                            left: 14,
+                            top: 14,
+                            child: Chip(
+                              avatar: Icon(Icons.circle, color: Colors.green, size: 11),
+                              label: Text('Pickup'),
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                          const Positioned(
+                            left: 105,
+                            top: 14,
+                            child: Chip(
+                              avatar: Icon(Icons.circle, color: Colors.red, size: 11),
+                              label: Text('Destination'),
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                          if (driver != null && location != null)
+                            const Positioned(
+                              right: 14,
+                              top: 14,
+                              child: Chip(
+                                avatar: Icon(Icons.circle, color: Colors.blue, size: 11),
+                                label: Text('Driver'),
+                                backgroundColor: Colors.white,
+                              ),
+                            ),
+                        ],
                       ),
+                    ),
                     Expanded(
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
@@ -764,7 +694,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                             const SizedBox(height: 8),
                             Text(_error!, style: TextStyle(color: colors.error)),
                           ],
-                          if (_environment.mapboxConfigured && _routeDistanceMeters != null) ...[
+                          if (_routeDistanceMeters != null) ...[
                             const SizedBox(height: 12),
                             Card(
                               child: Padding(
