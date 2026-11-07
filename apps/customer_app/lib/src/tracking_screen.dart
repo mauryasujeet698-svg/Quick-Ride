@@ -303,7 +303,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
       _driverAnnotation = null;
     }
 
-    unawaited(_refreshRouteIfNeeded(ride, driver, pickup, destination, driverLocation));
+    unawaited(_refreshRouteIfNeeded(ride, pickup, destination, driverLocation));
 
     if (!_cameraInitialized) {
       final center = driverLocation ?? pickup ?? destination;
@@ -327,14 +327,13 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     final sinLat = (dLat / 2).abs();
     final sinLng = (dLng / 2).abs();
     final haversine = sinLat * sinLat +
-        (lat1.cos() * lat2.cos() * sinLng * sinLng);
+        (math.cos(lat1) * math.cos(lat2) * sinLng * sinLng);
     final clamped = haversine.clamp(0.0, 1.0);
     return earthRadius * 2 * math.asin(math.sqrt(clamped));
   }
 
   Future<void> _refreshRouteIfNeeded(
     Map<String, dynamic> ride,
-    Map<String, dynamic>? driver,
     Position? pickup,
     Position? destination,
     Position? driverLocation,
