@@ -1451,6 +1451,7 @@ export type Database = {
         Args: { p_driver_id: string; p_ride_id: string }
         Returns: Json
       }
+      get_customer_ride_tracking: { Args: { p_ride_id: string }; Returns: Json }
       get_driver_ride_completion_context: {
         Args: { p_driver_id: string; p_ride_id: string }
         Returns: Json
