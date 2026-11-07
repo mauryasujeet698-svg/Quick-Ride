@@ -257,9 +257,9 @@ class _DriverRideNavigationScreenState
 
     var index = _currentStepIndex.clamp(0, _steps.length - 1);
     while (index < _steps.length - 1) {
-      final stepPoint = _steps[index].location;
-      if (stepPoint == null ||
-          _distanceMeters(current, stepPoint) <= 35) {
+      final nextStepPoint = _steps[index + 1].location;
+      if (nextStepPoint != null &&
+          _distanceMeters(current, nextStepPoint) <= 60) {
         index++;
       } else {
         break;
