@@ -44,7 +44,7 @@ Deployed Supabase Edge Functions:
 - `driver-ride-actions` (v5, JWT verified)
 - `ride-share` (v1, JWT disabled; every request must present a valid high-entropy share token)
 
-Critical booking, fare, driver eligibility, dispatch acceptance and trip transitions are server-authoritative. The ride-share endpoint validates the token hash, expiration and revocation state before returning its restricted live-trip snapshot. Function source is in `supabase/functions`; database migrations are in `supabase/migrations`.
+Critical booking, fare, driver eligibility, dispatch acceptance and trip transitions are server-authoritative. The ride-share endpoint validates the token hash, expiration and revocation state before returning its restricted live-trip snapshot. The `send-push` endpoint requires the Supabase service-role bearer token and sends Firebase Cloud Messaging notifications to authenticated devices. Function source is in `supabase/functions`; database migrations are in `supabase/migrations`.
 
 The app can record an SOS event and open the Indian 112 emergency dialer, but Quick-Ride does not directly alert emergency responders. The Operations safety queue refreshes only while the screen is open; FCM-based safety alerts are not yet implemented.
 
