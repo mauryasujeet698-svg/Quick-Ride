@@ -236,10 +236,47 @@ Deno.serve(async (req: Request) => {
 
     if (action === "list_driver_applications") {
       const { data, error } = await admin.from("driver_profiles")
-        .select("user_id,verification_status,availability_status,vehicle_category_id,vehicle_registration,vehicle_make,vehicle_model,vehicle_color,created_at,updated_at,vehicle_categories(id,code,name),driver_documents(id,document_type,verification_status,expires_at,created_at),driver_service_pincodes(id,pincode_id,status,is_primary,requested_at,service_area_pincodes(pincode,label))")
+        .select("user_id,verification_status,availability_status,vehicle_category_id,vehicle_registration,vehicle_make,vehicle_model,vehicle_color,created_at,updated_at,vehicle_categories(id,code,name),driver_documents(id,document_type,verification_status,document_number_last4,issued_at,expires_at,review_note,reviewed_at,created_at,storage_bucket,object_path),driver_service_pincodes(id,pincode_id,status,is_primary,requested_at,service_area_pincodes(pincode,label))")
         .order("created_at", { ascending: false });
       if (error) return fail(500, "Unable to load driver applications");
-      return response(200, { applications: data ?? [] });
+      const applications = await Promise.all((data ?? []).map(async (item) => {
+        const documents = await Promise.all((item.driver_documents ?? []).map(async (document) => {
+          const { data: signed, error: signedError } = await admin.storage
+            .from(String(document.storage_bucket ?? "driver-documents"))
+            .createSignedUrl(String(document.object_path), 600);
+          return { ...document, signed_url: signedError ? null : signed?.signedUrl ?? null };
+        }));
+        return { ...item, driver_documents: documents };
+      }));
+      return response(200, { applications });
+    }
+
+    if (action === "review_driver_document") {
+      const documentId = String(body.documentId ?? "");
+      const decision = body.decision;
+      const note = typeof body.note === "string" ? body.note.trim().slice(0, 1000) : null;
+      if (!documentId || !["approved", "rejected"].includes(String(decision))) {
+        return fail(400, "documentId and an approved/rejected decision are required");
+      }
+      const { data: before, error: beforeError } = await admin.from("driver_documents")
+        .select("id,driver_id,document_type,verification_status,expires_at")
+        .eq("id", documentId)
+        .maybeSingle();
+      if (beforeError || !before) return fail(404, "Driver document not found");
+      if (decision === "approved" && before.expires_at && Date.parse(String(before.expires_at)) < Date.now()) {
+        return fail(409, "An expired document cannot be approved");
+      }
+      const { data, error } = await admin.from("driver_documents").update({
+        verification_status: decision,
+        reviewed_by: user.id,
+        reviewed_at: new Date().toISOString(),
+        review_note: note,
+      }).eq("id", documentId)
+        .select("id,driver_id,document_type,verification_status,reviewed_by,reviewed_at,review_note")
+        .single();
+      if (error) return fail(400, "Unable to review driver document");
+      await audit("driver_document." + decision, "driver_documents", documentId, before, data);
+      return response(200, { document: data });
     }
 
     if (action === "review_driver_application") {
@@ -255,6 +292,21 @@ Deno.serve(async (req: Request) => {
       if (!before) return fail(404, "Driver application not found");
       if (before.verification_status === "approved" && decision === "rejected") {
         return fail(409, "Use the driver suspension process for an already-approved driver");
+      }
+      if (decision === "approved") {
+        const { data: documents, error: documentsError } = await admin.from("driver_documents")
+          .select("document_type,verification_status,expires_at")
+          .eq("driver_id", driverId);
+        if (documentsError) return fail(500, "Unable to verify required driver documents");
+        const requiredTypes = ["driving_license", "vehicle_rc", "insurance"];
+        const missingTypes = requiredTypes.filter((type) => !(documents ?? []).some((document) =>
+          document.document_type === type &&
+          document.verification_status === "approved" &&
+          (!document.expires_at || Date.parse(String(document.expires_at)) >= Date.now())
+        ));
+        if (missingTypes.length) {
+          return fail(409, "Approve the driver's driving license, vehicle RC and insurance before approving this driver. Missing or unapproved: " + missingTypes.join(", "));
+        }
       }
       const { data, error } = await admin.from("driver_profiles").update({
         verification_status: decision,

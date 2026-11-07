@@ -79,6 +79,66 @@ Deno.serve(async (req: Request) => {
     return respond(201, { driver_application: data, next_step: "request_service_pincode" });
   }
 
+  if (action === "list_documents") {
+    if (!driver) return fail(409, "DRIVER_PROFILE_REQUIRED", "Submit a driver application first");
+    const { data, error } = await db.from("driver_documents")
+      .select("id,document_type,verification_status,document_number_last4,issued_at,expires_at,review_note,reviewed_at,created_at")
+      .eq("driver_id", user.id)
+      .order("created_at", { ascending: false });
+    if (error) return fail(500, "DOCUMENT_LIST_FAILED", "Unable to load your uploaded documents");
+    return respond(200, { documents: data ?? [] });
+  }
+
+  if (action === "register_document") {
+    if (!driver || !["pending", "under_review"].includes(String(driver.verification_status))) {
+      return fail(409, "DRIVER_PROFILE_REQUIRED", "A pending driver application is required to upload documents");
+    }
+    const documentType = String(body.documentType ?? "");
+    const allowedTypes = new Set([
+      "driving_license", "vehicle_rc", "insurance", "permit",
+      "identity", "address_proof", "profile_photo", "other",
+    ]);
+    const objectPath = typeof body.objectPath === "string" ? body.objectPath : "";
+    const contentType = String(body.contentType ?? "");
+    const byteSize = Number(body.byteSize);
+    const last4 = typeof body.documentNumberLast4 === "string" ? body.documentNumberLast4.trim() : "";
+    const issuedAt = typeof body.issuedAt === "string" ? body.issuedAt.slice(0, 10) : null;
+    const expiresAt = typeof body.expiresAt === "string" ? body.expiresAt.slice(0, 10) : null;
+    const pathParts = objectPath.split("/");
+    if (!allowedTypes.has(documentType)) return fail(400, "INVALID_DOCUMENT_TYPE", "Choose a supported driver document type");
+    if (pathParts.length !== 3 || pathParts[0] !== user.id || pathParts[1] !== documentType ||
+        !/^[A-Za-z0-9._-]{1,140}$/.test(pathParts[2])) {
+      return fail(400, "INVALID_OBJECT_PATH", "The uploaded document path is invalid");
+    }
+    if (!["application/pdf", "image/jpeg", "image/png"].includes(contentType) ||
+        !Number.isInteger(byteSize) || byteSize < 1 || byteSize > 5 * 1024 * 1024) {
+      return fail(400, "INVALID_DOCUMENT_FILE", "Documents must be PDF, JPG or PNG and no larger than 5 MB");
+    }
+    if (last4 && !/^\d{4}$/.test(last4)) return fail(400, "INVALID_DOCUMENT_NUMBER", "Only the final four document-number digits may be saved");
+    if ((issuedAt && !/^\d{4}-\d{2}-\d{2}$/.test(issuedAt)) ||
+        (expiresAt && !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt))) {
+      return fail(400, "INVALID_DOCUMENT_DATE", "Document dates must use YYYY-MM-DD");
+    }
+    const { data: signedFile, error: fileError } = await db.storage
+      .from("driver-documents")
+      .createSignedUrl(objectPath, 60);
+    if (fileError || !signedFile?.signedUrl) {
+      return fail(400, "DOCUMENT_OBJECT_NOT_FOUND", "The uploaded file could not be verified in private storage");
+    }
+    const { data, error } = await db.from("driver_documents").insert({
+      driver_id: user.id,
+      document_type: documentType,
+      storage_bucket: "driver-documents",
+      object_path: objectPath,
+      document_number_last4: last4 || null,
+      issued_at: issuedAt,
+      expires_at: expiresAt,
+      verification_status: "pending",
+    }).select("id,document_type,verification_status,created_at").single();
+    if (error) return fail(400, "DOCUMENT_REGISTER_FAILED", error.message);
+    return respond(201, { document: data });
+  }
+
   if (action === "request_service_pincode") {
     if (!driver) return fail(409, "DRIVER_PROFILE_REQUIRED", "Submit a driver application first");
     const pincode = body.pincode;
