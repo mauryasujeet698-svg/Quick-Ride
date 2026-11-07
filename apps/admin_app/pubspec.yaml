@@ -10,6 +10,8 @@ dependencies:
   flutter_riverpod: ^3.5.0
   go_router: ^18.1.3
   url_launcher: ^6.3.3
+  quick_ride_notifications:
+    path: ../../packages/quick_ride_notifications
   quick_ride_auth:
     path: ../../packages/quick_ride_auth
   quick_ride_backend:
