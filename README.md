@@ -31,7 +31,7 @@ Flutter, feature-first Clean Architecture, Riverpod, go_router, Supabase Auth/Po
 - Active service configuration can be read without login.
 - Driver location access is limited to the driver and customers with an active assigned ride.
 
-## Next milestones
+See [Google Sign-In Setup](docs/GOOGLE_AUTH_SETUP.md) for the OAuth configuration that must be completed in the owner accounts. Database migrations are stored under supabase/migrations and are aligned to the remote Supabase migration versions.\n\n## Next milestones
 1. Confirm pilot city, vehicle categories, fare policy, cancellation rules, driver commercial model and payment/settlement responsibilities.
 2. Configure Google OAuth in Google Cloud and Supabase Auth.
 3. Build customer and driver Flutter apps with guest browsing.
