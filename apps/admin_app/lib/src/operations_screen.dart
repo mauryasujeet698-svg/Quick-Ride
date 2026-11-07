@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AdminOperationsScreen extends StatefulWidget {
   const AdminOperationsScreen({super.key});
@@ -104,6 +105,38 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
     }
   }
 
+  Future<void> _reviewDocument(String id, String decision) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _call('review_driver_document', {
+        'documentId': id,
+        'decision': decision,
+      });
+      await _refresh();
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openDocument(String? url) async {
+    if (url == null || url.isEmpty) {
+      if (mounted) setState(() => _error = 'A document preview link is not available.');
+      return;
+    }
+    final opened = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      setState(() => _error = 'The document preview could not be opened.');
+    }
+  }
+
   Widget _metric(String label, Object? value, IconData icon) => Card(
         child: ListTile(
           leading: Icon(icon),
@@ -192,12 +225,60 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
                     title: Text('Driver ' + shortId),
                     subtitle: Text(vehicle),
                     children: [
+                      if (docs.isEmpty)
+                        const ListTile(
+                          dense: true,
+                          leading: Icon(Icons.warning_amber_rounded),
+                          title: Text('No verification documents uploaded yet.'),
+                        ),
                       ...docs.map((document) {
                         final doc = Map<String, dynamic>.from(document as Map);
-                        return ListTile(
-                          dense: true,
-                          title: Text(doc['document_type'].toString()),
-                          trailing: Text(doc['verification_status'].toString()),
+                        final documentId = doc['id'].toString();
+                        final status = doc['verification_status'].toString();
+                        final signedUrl = doc['signed_url']?.toString();
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      doc['document_type'].toString().replaceAll('_', ' '),
+                                      style: const TextStyle(fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                  Chip(label: Text(status.replaceAll('_', ' '))),
+                                ],
+                              ),
+                              if (doc['expires_at'] != null)
+                                Text('Expires: ' + doc['expires_at'].toString()),
+                              if (doc['review_note'] != null && doc['review_note'].toString().isNotEmpty)
+                                Text('Review note: ' + doc['review_note'].toString()),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  TextButton.icon(
+                                    onPressed: signedUrl == null ? null : () => _openDocument(signedUrl),
+                                    icon: const Icon(Icons.open_in_new, size: 18),
+                                    label: const Text('View document'),
+                                  ),
+                                  if (status == 'pending' || status == 'under_review') ...[
+                                    OutlinedButton(
+                                      onPressed: _busy ? null : () => _reviewDocument(documentId, 'rejected'),
+                                      child: const Text('Reject document'),
+                                    ),
+                                    FilledButton.tonal(
+                                      onPressed: _busy ? null : () => _reviewDocument(documentId, 'approved'),
+                                      child: const Text('Approve document'),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const Divider(height: 12),
+                            ],
+                          ),
                         );
                       }),
                       ...pinRequests.map((request) {
@@ -209,17 +290,40 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
                           subtitle: Text('Service area request: ' + req['status'].toString()),
                         );
                       }),
-                      OverflowBar(
-                        children: [
-                          TextButton(
-                            onPressed: _busy ? null : () => _reviewDriver(id, 'rejected'),
-                            child: const Text('Reject'),
-                          ),
-                          FilledButton(
-                            onPressed: _busy ? null : () => _reviewDriver(id, 'approved'),
-                            child: const Text('Approve'),
-                          ),
-                        ],
+                      Builder(
+                        builder: (context) {
+                          const requiredTypes = ['driving_license', 'vehicle_rc', 'insurance'];
+                          final approvedTypes = docs
+                              .map((document) => Map<String, dynamic>.from(document as Map))
+                              .where((document) => document['verification_status'] == 'approved' &&
+                                  (document['expires_at'] == null ||
+                                      DateTime.tryParse(document['expires_at'].toString())?.isAfter(DateTime.now()) == true))
+                              .map((document) => document['document_type'].toString())
+                              .toSet();
+                          final readyForApproval = requiredTypes.every(approvedTypes.contains);
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (!readyForApproval)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 16),
+                                  child: Text('Approve the driving licence, vehicle RC and insurance before approving this driver.'),
+                                ),
+                              OverflowBar(
+                                children: [
+                                  TextButton(
+                                    onPressed: _busy ? null : () => _reviewDriver(id, 'rejected'),
+                                    child: const Text('Reject application'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: _busy || !readyForApproval ? null : () => _reviewDriver(id, 'approved'),
+                                    child: const Text('Approve driver'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),
