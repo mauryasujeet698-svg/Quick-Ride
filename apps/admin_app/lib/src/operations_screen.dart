@@ -16,6 +16,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
   Map<String, dynamic>? _summary;
   List<Map<String, dynamic>> _drivers = [];
   List<Map<String, dynamic>> _pincodeRequests = [];
+  List<Map<String, dynamic>> _supportTickets = [];
   bool _busy = false;
   String? _error;
   StreamSubscription<dynamic>? _authSubscription;
@@ -35,6 +36,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
             _summary = null;
             _drivers = [];
             _pincodeRequests = [];
+            _supportTickets = [];
           });
         }
       });
@@ -71,6 +73,9 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
             .where((item) => item['verification_status'] == 'pending')
             .toList();
         _pincodeRequests = (results[2]['requests'] as List<dynamic>? ?? [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+        _supportTickets = (results[3]['tickets'] as List<dynamic>? ?? [])
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
       });
@@ -114,6 +119,21 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
       await _call('review_driver_document', {
         'documentId': id,
         'decision': decision,
+      });
+      await _refresh();
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _updateSupportTicket(String id, String status) async {
+    setState(() { _busy = true; _error = null; });
+    try {
+      await _call('update_support_ticket', {
+        'ticketId': id,
+        'status': status,
       });
       await _refresh();
     } catch (error) {
@@ -355,6 +375,77 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
                         ),
                       ],
                     ),
+                  ),
+                );
+              }),
+            const SizedBox(height: 24),
+            Text('Customer support tickets', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            const Text('Review ride-related and general customer requests. Update the ticket status as your team handles it.'),
+            if (_supportTickets.isEmpty)
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('No open support tickets.'),
+              )
+            else
+              ..._supportTickets.map((ticket) {
+                final id = ticket['id'].toString();
+                final ride = ticket['rides'] as Map<String, dynamic>?;
+                final priority = ticket['priority'].toString();
+                final status = ticket['status'].toString();
+                final customer = ticket['customer_name']?.toString() ?? 'Quick-Ride customer';
+                final category = ticket['category'].toString().replaceAll('_', ' ');
+                return Card(
+                  child: ExpansionTile(
+                    leading: Icon(
+                      priority == 'urgent' || category == 'safety'
+                          ? Icons.priority_high_rounded
+                          : Icons.support_agent_outlined,
+                      color: priority == 'urgent' || category == 'safety'
+                          ? Theme.of(context).colorScheme.error
+                          : null,
+                    ),
+                    title: Text(ticket['subject'].toString()),
+                    subtitle: Text('$customer · $category · $priority'),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Chip(label: Text(status.replaceAll('_', ' '))),
+                            ),
+                            Text(ticket['description'].toString()),
+                            if (ride != null) ...[
+                              const SizedBox(height: 8),
+                              Text('Ride status: ' + (ride['status']?.toString() ?? 'unknown').replaceAll('_', ' ')),
+                              Text('Pickup: ' + (ride['pickup_address']?.toString() ?? '—')),
+                              Text('Destination: ' + (ride['destination_address']?.toString() ?? '—')),
+                            ] else
+                              const Text('General support request (not linked to a ride).'),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: status,
+                              decoration: const InputDecoration(labelText: 'Update ticket status'),
+                              items: const [
+                                DropdownMenuItem(value: 'open', child: Text('Open')),
+                                DropdownMenuItem(value: 'in_progress', child: Text('In progress')),
+                                DropdownMenuItem(value: 'waiting_for_customer', child: Text('Waiting for customer')),
+                                DropdownMenuItem(value: 'resolved', child: Text('Resolved')),
+                                DropdownMenuItem(value: 'closed', child: Text('Closed')),
+                              ],
+                              onChanged: _busy ? null : (value) {
+                                if (value != null && value != status) {
+                                  _updateSupportTicket(id, value);
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 );
               }),
