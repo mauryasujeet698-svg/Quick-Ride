@@ -343,8 +343,20 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
       return;
     }
     final status = ride['status']?.toString() ?? '';
-    final origin = driverLocation ?? pickup;
-    final target = status == 'in_progress' ? destination : (driverLocation == null ? destination : pickup);
+    // Only show a driver route after a driver is actually assigned and their
+    // live location is available. Before assignment, the customer sees the
+    // pickup and destination pins without a misleading driver route.
+    if (driverLocation == null ||
+        !const {'accepted', 'driver_arriving', 'arrived', 'in_progress'}.contains(status)) {
+      final existing = _routeAnnotation;
+      if (existing != null) {
+        await routeManager.delete(existing);
+        _routeAnnotation = null;
+      }
+      return;
+    }
+    final origin = driverLocation;
+    final target = status == 'in_progress' ? destination : pickup;
     final now = DateTime.now();
     final statusChanged = status != _lastRouteStatus;
     final originMoved = _lastRouteOrigin == null ||
