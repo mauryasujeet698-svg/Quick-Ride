@@ -33,6 +33,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   List<Map<String, dynamic>> _documents = [];
   bool _loadingDocuments = false;
   String? _uploadingDocumentType;
+  final Map<String, DateTime?> _documentExpiryDates = {};
 
   @override
   void initState() {
@@ -217,6 +218,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         'objectPath': objectPath,
         'contentType': contentType,
         'byteSize': bytes.length,
+        'expiresAt': (_documentExpiryDates[documentType] ??
+                _existingDocumentExpiry(documentType))
+            ?.toIso8601String(),
       });
       await _loadDocuments();
       if (mounted) {
@@ -226,6 +230,38 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       if (mounted) setState(() => _message = 'Document upload failed: $error');
     } finally {
       if (mounted) setState(() => _uploadingDocumentType = null);
+    }
+  }
+
+  DateTime? _existingDocumentExpiry(String documentType) {
+    final matches = _documents.where(
+      (document) => document['document_type'] == documentType,
+    );
+    if (matches.isEmpty || matches.first['expires_at'] == null) return null;
+    return DateTime.tryParse(matches.first['expires_at'].toString());
+  }
+
+  String _formatDocumentDate(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    return year + '-' + month + '-' + day;
+  }
+
+  Future<void> _chooseDocumentExpiry(String documentType) async {
+    final now = DateTime.now();
+    final initial = _documentExpiryDates[documentType] ??
+        _existingDocumentExpiry(documentType) ??
+        now.add(const Duration(days: 365));
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(now) ? now : initial,
+      firstDate: DateTime(now.year - 10),
+      lastDate: DateTime(now.year + 30),
+      helpText: 'Select document expiry date',
+    );
+    if (selected != null && mounted) {
+      setState(() => _documentExpiryDates[documentType] = selected);
     }
   }
 
@@ -244,7 +280,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             Text('Required verification documents',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 5),
-            const Text('Upload a clear PDF, JPG or PNG for each item. Maximum 5 MB per file. Admin approval is required before you can go online.'),
+            const Text('Upload a clear PDF, JPG or PNG for each item. Maximum 5 MB per file. Add the expiry date where the document has one. Admin approval is required before you can go online.'),
             if (_loadingDocuments) const LinearProgressIndicator(),
             const SizedBox(height: 8),
             ...requiredDocuments.entries.map((entry) {
@@ -253,8 +289,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
               ).toList();
               final latest = matches.isEmpty ? null : matches.first;
               final status = latest?['verification_status']?.toString() ?? 'not_uploaded';
-              final isApproved = status == 'approved';
+              final existingExpiry = _existingDocumentExpiry(entry.key);
+              final selectedExpiry = _documentExpiryDates[entry.key] ?? existingExpiry;
+              final isExpired = existingExpiry != null &&
+                  DateUtils.dateOnly(existingExpiry).isBefore(DateUtils.dateOnly(DateTime.now()));
+              final isApproved = status == 'approved' && !isExpired;
               final isUploading = _uploadingDocumentType == entry.key;
+              final statusLabel = isExpired
+                  ? 'Expired'
+                  : status == 'not_uploaded'
+                      ? 'Not uploaded'
+                      : status.replaceAll('_', ' ');
+              final expiryLabel = selectedExpiry == null
+                  ? 'Expiry date optional'
+                  : 'Expires: ' + _formatDocumentDate(selectedExpiry);
               return ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(
@@ -262,19 +310,35 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   color: isApproved ? Colors.green : null,
                 ),
                 title: Text(entry.value),
-                subtitle: Text(
-                  status == 'not_uploaded'
-                      ? 'Not uploaded'
-                      : status.replaceAll('_', ' '),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(statusLabel),
+                    Text(expiryLabel),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: _busy || _uploadingDocumentType != null
+                          ? null
+                          : () => _chooseDocumentExpiry(entry.key),
+                      icon: const Icon(Icons.calendar_month_outlined, size: 16),
+                      label: Text(
+                        selectedExpiry == null ? 'Set expiry date' : 'Change expiry date',
+                      ),
+                    ),
+                  ],
                 ),
-                trailing: isApproved
-                    ? const Icon(Icons.check_circle, color: Colors.green)
-                    : isUploading
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
+                trailing: isUploading
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : isApproved
+                        ? const Icon(Icons.check_circle, color: Colors.green)
                         : OutlinedButton(
                             onPressed: _busy || _uploadingDocumentType != null
                                 ? null
