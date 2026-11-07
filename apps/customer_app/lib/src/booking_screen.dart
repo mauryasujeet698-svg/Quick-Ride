@@ -1,13 +1,9 @@
-import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
-import 'package:quick_ride_core/quick_ride_core.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 
 class RidePoint {
@@ -35,13 +31,9 @@ class CustomerBookingScreen extends StatefulWidget {
 
 class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   final _pin = TextEditingController();
-  final _environment = QuickRideEnvironment.fromBuildDefines();
-  MapboxMap? _map;
-  CircleAnnotationManager? _markerManager;
-  PolylineAnnotationManager? _routeManager;
-  PolylineAnnotation? _routeAnnotation;
-  CircleAnnotation? _pickupMarker;
-  CircleAnnotation? _destinationMarker;
+  final MapController _mapController = MapController();
+  bool _mapReady = false;
+  LatLng? _pendingMapCenter;
   RidePoint? _pickup;
   RidePoint? _destination;
   List<Map<String, dynamic>> _categories = [];
@@ -103,29 +95,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     }
   }
 
-  Future<String> _reverseGeocode(double longitude, double latitude) async {
-    final token = _environment.mapboxPublicToken;
-    if (token.isEmpty) return 'Selected map location';
-    final uri = Uri.https('api.mapbox.com', '/search/geocode/v6/reverse', {
-      'longitude': longitude.toString(),
-      'latitude': latitude.toString(),
-      'access_token': token,
-      'country': 'IN',
-      'language': 'en',
-    });
-    final response = await http.get(uri).timeout(const Duration(seconds: 12));
-    if (response.statusCode != 200) {
-      throw StateError('Mapbox could not resolve this location (' +
-          response.statusCode.toString() + ').');
-    }
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final features = payload['features'] as List<dynamic>? ?? [];
-    if (features.isEmpty) return 'Selected map location';
-    final properties = features.first['properties'] as Map<String, dynamic>? ?? {};
-    return (properties['full_address'] ??
-            properties['name'] ??
-            'Selected map location')
-        .toString();
+  Future<String> _reverseGeocode(double longitude, double latitude) {
+    return QuickRideMaps.reverseGeocode(LatLng(latitude, longitude));
   }
 
   Future<void> _setPoint({
@@ -158,13 +129,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         }
         _quote = null;
       });
-      await _syncPointMarkers();
-      await _clearQuoteRoute();
-      if (moveCamera && _map != null) {
-        await _map!.setCamera(CameraOptions(
-          center: Point(coordinates: Position(longitude, latitude)),
-          zoom: 15,
-        ));
+      if (moveCamera) {
+        final center = LatLng(latitude, longitude);
+        if (_mapReady) {
+          _mapController.move(center, 15);
+        } else {
+          _pendingMapCenter = center;
+        }
       }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
@@ -173,108 +144,21 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     }
   }
 
-  Future<void> _onMapCreated(MapboxMap map) async {
-    _map = map;
-    map.addInteraction(
-      TapInteraction.onMap((context) {
-        final coordinates = context.point.coordinates;
-        _setPoint(
-          longitude: coordinates.lng.toDouble(),
-          latitude: coordinates.lat.toDouble(),
-          pickup: _selectPickup,
-        );
-      }),
-      interactionID: 'quick-ride-pickup-destination',
-    );
-    _markerManager = await map.annotations.createCircleAnnotationManager();
-    _routeManager = await map.annotations.createPolylineAnnotationManager();
-    await _syncPointMarkers();
-    await _drawQuoteRoute();
-  }
-
-  Future<void> _syncPointMarkers() async {
-    final manager = _markerManager;
-    if (manager == null) return;
-
-    if (_pickup != null) {
-      final options = CircleAnnotationOptions(
-        geometry: Point(
-          coordinates: Position(_pickup!.longitude, _pickup!.latitude),
-        ),
-        circleColor: Colors.green.toARGB32(),
-        circleRadius: 10,
-        circleStrokeColor: Colors.white.toARGB32(),
-        circleStrokeWidth: 3,
-      );
-      if (_pickupMarker == null) {
-        _pickupMarker = await manager.create(options);
-      } else {
-        _pickupMarker!.geometry = options.geometry;
-        await manager.update(_pickupMarker!);
-      }
-    }
-
-    if (_destination != null) {
-      final options = CircleAnnotationOptions(
-        geometry: Point(
-          coordinates: Position(_destination!.longitude, _destination!.latitude),
-        ),
-        circleColor: Colors.red.toARGB32(),
-        circleRadius: 10,
-        circleStrokeColor: Colors.white.toARGB32(),
-        circleStrokeWidth: 3,
-      );
-      if (_destinationMarker == null) {
-        _destinationMarker = await manager.create(options);
-      } else {
-        _destinationMarker!.geometry = options.geometry;
-        await manager.update(_destinationMarker!);
-      }
-    }
-  }
-
-  Future<void> _clearQuoteRoute() async {
-    final manager = _routeManager;
-    final existing = _routeAnnotation;
-    _routeAnnotation = null;
-    if (manager != null && existing != null) {
-      await manager.delete(existing);
-    }
-  }
-
-  Future<void> _drawQuoteRoute() async {
-    final manager = _routeManager;
-    final quote = _quote;
-    if (manager == null || quote == null) return;
-    final geometryValue = quote['route_geometry'];
-    if (geometryValue is! Map) return;
+  List<LatLng> get _quoteRoutePoints {
+    final geometryValue = _quote?['route_geometry'];
+    if (geometryValue is! Map) return const [];
     final geometry = Map<String, dynamic>.from(geometryValue);
     final rawCoordinates = geometry['coordinates'];
-    if (rawCoordinates is! List) return;
-    final coordinates = rawCoordinates
+    if (rawCoordinates is! List) return const [];
+    return rawCoordinates
         .whereType<List>()
-        .where((pair) => pair.length >= 2 && pair[0] is num && pair[1] is num)
-        .map((pair) => Position(
-              (pair[0] as num).toDouble(),
+        .where((pair) =>
+            pair.length >= 2 && pair[0] is num && pair[1] is num)
+        .map((pair) => LatLng(
               (pair[1] as num).toDouble(),
+              (pair[0] as num).toDouble(),
             ))
-        .toList();
-    if (coordinates.length < 2) return;
-
-    final options = PolylineAnnotationOptions(
-      geometry: LineString(coordinates: coordinates),
-      lineColor: Colors.blue.toARGB32(),
-      lineWidth: 6,
-      lineBorderColor: Colors.white.toARGB32(),
-      lineBorderWidth: 2,
-    );
-    final existing = _routeAnnotation;
-    if (existing == null) {
-      _routeAnnotation = await manager.create(options);
-    } else {
-      existing.geometry = options.geometry;
-      await manager.update(existing);
-    }
+        .toList(growable: false);
   }
 
   Map<String, dynamic> _request(String action) => {
@@ -317,7 +201,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
           _booking = null;
           _pickupOtp = null;
         });
-        await _drawQuoteRoute();
       }
     });
   }
@@ -363,7 +246,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tokenReady = _environment.mapboxPublicToken.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Book a ride'),
@@ -376,50 +258,96 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         children: [
           Expanded(
             flex: 6,
-            child: tokenReady
-                ? Stack(
-                    children: [
-                      MapWidget(
-                        key: const ValueKey('quick-ride-booking-map'),
-                        viewport: CameraViewportState(
-                          center: Point(coordinates: Position(78.9629, 20.5937)),
-                          zoom: 4.5,
-                        ),
-                        onMapCreated: _onMapCreated,
+            child: Stack(
+              children: [
+                FlutterMap(
+                  key: const ValueKey('quick-ride-booking-map'),
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: const LatLng(20.5937, 78.9629),
+                    initialZoom: 4.5,
+                    onMapReady: () {
+                      _mapReady = true;
+                      final pending = _pendingMapCenter;
+                      if (pending != null) {
+                        _mapController.move(pending, 15);
+                        _pendingMapCenter = null;
+                      }
+                    },
+                    onTap: (_, point) => _setPoint(
+                      longitude: point.longitude,
+                      latitude: point.latitude,
+                      pickup: _selectPickup,
+                    ),
+                  ),
+                  children: [
+                    QuickRideMaps.openStreetMapLayer(),
+                    if (_quoteRoutePoints.length >= 2)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: _quoteRoutePoints,
+                            strokeWidth: 6,
+                            color: Colors.blue,
+                          ),
+                        ],
                       ),
-                      const Positioned(
-                        top: 12,
-                        left: 12,
-                        right: 12,
-                        child: IgnorePointer(
-                          child: Card(
-                            child: Padding(
-                              padding: EdgeInsets.all(12),
-                              child: Text('Tap the map to set the selected location'),
+                    MarkerLayer(
+                      markers: [
+                        if (_pickup != null)
+                          Marker(
+                            point: LatLng(_pickup!.latitude, _pickup!.longitude),
+                            width: 38,
+                            height: 42,
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.green,
+                              size: 38,
                             ),
                           ),
-                        ),
-                      ),
-                      Positioned(
-                        right: 12,
-                        bottom: 12,
-                        child: FloatingActionButton.small(
-                          heroTag: 'current-location',
-                          onPressed: _tryCurrentLocation,
-                          child: const Icon(Icons.my_location),
-                        ),
-                      ),
-                    ],
-                  )
-                : const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Mapbox public token is not configured. Add MAPBOX_PUBLIC_TOKEN as a build-time define to enable map selection.',
-                        textAlign: TextAlign.center,
+                        if (_destination != null)
+                          Marker(
+                            point: LatLng(
+                              _destination!.latitude,
+                              _destination!.longitude,
+                            ),
+                            width: 38,
+                            height: 42,
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.red,
+                              size: 38,
+                            ),
+                          ),
+                      ],
+                    ),
+                    QuickRideMaps.attributionControl(),
+                  ],
+                ),
+                const Positioned(
+                  top: 12,
+                  left: 12,
+                  right: 12,
+                  child: IgnorePointer(
+                    child: Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text('Tap the map to set the selected location'),
                       ),
                     ),
                   ),
+                ),
+                Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: FloatingActionButton.small(
+                    heroTag: 'current-location',
+                    onPressed: _tryCurrentLocation,
+                    child: const Icon(Icons.my_location),
+                  ),
+                ),
+              ],
+            ),
           ),
           Expanded(
             flex: 5,
