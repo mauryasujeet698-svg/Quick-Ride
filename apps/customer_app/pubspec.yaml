@@ -12,6 +12,7 @@ dependencies:
   http: ^1.4.0
   mapbox_maps_flutter: ^3.34.2
   supabase_flutter: ^2.18.3
+  url_launcher: ^6.3.3
   quick_ride_auth:
     path: ../../packages/quick_ride_auth
   quick_ride_backend:
