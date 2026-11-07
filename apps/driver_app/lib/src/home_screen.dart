@@ -25,6 +25,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   final _otp = TextEditingController();
   bool _busy = false;
   bool _online = false;
+  bool _syncingAvailability = false;
+  String? _availabilitySyncKey;
   List<Map<String, dynamic>> _categories = [];
   int? _categoryId;
   StreamSubscription<dynamic>? _locationSubscription;
@@ -370,6 +372,43 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     });
   }
 
+  Future<void> _syncAvailabilityFromProfile(
+    Map<String, dynamic> driver,
+  ) async {
+    final status = driver['availability_status']?.toString() ?? 'offline';
+    final pincodeId = driver['active_pincode_id'];
+    final shouldShareLocation = status == 'online' || status == 'busy';
+    final key = '$status|$pincodeId';
+    if (_syncingAvailability || _availabilitySyncKey == key) return;
+    _syncingAvailability = true;
+    _availabilitySyncKey = key;
+    try {
+      if (shouldShareLocation && pincodeId != null) {
+        final row = await QuickRideBackend.client
+            .from('service_area_pincodes')
+            .select('pincode')
+            .eq('id', pincodeId)
+            .maybeSingle();
+        if (!mounted) return;
+        final pin = row?['pincode']?.toString();
+        if (pin != null && pin.isNotEmpty) _pincode.text = pin;
+        if (!_online) setState(() => _online = true);
+        _startLocationUpdates();
+      } else {
+        if (_online) setState(() => _online = false);
+        await _locationSubscription?.cancel();
+        _locationSubscription = null;
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'Could not restore driver availability: $error');
+      }
+      _availabilitySyncKey = null;
+    } finally {
+      _syncingAvailability = false;
+    }
+  }
+
   void _startLocationUpdates() {
     if (_locationSubscription != null) return;
     _locationSubscription = QuickRideMaps.watchDriverPosition().listen(
@@ -457,6 +496,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           if (driver == null) return _applicationForm();
           final status = driver['verification_status'].toString();
           if (status != 'approved') return _pendingApproval(status);
+          unawaited(_syncAvailabilityFromProfile(driver));
 
           return ListView(
             padding: const EdgeInsets.all(16),
