@@ -23,6 +23,14 @@ jobs:
           for app in apps/customer_app apps/driver_app apps/admin_app; do
             (cd "$app" && flutter analyze --no-pub)
           done
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check Supabase Edge Functions
+        run: |
+          for fn in admin-service-areas driver-ride-actions ride-booking; do
+            deno check --config "supabase/functions/$fn/deno.json" "supabase/functions/$fn/index.ts"
+          done
       - name: Run smoke tests
         run: |
           for app in apps/customer_app apps/driver_app apps/admin_app; do
