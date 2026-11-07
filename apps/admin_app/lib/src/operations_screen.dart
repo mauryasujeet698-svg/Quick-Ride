@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 
 class AdminOperationsScreen extends StatefulWidget {
@@ -14,11 +17,33 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
   List<Map<String, dynamic>> _pincodeRequests = [];
   bool _busy = false;
   String? _error;
+  StreamSubscription<dynamic>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+    if (QuickRideBackend.isInitialized) {
+      if (QuickRideAuth.currentUser != null) unawaited(_refresh());
+      _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
+        if (!mounted) return;
+        if (QuickRideAuth.currentUser != null) {
+          setState(() {});
+          if (_summary == null && !_busy) unawaited(_refresh());
+        } else {
+          setState(() {
+            _summary = null;
+            _drivers = [];
+            _pincodeRequests = [];
+          });
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   Future<Map<String, dynamic>> _call(String action, [Map<String, dynamic> body = const {}]) async {
@@ -89,6 +114,25 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!QuickRideBackend.isInitialized) {
+      return const Scaffold(
+        body: Center(child: Text('Quick-Ride backend is not configured.')),
+      );
+    }
+    if (QuickRideAuth.currentUser == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Operations')),
+        body: Center(
+          child: FilledButton.icon(
+            onPressed: () => QuickRideAuth.signInWithGoogle(
+              redirectTo: 'in.quickride.admin://login-callback',
+            ),
+            icon: const Icon(Icons.login),
+            label: const Text('Sign in with Google'),
+          ),
+        ),
+      );
+    }
     final summary = _summary ?? const <String, dynamic>{};
     final commission = summary['commission_totals'] as Map<String, dynamic>? ?? {};
     return Scaffold(

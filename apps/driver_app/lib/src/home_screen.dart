@@ -23,13 +23,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   List<Map<String, dynamic>> _categories = [];
   int? _categoryId;
   StreamSubscription<dynamic>? _locationSubscription;
+  StreamSubscription<dynamic>? _authSubscription;
   DateTime _lastLocationSent = DateTime.fromMillisecondsSinceEpoch(0);
   String? _message;
 
   @override
   void initState() {
     super.initState();
-    _loadCategories();
+    if (QuickRideBackend.isInitialized) {
+      _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
+        if (!mounted) return;
+        setState(() {});
+        if (QuickRideAuth.currentUser == null) {
+          _locationSubscription?.cancel();
+          _locationSubscription = null;
+          _online = false;
+        }
+      });
+      _loadCategories();
+    }
   }
 
   @override
@@ -41,6 +53,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     _color.dispose();
     _otp.dispose();
     _locationSubscription?.cancel();
+    _authSubscription?.cancel();
     super.dispose();
   }
 

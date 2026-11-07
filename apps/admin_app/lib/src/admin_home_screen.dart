@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -25,6 +26,27 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Map<String, dynamic>? directory;
   bool busy = false;
   String? errorText;
+  StreamSubscription<dynamic>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    if (QuickRideBackend.isInitialized) {
+      if (QuickRideAuth.currentUser != null) unawaited(load());
+      _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
+        if (!mounted) return;
+        if (QuickRideAuth.currentUser != null) {
+          setState(() {});
+          if (directory == null && !busy) unawaited(load());
+        } else {
+          setState(() {
+            directory = null;
+            selectedAreaId = null;
+          });
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -35,6 +57,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     subscriptionAmount.dispose();
     commissionPercent.dispose();
     boundaryJson.dispose();
+    _authSubscription?.cancel();
     super.dispose();
   }
 
