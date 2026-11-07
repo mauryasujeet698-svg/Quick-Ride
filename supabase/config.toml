@@ -17,3 +17,6 @@ verify_jwt = true
 
 [functions.driver-ride-actions]
 verify_jwt = true
+
+[functions.ride-share]
+verify_jwt = false
