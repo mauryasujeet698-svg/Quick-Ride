@@ -43,7 +43,7 @@ Deployed Supabase Edge Functions:
 - `ride-booking` (v6, JWT verified)
 - `driver-ride-actions` (v6, JWT verified)
 - `ride-share` (v1, JWT disabled; every request must present a valid high-entropy share token)
-- `send-push` (v2, JWT disabled; requires the exact Supabase service-role bearer token and uses the server-side Firebase service account)
+- `send-push` (v3, JWT disabled; requires the exact Supabase service-role bearer token and uses the server-side Firebase service account)
 
 Critical booking, fare, driver eligibility, dispatch acceptance and trip transitions are server-authoritative. The ride-share endpoint validates the token hash, expiration and revocation state before returning its restricted live-trip snapshot. The `send-push` endpoint requires the Supabase service-role bearer token and sends Firebase Cloud Messaging notifications to authenticated devices. Function source is in `supabase/functions`; database migrations are in `supabase/migrations`.
 
