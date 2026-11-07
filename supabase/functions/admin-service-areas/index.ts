@@ -456,6 +456,58 @@ Deno.serve(async (req: Request) => {
       return response(200, { service_pincode: data });
     }
 
+    if (action === "list_support_tickets") {
+      const requestedStatus = typeof body.status === "string" ? body.status : "active";
+      let request = admin.from("ride_support_tickets")
+        .select("id,ride_id,submitted_by,category,subject,description,status,priority,assigned_to,created_at,updated_at,rides(id,status,pickup_address,destination_address)")
+        .order("created_at", { ascending: false }).limit(100);
+      if (requestedStatus === "active") {
+        request = request.in("status", ["open", "in_progress", "waiting_for_customer"]);
+      } else if (requestedStatus !== "all") {
+        if (!["open", "in_progress", "waiting_for_customer", "resolved", "closed"].includes(requestedStatus)) {
+          return fail(400, "Invalid support-ticket status filter");
+        }
+        request = request.eq("status", requestedStatus);
+      }
+      const { data, error } = await request;
+      if (error) return fail(500, "Unable to load support tickets");
+      const userIds = [...new Set((data ?? []).map((ticket) => String(ticket.submitted_by)))];
+      const { data: profiles, error: profilesError } = userIds.length
+        ? await admin.from("profiles").select("id,full_name").in("id", userIds)
+        : { data: [], error: null };
+      if (profilesError) return fail(500, "Unable to load support customer details");
+      const names = new Map((profiles ?? []).map((profile) => [String(profile.id), profile.full_name]));
+      const tickets = (data ?? []).map((ticket) => ({
+        ...ticket,
+        customer_name: names.get(String(ticket.submitted_by)) ?? "Quick-Ride customer",
+      }));
+      return response(200, { tickets });
+    }
+
+    if (action === "update_support_ticket") {
+      const ticketId = String(body.ticketId ?? "");
+      const status = body.status;
+      const priority = body.priority;
+      const allowedStatuses = ["open", "in_progress", "waiting_for_customer", "resolved", "closed"];
+      const allowedPriorities = ["low", "normal", "high", "urgent"];
+      if (!ticketId || !allowedStatuses.includes(String(status)) ||
+          (priority !== undefined && !allowedPriorities.includes(String(priority)))) {
+        return fail(400, "A valid ticketId, status and optional priority are required");
+      }
+      const { data: before, error: readError } = await admin.from("ride_support_tickets")
+        .select("*").eq("id", ticketId).maybeSingle();
+      if (readError || !before) return fail(404, "Support ticket not found");
+      const updates: Record<string, unknown> = {
+        status,
+        ...(priority === undefined ? {} : { priority }),
+      };
+      const { data, error } = await admin.from("ride_support_tickets")
+        .update(updates).eq("id", ticketId).select("*").single();
+      if (error) return fail(400, "Unable to update support ticket");
+      await audit("support_ticket.updated", "ride_support_tickets", ticketId, before, data);
+      return response(200, { ticket: data });
+    }
+
     if (action === "dashboard_summary") {
       const [rides, activeRides, completedRides, drivers, pendingDrivers, activePincodes, commissions] = await Promise.all([
         admin.from("rides").select("id", { count: "exact", head: true }),
