@@ -28,7 +28,7 @@ jobs:
           deno-version: v2.x
       - name: Type-check Supabase Edge Functions
         run: |
-          for fn in admin-service-areas driver-ride-actions ride-booking ride-share; do
+          for fn in admin-service-areas driver-ride-actions ride-booking ride-share send-push; do
             deno check --config "supabase/functions/$fn/deno.json" "supabase/functions/$fn/index.ts"
           done
       - name: Run smoke tests
