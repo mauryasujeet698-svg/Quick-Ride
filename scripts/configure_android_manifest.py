@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -112,6 +111,29 @@ def main() -> int:
                 raise SystemExit("Could not find FlutterActivity in MainActivity.kt")
             source = source.replace("FlutterActivity", "FlutterFragmentActivity")
             activity_file.write_text(source, encoding="utf-8")
+
+        gradle_file = manifest_path.parents[2] / "build.gradle.kts"
+        if gradle_file.is_file():
+            gradle_source = gradle_file.read_text(encoding="utf-8")
+            gradle_source = gradle_source.replace(
+                "compileSdk = flutter.compileSdkVersion", "compileSdk = 36"
+            )
+            gradle_source = gradle_source.replace(
+                "minSdk = flutter.minSdkVersion", "minSdk = 21"
+            )
+            gradle_file.write_text(gradle_source, encoding="utf-8")
+        else:
+            groovy_gradle = manifest_path.parents[2] / "build.gradle"
+            if not groovy_gradle.is_file():
+                raise SystemExit("Android app Gradle file was not generated")
+            gradle_source = groovy_gradle.read_text(encoding="utf-8")
+            gradle_source = gradle_source.replace(
+                "compileSdkVersion flutter.compileSdkVersion", "compileSdkVersion 36"
+            )
+            gradle_source = gradle_source.replace(
+                "minSdkVersion flutter.minSdkVersion", "minSdkVersion 21"
+            )
+            groovy_gradle.write_text(gradle_source, encoding="utf-8")
 
         public_token = os.environ.get("MAPBOX_PUBLIC_TOKEN", "").strip()
         if not public_token.startswith("pk."):
