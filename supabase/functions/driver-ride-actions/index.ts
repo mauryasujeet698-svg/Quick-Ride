@@ -53,6 +53,37 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return fail(400, "INVALID_JSON", "Request body must be valid JSON"); }
   const action = body.action;
 
+  if (action === "safety_event") {
+    if (!driver || driver.verification_status !== "approved") {
+      return fail(403, "APPROVED_DRIVER_REQUIRED", "An approved driver account is required");
+    }
+    const rideId = String(body.rideId ?? "");
+    if (!rideId) return fail(400, "RIDE_REQUIRED", "rideId is required");
+    const { data: ride, error: rideError } = await db.from("rides")
+      .select("id,status,driver_id")
+      .eq("id", rideId).eq("driver_id", user.id).maybeSingle();
+    if (rideError) return fail(500, "RIDE_LOOKUP_FAILED", "Unable to verify this assigned ride");
+    if (!ride || !["accepted", "driver_arriving", "arrived", "in_progress"].includes(String(ride.status))) {
+      return fail(409, "RIDE_NOT_ACTIVE", "Safety events can only be recorded for an active assigned ride");
+    }
+    const { data: event, error: eventError } = await db.from("ride_safety_events").insert({
+      ride_id: rideId,
+      actor_user_id: user.id,
+      event_type: "sos_triggered",
+      details: {
+        source: "driver_app",
+        action: "open_india_emergency_dialer",
+        recorded_at: new Date().toISOString(),
+      },
+    }).select("id,event_type,created_at").single();
+    if (eventError) return fail(500, "SAFETY_EVENT_FAILED", "The SOS event could not be recorded");
+    return respond(201, {
+      safety_event: event,
+      emergency_number: "112",
+      note: "The emergency number must still be dialled by the driver. Quick-Ride does not directly dispatch public emergency services.",
+    });
+  }
+
   if (action === "get_earnings") {
     if (!driver || driver.verification_status !== "approved") {
       return fail(403, "APPROVED_DRIVER_REQUIRED", "Earnings are available after driver approval");
