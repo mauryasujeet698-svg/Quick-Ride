@@ -1,0 +1,11 @@
+name: quick_ride_backend
+publish_to: none
+environment:
+  sdk: ^3.12.0
+resolution: workspace
+dependencies:
+  flutter:
+    sdk: flutter
+  supabase_flutter: ^2.18.3
+  quick_ride_core:
+    path: ../quick_ride_core

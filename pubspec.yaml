@@ -1,0 +1,14 @@
+name: quick_ride_workspace
+publish_to: none
+environment:
+  sdk: ^3.12.0
+workspace:
+  - apps/customer_app
+  - apps/driver_app
+  - apps/admin_app
+  - packages/quick_ride_core
+  - packages/quick_ride_backend
+  - packages/quick_ride_auth
+  - packages/quick_ride_design_system
+  - packages/quick_ride_maps
+  - packages/quick_ride_domain

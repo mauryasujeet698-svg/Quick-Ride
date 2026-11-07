@@ -1,0 +1,8 @@
+name: quick_ride_design_system
+publish_to: none
+environment:
+  sdk: ^3.12.0
+resolution: workspace
+dependencies:
+  flutter:
+    sdk: flutter
