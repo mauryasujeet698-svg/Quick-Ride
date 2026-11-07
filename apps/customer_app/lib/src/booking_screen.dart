@@ -37,6 +37,9 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   final _pin = TextEditingController();
   final _environment = QuickRideEnvironment.fromBuildDefines();
   MapboxMap? _map;
+  CircleAnnotationManager? _markerManager;
+  CircleAnnotation? _pickupMarker;
+  CircleAnnotation? _destinationMarker;
   RidePoint? _pickup;
   RidePoint? _destination;
   List<Map<String, dynamic>> _categories = [];
@@ -153,6 +156,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         }
         _quote = null;
       });
+      await _syncPointMarkers();
       if (moveCamera && _map != null) {
         await _map!.setCamera(CameraOptions(
           center: Point(coordinates: Position(longitude, latitude)),
@@ -166,7 +170,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     }
   }
 
-  void _onMapCreated(MapboxMap map) {
+  Future<void> _onMapCreated(MapboxMap map) async {
     _map = map;
     map.addInteraction(
       TapInteraction.onMap((context) {
@@ -179,6 +183,49 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       }),
       interactionID: 'quick-ride-pickup-destination',
     );
+    _markerManager = await map.annotations.createCircleAnnotationManager();
+    await _syncPointMarkers();
+  }
+
+  Future<void> _syncPointMarkers() async {
+    final manager = _markerManager;
+    if (manager == null) return;
+
+    if (_pickup != null) {
+      final options = CircleAnnotationOptions(
+        geometry: Point(
+          coordinates: Position(_pickup!.longitude, _pickup!.latitude),
+        ),
+        circleColor: Colors.green.toARGB32(),
+        circleRadius: 10,
+        circleStrokeColor: Colors.white.toARGB32(),
+        circleStrokeWidth: 3,
+      );
+      if (_pickupMarker == null) {
+        _pickupMarker = await manager.create(options);
+      } else {
+        _pickupMarker!.geometry = options.geometry;
+        await manager.update(_pickupMarker!);
+      }
+    }
+
+    if (_destination != null) {
+      final options = CircleAnnotationOptions(
+        geometry: Point(
+          coordinates: Position(_destination!.longitude, _destination!.latitude),
+        ),
+        circleColor: Colors.red.toARGB32(),
+        circleRadius: 10,
+        circleStrokeColor: Colors.white.toARGB32(),
+        circleStrokeWidth: 3,
+      );
+      if (_destinationMarker == null) {
+        _destinationMarker = await manager.create(options);
+      } else {
+        _destinationMarker!.geometry = options.geometry;
+        await manager.update(_destinationMarker!);
+      }
+    }
   }
 
   Map<String, dynamic> _request(String action) => {
