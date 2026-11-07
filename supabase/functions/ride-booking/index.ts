@@ -256,10 +256,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const mapboxToken = Deno.env.get("MAPBOX_ACCESS_TOKEN");
-  if (!mapboxToken) {
-    return error(503, "MAPS_NOT_CONFIGURED", "Ride quotes and bookings are disabled until the Mapbox server token is configured in Supabase Edge Function secrets");
-  }
+  const routingBaseUrl = (Deno.env.get("OSRM_BASE_URL") ?? "https://router.project-osrm.org").replace(/\/$/, "");
   const pincode = body.pincode;
   const categoryId = Number(body.vehicleCategoryId);
   const pickup = body.pickup;
@@ -285,13 +282,18 @@ Deno.serve(async (req: Request) => {
     }
 
     const coords = `${pickup.longitude},${pickup.latitude};${destination.longitude},${destination.latitude}`;
-    const routeUrl = new URL(`https://api.mapbox.com/directions/v5/mapbox/driving/${coords}`);
-    routeUrl.searchParams.set("access_token", mapboxToken);
+    const routeUrl = new URL(`${routingBaseUrl}/route/v1/driving/${coords}`);
     routeUrl.searchParams.set("overview", "simplified");
     routeUrl.searchParams.set("geometries", "geojson");
     routeUrl.searchParams.set("steps", "false");
 
-    const routeResponse = await fetch(routeUrl, { signal: AbortSignal.timeout(12_000) });
+    const routeResponse = await fetch(routeUrl, {
+      headers: {
+        "User-Agent": "Quick-Ride/0.1 (https://github.com/mauryasujeet698-svg/Quick-Ride)",
+        "Accept": "application/json",
+      },
+      signal: AbortSignal.timeout(12_000),
+    });
     if (!routeResponse.ok) return error(502, "ROUTE_PROVIDER_ERROR", "The route service could not calculate this trip");
     const routePayload = await routeResponse.json();
     const route = routePayload?.routes?.[0];
@@ -313,7 +315,7 @@ Deno.serve(async (req: Request) => {
     const minimum = Number(fare.minimum_fare);
     const estimatedFare = Math.round(Math.max(minimum, beforeMinimum) * 100) / 100;
     const breakdown = {
-      provider: "mapbox-directions",
+      provider: "osrm-openstreetmap",
       distance_m: distanceM,
       duration_s: durationS,
       base_fare: base,
