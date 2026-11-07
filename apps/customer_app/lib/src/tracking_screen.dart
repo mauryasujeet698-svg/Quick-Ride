@@ -11,6 +11,7 @@ import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_core/quick_ride_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 
 class CustomerRideTrackingScreen extends StatefulWidget {
   const CustomerRideTrackingScreen({super.key, required this.rideId});
@@ -46,6 +47,8 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
   String? _error;
+  bool _sharingRide = false;
+  bool _shareLinkActive = false;
 
   Map<String, dynamic>? get _ride =>
       _tracking?['ride'] is Map
@@ -449,6 +452,104 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     return '${minutes ~/ 60}h ${minutes % 60}m';
   }
 
+  Future<void> _shareRide(BuildContext shareContext) async {
+    if (_sharingRide || !_active) return;
+    setState(() { _sharingRide = true; });
+    try {
+      final response = await QuickRideBackend.invoke(
+        'ride-booking',
+        body: {
+          'action': 'create_share_link',
+          'rideId': widget.rideId,
+        },
+      );
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final shareUrl = data['share_url']?.toString();
+      final expiresAt = DateTime.tryParse(data['expires_at']?.toString() ?? '');
+      if (shareUrl == null || shareUrl.isEmpty) {
+        throw StateError('The trip-share link was not returned by the server.');
+      }
+      if (mounted) setState(() => _shareLinkActive = true);
+
+      final box = shareContext.findRenderObject() as RenderBox?;
+      final origin = box == null
+          ? null
+          : box.localToGlobal(Offset.zero) & box.size;
+      final expiryText = expiresAt == null
+          ? '12 hours'
+          : 'until ' + expiresAt.toLocal().toString().substring(0, 16);
+      final message = [
+        'I am sharing my Quick-Ride trip with you.',
+        'Track the ride status, route and recent driver location here:',
+        shareUrl,
+        'This private link expires $expiryText. Anyone with the link can view these ride details.',
+      ].join('\n\n');
+      await SharePlus.instance.share(
+        ShareParams(
+          title: 'Quick-Ride trip',
+          text: message,
+          sharePositionOrigin: origin,
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not share this ride: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sharingRide = false);
+    }
+  }
+
+  Future<void> _stopRideSharing() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Stop sharing this ride?'),
+        content: const Text(
+          'The current private share link will stop working immediately. '
+          'Anyone who already received it will no longer be able to open it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep sharing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Stop sharing'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _sharingRide = true);
+    try {
+      await QuickRideBackend.invoke(
+        'ride-booking',
+        body: {
+          'action': 'revoke_share_links',
+          'rideId': widget.rideId,
+        },
+      );
+      if (mounted) {
+        setState(() => _shareLinkActive = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Trip sharing has been stopped.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not stop trip sharing: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sharingRide = false);
+    }
+  }
+
   Future<void> _openEmergencyDialer() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -795,6 +896,33 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                               ),
                             ),
                           ),
+                          if (_active) ...[
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: _sharingRide ? null : () => _shareRide(context),
+                              icon: _sharingRide
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.share_outlined),
+                              label: Text(_sharingRide ? 'Preparing share link…' : 'Share live trip'),
+                            ),
+                            if (_shareLinkActive)
+                              TextButton.icon(
+                                onPressed: _sharingRide ? null : _stopRideSharing,
+                                icon: const Icon(Icons.link_off),
+                                label: const Text('Stop sharing link'),
+                              ),
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 6),
+                              child: Text(
+                                'The private link expires after 12 hours. Creating a new link revokes the previous one.',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 12),
                           Card(
                             child: Padding(
