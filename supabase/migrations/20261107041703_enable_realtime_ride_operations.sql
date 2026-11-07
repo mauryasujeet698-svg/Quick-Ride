@@ -29,4 +29,3 @@ alter table public.ride_offers replica identity full;
 alter table public.ride_chain_offers replica identity full;
 alter table public.driver_locations replica identity full;
 alter table public.ride_location_points replica identity full;
-
