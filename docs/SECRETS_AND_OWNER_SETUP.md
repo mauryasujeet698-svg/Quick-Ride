@@ -31,7 +31,7 @@ Then open **Actions → Build Quick-Ride Android QA APKs → Run workflow** on `
 
 ## Driver KYC storage
 
-- The private `driver-documents` bucket is configured by database migrations, with a 5 MB limit and PDF/JPG/PNG MIME allow-list. No separate public bucket or public URL is needed.
+- The private `driver-documents` bucket is configured by database migrations, with a 5 MB limit and PDF/JPG/PNG MIME allow-list. No public bucket or public object URL is needed.
 - Driver uploads are restricted to the driver's own user-ID folder and require a pending/under-review driver profile.
 - The driver Edge Function registers metadata after verifying the uploaded object. Admin document previews use short-lived signed URLs.
 - Required documents before Admin can approve a driver: driving licence, vehicle RC and vehicle insurance.

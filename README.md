@@ -2,7 +2,7 @@
 
 Independent on-demand ride-hailing platform designed for India, with real-time driver discovery, smart dispatch, configurable commercial rules, trip tracking and operations controls.
 
-> Current status: Backend foundations and three Flutter app shells are in active development on feature/platform-core. This is not a production release.
+> Current status: backend foundations and three functional Flutter app flows are in active development on `feature/platform-core`. This is not a production release or a tested device release.
 
 ## Product principles
 
@@ -38,10 +38,10 @@ The schema currently contains 26 public tables with RLS enabled. Major modules i
 - GPS trace, pickup OTP, ride lifecycle and audit trail.
 - Payment records, commission records and ledger entries.
 
-Deployed Edge Functions:
-- admin-service-areas
-- ride-booking
-- driver-ride-actions
+Deployed Edge Functions (JWT verification enabled):
+- `admin-service-areas` (v8)
+- `ride-booking` (v2)
+- `driver-ride-actions` (v2)
 
 Critical booking, driver eligibility, dispatch acceptance and trip transitions are server-authoritative. Deployed function source is in supabase/functions; generated database types are in supabase/types.
 
