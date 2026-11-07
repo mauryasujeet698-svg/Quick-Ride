@@ -236,7 +236,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === "list_driver_applications") {
       const { data, error } = await admin.from("driver_profiles")
-        .select("user_id,verification_status,availability_status,vehicle_category_id,vehicle_registration,vehicle_make,vehicle_model,vehicle_color,created_at,updated_at,profiles!inner(full_name,avatar_url,account_status),vehicle_categories(id,code,name),driver_documents(id,document_type,verification_status,expires_at,created_at),driver_service_pincodes(id,pincode_id,status,is_primary,requested_at,service_area_pincodes(pincode,label))")
+        .select("user_id,verification_status,availability_status,vehicle_category_id,vehicle_registration,vehicle_make,vehicle_model,vehicle_color,created_at,updated_at,vehicle_categories(id,code,name),driver_documents(id,document_type,verification_status,expires_at,created_at),driver_service_pincodes(id,pincode_id,status,is_primary,requested_at,service_area_pincodes(pincode,label))")
         .order("created_at", { ascending: false });
       if (error) return fail(500, "Unable to load driver applications");
       return response(200, { applications: data ?? [] });
@@ -277,7 +277,7 @@ Deno.serve(async (req: Request) => {
     if (action === "list_driver_pincode_requests") {
       const status = typeof body.status === "string" ? body.status : null;
       let query = admin.from("driver_service_pincodes")
-        .select("id,driver_id,pincode_id,status,is_primary,requested_at,reviewed_at,review_note,profiles:profiles!driver_service_pincodes_driver_id_fkey(full_name,avatar_url),service_area_pincodes(pincode,label,service_area_id)")
+        .select("id,driver_id,pincode_id,status,is_primary,requested_at,reviewed_at,review_note,service_area_pincodes(pincode,label,service_area_id)")
         .order("requested_at", { ascending: false });
       if (status && ["pending", "active", "rejected", "suspended"].includes(status)) query = query.eq("status", status);
       const { data, error } = await query;
