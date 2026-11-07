@@ -1,6 +1,10 @@
 name: Build Quick-Ride Android QA APKs
 on:
   workflow_dispatch:
+  push:
+    branches: ['feature/platform-core']
+    paths:
+      - '.github/workflows/android-debug-apks.yml'
 permissions:
   contents: read
 jobs:

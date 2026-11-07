@@ -165,7 +165,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
                           subtitle: Text('Service area request: ' + req['status'].toString()),
                         );
                       }),
-                      ButtonBar(
+                      OverflowBar(
                         children: [
                           TextButton(
                             onPressed: _busy ? null : () => _reviewDriver(id, 'rejected'),
