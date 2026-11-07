@@ -1,8 +1,7 @@
 name: Quick-Ride Flutter CI
 on:
-  push:
-    branches: [main, develop, 'feature/**']
   pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
