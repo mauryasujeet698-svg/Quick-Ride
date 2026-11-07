@@ -5,7 +5,7 @@ Never commit service-role credentials to GitHub or include them in Flutter appli
 ## Supabase and authentication
 
 - Supabase project URL: `https://czbelhtemzklcmssumpc.supabase.co`.
-- Supply `SUPABASE_URL` and `SUPABASE_ANON_KEY` as mobile build-time defines. The anon key is a client key protected by RLS; never use the service-role key in a mobile application.
+- The repository includes the project's public Supabase URL and publishable key as defaults for QA builds. They can be overridden with build-time defines or GitHub Actions variable/secret when rotated. These are client keys protected by RLS; never use the service-role key in a mobile application.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in server-side Supabase secrets.
 - Enable Google as a Supabase Auth provider. Register the app deep links:
   - `in.quickride.customer://login-callback`
@@ -24,7 +24,7 @@ Never commit service-role credentials to GitHub or include them in Flutter appli
 Open repository **Settings → Secrets and variables → Actions**:
 
 - Add repository **variable** `SUPABASE_URL` with value `https://czbelhtemzklcmssumpc.supabase.co`.
-- Add repository **secrets** `SUPABASE_ANON_KEY`, `MAPBOX_PUBLIC_TOKEN`, and `MAPBOX_DOWNLOADS_TOKEN`.
+- Add repository **secret** `MAPBOX_DOWNLOADS_TOKEN` (required for native SDK dependency download). Add `MAPBOX_PUBLIC_TOKEN` to enable maps at runtime; it is optional for a compile-only QA build. Supabase public settings have safe in-repository defaults and can be overridden when rotated.
 - Do not paste keys into source files, commits or chat messages.
 
 Then open **Actions → Build Quick-Ride Android QA APKs → Run workflow** on `feature/platform-core`. A successful run uploads the Customer, Driver and Admin debug APKs as `quick-ride-android-qa-apks`. These are QA/debug builds, not Play Store release APKs.
