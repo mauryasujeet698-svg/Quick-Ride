@@ -169,20 +169,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       return;
     }
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final file = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
-        withData: true,
-        allowMultiple: false,
       );
-      if (picked == null || picked.files.isEmpty) return;
-      final file = picked.files.single;
-      final bytes = file.bytes;
-      if (bytes == null || bytes.isEmpty) {
+      if (file == null) return;
+      final fileLength = file.lengthSync() ?? await file.length();
+      if (fileLength == null || fileLength < 1) {
         throw StateError('The selected file could not be read. Please choose it again.');
       }
-      if (bytes.length > 5 * 1024 * 1024) {
+      if (fileLength > 5 * 1024 * 1024) {
         throw StateError('Each document must be 5 MB or smaller.');
+      }
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) {
+        throw StateError('The selected file is empty. Please choose it again.');
       }
       final extension = (file.extension ?? '').toLowerCase();
       final contentType = switch (extension) {
