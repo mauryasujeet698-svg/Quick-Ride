@@ -37,9 +37,29 @@ Future<void> main() async {
       QuickRideCustomerApp.router.go('/ride/$rideId');
     });
   }
+
+  QuickRideNotifications.foregroundMessages.listen((message) {
+    final notification = message.notification;
+    if (notification == null) return;
+    final rideId = message.data['ride_id'];
+    QuickRideCustomerApp.messengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text('${notification.title ?? 'Quick-Ride'}\n${notification.body ?? 'You have an update.'}'),
+        action: SnackBarAction(
+          label: 'OPEN',
+          onPressed: () {
+            if (rideId is String && rideId.isNotEmpty) {
+              QuickRideCustomerApp.router.go('/ride/$rideId');
+            }
+          },
+        ),
+      ),
+    );
+  });
 }
 
 class QuickRideCustomerApp extends StatelessWidget {
+  static final messengerKey = GlobalKey<ScaffoldMessengerState>();
   const QuickRideCustomerApp({super.key});
 
   static final router = GoRouter(
@@ -62,6 +82,7 @@ class QuickRideCustomerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
+        scaffoldMessengerKey: messengerKey,
         title: 'Quick-Ride',
         theme: QuickRideTheme.light(),
         darkTheme: QuickRideTheme.dark(),
