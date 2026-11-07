@@ -1,0 +1,26 @@
+name: Quick-Ride Flutter CI
+on:
+  push:
+    branches: [main, develop, 'feature/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Format check
+        run: dart format --output=none --set-exit-if-changed apps packages
+      - name: Analyze customer app
+        run: flutter analyze apps/customer_app
+      - name: Analyze driver app
+        run: flutter analyze apps/driver_app
+      - name: Analyze admin app
+        run: flutter analyze apps/admin_app
