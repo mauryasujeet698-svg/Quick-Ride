@@ -10,6 +10,8 @@ dependencies:
   flutter_riverpod: ^3.5.0
   go_router: ^18.1.3
   geolocator: ^14.1.2
+  file_picker: ^13.3.2
+  supabase_flutter: ^2.18.3
   quick_ride_auth:
     path: ../../packages/quick_ride_auth
   quick_ride_backend:
