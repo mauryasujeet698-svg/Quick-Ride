@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_mapbox/flutter_mapbox.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 
 class DriverRideNavigationScreen extends StatefulWidget {
-  const DriverRideNavigationScreen({super.key, required this.rideId});
+  const DriverRideNavigationScreen({
+    super.key,
+    required this.rideId,
+  });
 
   final String rideId;
 
@@ -17,20 +20,28 @@ class DriverRideNavigationScreen extends StatefulWidget {
 
 class _DriverRideNavigationScreenState
     extends State<DriverRideNavigationScreen> {
-  MapBoxNavigationViewController? _controller;
-  MapBoxOptions? _options;
+  final MapController _mapController = MapController();
+
+  StreamSubscription<dynamic>? _locationSubscription;
+  LatLng? _currentPosition;
+  LatLng? _targetPosition;
   String? _status;
   String? _destinationAddress;
   String? _error;
-  String? _instruction;
+  List<LatLng> _routePoints = [];
+  List<QuickRideRouteStep> _steps = [];
+  int _currentStepIndex = 0;
   double? _distanceRemaining;
   double? _durationRemaining;
+  String? _instruction;
   bool _loading = true;
-  bool _routeReady = false;
-  bool _navigationStarted = false;
+  bool _mapReady = false;
+  bool _routeRequestInFlight = false;
   bool _arrived = false;
   bool _finishing = false;
-  List<WayPoint> _pendingWaypoints = const [];
+  DateTime _lastRouteFetchedAt =
+      DateTime.fromMillisecondsSinceEpoch(0);
+  LatLng? _lastRouteOrigin;
 
   bool get _navigatingToDestination => _status == 'in_progress';
 
@@ -42,14 +53,11 @@ class _DriverRideNavigationScreenState
 
   @override
   void dispose() {
-    final controller = _controller;
-    if (controller != null && _navigationStarted) {
-      unawaited(controller.finishNavigation().then<void>((_) {}));
-    }
+    _locationSubscription?.cancel();
     super.dispose();
   }
 
-  Map<String, dynamic> _readPoint(dynamic value, String label) {
+  LatLng _readPoint(dynamic value, String label) {
     if (value is! Map) {
       throw StateError('$label coordinates are unavailable for this ride.');
     }
@@ -66,10 +74,7 @@ class _DriverRideNavigationScreenState
         longitude > 98) {
       throw StateError('$label coordinates are invalid.');
     }
-    return {
-      'latitude': latitude.toDouble(),
-      'longitude': longitude.toDouble(),
-    };
+    return LatLng(latitude.toDouble(), longitude.toDouble());
   }
 
   Future<void> _prepareNavigation() async {
@@ -88,11 +93,14 @@ class _DriverRideNavigationScreenState
           _status = status;
           _destinationAddress = ride['pickup_address']?.toString();
           _loading = false;
+          _arrived = true;
         });
         return;
       }
       if (!['accepted', 'driver_arriving', 'in_progress'].contains(status)) {
-        throw StateError('Navigation is only available for an active assigned ride.');
+        throw StateError(
+          'Navigation is only available for an active assigned ride.',
+        );
       }
 
       final goingToDestination = status == 'in_progress';
@@ -105,47 +113,26 @@ class _DriverRideNavigationScreenState
 
       final current = await QuickRideMaps.currentPosition();
       if (!mounted) return;
-
-      final options = MapBoxOptions(
-        initialLatitude: current.latitude,
-        initialLongitude: current.longitude,
-        zoom: 15,
-        tilt: 45,
-        bearing: current.heading.isFinite ? current.heading : 0,
-        mode: MapBoxNavigationMode.drivingWithTraffic,
-        units: VoiceUnits.metric,
-        alternatives: true,
-        enableRefresh: true,
-        voiceInstructionsEnabled: true,
-        bannerInstructionsEnabled: true,
-        allowsUTurnAtWayPoints: true,
-        simulateRoute: false,
-        longPressDestinationEnabled: false,
-        mapStyleUrlDay: 'mapbox://styles/mapbox/navigation-day-v1',
-        mapStyleUrlNight: 'mapbox://styles/mapbox/navigation-night-v1',
-        language: 'en',
-      );
-
+      final origin = LatLng(current.latitude, current.longitude);
       setState(() {
         _status = status;
+        _targetPosition = target;
+        _currentPosition = origin;
         _destinationAddress = targetAddress;
-        _options = options;
         _loading = false;
       });
-      _pendingWaypoints = [
-        WayPoint(
-          id: 'driver-origin',
-          name: 'Your current location',
-          latitude: current.latitude,
-          longitude: current.longitude,
-        ),
-        WayPoint(
-          id: 'ride-target',
-          name: goingToDestination ? 'Customer destination' : 'Customer pickup',
-          latitude: target['latitude'] as double,
-          longitude: target['longitude'] as double,
-        ),
-      ];
+
+      await _loadRoute(force: true);
+      _locationSubscription = QuickRideMaps.watchDriverPosition().listen(
+        _onLocation,
+        onError: (Object error) {
+          if (mounted) {
+            setState(() {
+              _error = 'Live GPS updates are unavailable: $error';
+            });
+          }
+        },
+      );
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -156,59 +143,124 @@ class _DriverRideNavigationScreenState
     }
   }
 
-  Future<void> _onNavigationViewCreated(
-    MapBoxNavigationViewController controller,
-  ) async {
-    _controller = controller;
-    try {
-      await controller.initialize();
-      if (!mounted) return;
-      final built = await controller.buildRoute(
-        wayPoints: _pendingWaypoints,
-        options: _options,
-      );
-      if (!mounted) return;
-      if (!built) {
-        setState(() => _error = 'Mapbox could not build a route to this location.');
-        return;
+  void _onLocation(dynamic position) {
+    if (!mounted || _targetPosition == null) return;
+    final next = LatLng(
+      (position.latitude as num).toDouble(),
+      (position.longitude as num).toDouble(),
+    );
+    setState(() {
+      _currentPosition = next;
+      _updateCurrentInstruction();
+      if (_distanceMeters(next, _targetPosition!) <= 40) {
+        _arrived = true;
       }
-      setState(() => _routeReady = true);
-      final started = await controller.startNavigation();
-      if (!mounted) return;
-      setState(() => _navigationStarted = started == true);
-    } catch (error) {
-      if (mounted) setState(() => _error = 'Navigation could not start: $error');
+    });
+
+    if (_mapReady) _mapController.move(next, 16);
+    final last = _lastRouteOrigin;
+    final moved = last == null || _distanceMeters(last, next) >= 120;
+    final elapsed =
+        DateTime.now().difference(_lastRouteFetchedAt) >=
+            const Duration(seconds: 30);
+    if (!_arrived && (moved || elapsed)) {
+      unawaited(_loadRoute());
     }
   }
 
-  void _onRouteEvent(RouteEvent event) {
-    if (!mounted) return;
-    if (event.eventType == MapBoxEvent.progress_change &&
-        event.data is RouteProgressEvent) {
-      final progress = event.data as RouteProgressEvent;
+  Future<void> _loadRoute({bool force = false}) async {
+    final origin = _currentPosition;
+    final target = _targetPosition;
+    if (origin == null || target == null || _routeRequestInFlight) return;
+    if (!force &&
+        _lastRouteOrigin != null &&
+        _distanceMeters(_lastRouteOrigin!, origin) < 120 &&
+        DateTime.now().difference(_lastRouteFetchedAt) <
+            const Duration(seconds: 30)) {
+      return;
+    }
+
+    _routeRequestInFlight = true;
+    _lastRouteFetchedAt = DateTime.now();
+    _lastRouteOrigin = origin;
+    try {
+      final route = await QuickRideMaps.drivingRoute(
+        origin: origin,
+        destination: target,
+        includeSteps: true,
+      );
+      if (!mounted) return;
       setState(() {
-        _instruction = progress.currentStepInstruction;
-        _distanceRemaining = progress.currentLegDistanceRemaining ?? progress.distance;
-        _durationRemaining = progress.duration;
-        if (progress.arrived == true) _arrived = true;
+        _routePoints = route.points;
+        _steps = route.steps;
+        _currentStepIndex = 0;
+        _distanceRemaining = route.distanceMeters;
+        _durationRemaining = route.durationSeconds;
+        _instruction = _steps.isEmpty
+            ? 'Follow the highlighted route'
+            : _steps.first.instruction;
+        _error = null;
       });
-    } else if (event.eventType == MapBoxEvent.on_arrival) {
-      setState(() => _arrived = true);
-    } else if (event.eventType == MapBoxEvent.route_build_failed ||
-        event.eventType == MapBoxEvent.route_build_no_routes_found ||
-        event.eventType == MapBoxEvent.failed_to_reroute) {
-      setState(() => _error = 'Mapbox could not calculate or refresh this route. Check GPS and network access, then retry.');
+      _updateCurrentInstruction();
+      if (_mapReady && _routePoints.isNotEmpty) {
+        _mapController.move(origin, 16);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = 'Route guidance is temporarily unavailable: $error';
+        });
+      }
+    } finally {
+      _routeRequestInFlight = false;
+    }
+  }
+
+  void _updateCurrentInstruction() {
+    final current = _currentPosition;
+    if (current == null || _steps.isEmpty) return;
+
+    var index = _currentStepIndex.clamp(0, _steps.length - 1);
+    while (index < _steps.length - 1) {
+      final stepPoint = _steps[index].location;
+      if (stepPoint == null ||
+          _distanceMeters(current, stepPoint) <= 35) {
+        index++;
+      } else {
+        break;
+      }
+    }
+    _currentStepIndex = index;
+    _instruction = _steps[index].instruction;
+  }
+
+  double _distanceMeters(LatLng a, LatLng b) {
+    const earthRadius = 6371000.0;
+    const radians = math.pi / 180;
+    final lat1 = a.latitude * radians;
+    final lat2 = b.latitude * radians;
+    final dLat = (b.latitude - a.latitude) * radians;
+    final dLng = (b.longitude - a.longitude) * radians;
+    final sinLat = math.sin(dLat / 2);
+    final sinLng = math.sin(dLng / 2);
+    final haversine = sinLat * sinLat +
+        math.cos(lat1) * math.cos(lat2) * sinLng * sinLng;
+    return earthRadius *
+        2 *
+        math.asin(math.sqrt(haversine.clamp(0.0, 1.0)));
+  }
+
+  void _centerMap() {
+    final center = _currentPosition ?? _targetPosition;
+    if (center != null && _mapReady) {
+      _mapController.move(center, 16);
     }
   }
 
   Future<void> _finishNavigation() async {
     if (_finishing) return;
     setState(() => _finishing = true);
-    try {
-      await _controller?.finishNavigation();
-    } catch (_) {
-      // The user can still return to the ride controls.
-    }
+    await _locationSubscription?.cancel();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -229,8 +281,11 @@ class _DriverRideNavigationScreenState
 
   @override
   Widget build(BuildContext context) {
-    final targetLabel =
-        _navigatingToDestination ? 'Navigate to destination' : 'Navigate to pickup';
+    final targetLabel = _navigatingToDestination
+        ? 'Navigate to destination'
+        : 'Navigate to pickup';
+    final current = _currentPosition;
+    final target = _targetPosition;
 
     return Scaffold(
       appBar: AppBar(
@@ -238,7 +293,7 @@ class _DriverRideNavigationScreenState
         actions: [
           IconButton(
             tooltip: 'Recenter navigation',
-            onPressed: _controller == null ? null : () => _controller!.reCenterCamera(),
+            onPressed: _centerMap,
             icon: const Icon(Icons.my_location),
           ),
         ],
@@ -250,41 +305,91 @@ class _DriverRideNavigationScreenState
                   'You are at the pickup point.',
                   'Return to the ride controls to verify the passenger OTP and start the trip.',
                 )
-              : _error != null && _options == null
+              : current == null || target == null
                   ? _errorState()
-                  : _options == null
-                      ? _errorState()
-                      : Column(
-                          children: [
-                            Expanded(
-                              child: MapBoxNavigationView(
-                                key: ValueKey('driver-navigation-${widget.rideId}'),
-                                options: _options,
-                                onCreated: _onNavigationViewCreated,
-                                onRouteEvent: _onRouteEvent,
+                  : Column(
+                      children: [
+                        Expanded(
+                          child: FlutterMap(
+                            key: ValueKey('driver-navigation-${widget.rideId}'),
+                            mapController: _mapController,
+                            options: MapOptions(
+                              initialCenter: current,
+                              initialZoom: 16,
+                              onMapReady: () {
+                                _mapReady = true;
+                                _centerMap();
+                              },
+                            ),
+                            children: [
+                              QuickRideMaps.openStreetMapLayer(),
+                              if (_routePoints.length >= 2)
+                                PolylineLayer(
+                                  polylines: [
+                                    Polyline(
+                                      points: _routePoints,
+                                      strokeWidth: 7,
+                                      color: Colors.blue,
+                                    ),
+                                  ],
+                                ),
+                              MarkerLayer(
+                                markers: [
+                                  Marker(
+                                    point: current,
+                                    width: 44,
+                                    height: 44,
+                                    child: const Icon(
+                                      Icons.navigation,
+                                      color: Colors.blue,
+                                      size: 36,
+                                    ),
+                                  ),
+                                  Marker(
+                                    point: target,
+                                    width: 42,
+                                    height: 46,
+                                    child: const Icon(
+                                      Icons.location_on,
+                                      color: Colors.red,
+                                      size: 42,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              QuickRideMaps.attributionControl(),
+                            ],
+                          ),
+                        ),
+                        if (_error != null)
+                          Material(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  Expanded(child: Text(_error!)),
+                                  TextButton(
+                                    onPressed: () => _loadRoute(force: true),
+                                    child: const Text('RETRY'),
+                                  ),
+                                ],
                               ),
                             ),
-                            if (_error != null)
-                              Material(
-                                color: Theme.of(context).colorScheme.errorContainer,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Text(_error!),
-                                ),
-                              ),
-                            if (_arrived)
-                              _arrivalMessage(
-                                _navigatingToDestination
-                                    ? 'You have reached the destination.'
-                                    : 'You have reached the pickup point.',
-                                _navigatingToDestination
-                                    ? 'Return to the ride controls and complete the trip after confirming the drop-off.'
-                                    : 'Return to the ride controls to mark arrival and verify the passenger OTP.',
-                              )
-                            else
-                              _navigationStatusCard(),
-                          ],
-                        ),
+                          ),
+                        if (_arrived)
+                          _arrivalMessage(
+                            _navigatingToDestination
+                                ? 'You have reached the destination.'
+                                : 'You have reached the pickup point.',
+                            _navigatingToDestination
+                                ? 'Return to the ride controls and complete the trip after confirming the drop-off.'
+                                : 'Return to the ride controls to mark arrival and verify the passenger OTP.',
+                          )
+                        else
+                          _navigationStatusCard(),
+                      ],
+                    ),
     );
   }
 
@@ -325,9 +430,24 @@ class _DriverRideNavigationScreenState
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(child: _navigationMetric('Remaining', _formatDistance(_distanceRemaining))),
-                  Expanded(child: _navigationMetric('ETA', _formatDuration(_durationRemaining))),
-                  Expanded(child: _navigationMetric('Status', _navigationStarted ? 'Navigating' : _routeReady ? 'Starting' : 'Routing')),
+                  Expanded(
+                    child: _navigationMetric(
+                      'Remaining',
+                      _formatDistance(_distanceRemaining),
+                    ),
+                  ),
+                  Expanded(
+                    child: _navigationMetric(
+                      'ETA',
+                      _formatDuration(_durationRemaining),
+                    ),
+                  ),
+                  Expanded(
+                    child: _navigationMetric(
+                      'Status',
+                      _routeRequestInFlight ? 'Rerouting' : 'Navigating',
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -345,7 +465,13 @@ class _DriverRideNavigationScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: Theme.of(context).textTheme.labelSmall),
-          Text(value, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          Text(
+            value,
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
         ],
       );
 
@@ -356,9 +482,17 @@ class _DriverRideNavigationScreenState
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.flag_circle_rounded, size: 64, color: Colors.green),
+                const Icon(
+                  Icons.flag_circle_rounded,
+                  size: 64,
+                  color: Colors.green,
+                ),
                 const SizedBox(height: 16),
-                Text(title, style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 8),
                 Text(subtitle, textAlign: TextAlign.center),
                 const SizedBox(height: 20),
