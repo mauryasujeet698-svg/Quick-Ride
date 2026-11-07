@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 
@@ -166,6 +167,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         title: const Text('Operations centre'),
         actions: [
           IconButton(onPressed: busy ? null : load, icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: () => context.push('/operations'), icon: const Icon(Icons.dashboard_outlined), tooltip: 'Operations'),
           IconButton(onPressed: QuickRideAuth.signOut, icon: const Icon(Icons.logout)),
         ],
       ),

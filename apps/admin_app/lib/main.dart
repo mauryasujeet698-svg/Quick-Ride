@@ -6,6 +6,7 @@ import 'package:quick_ride_core/quick_ride_core.dart';
 import 'package:quick_ride_design_system/quick_ride_design_system.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'src/admin_home_screen.dart';
+import 'src/operations_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,7 @@ class QuickRideAdminApp extends StatelessWidget {
   const QuickRideAdminApp({super.key});
   static final router = GoRouter(routes: [
     GoRoute(path: '/', builder: (_, __) => const AdminHomeScreen()),
+    GoRoute(path: '/operations', builder: (_, __) => const AdminOperationsScreen()),
   ]);
 
   @override
