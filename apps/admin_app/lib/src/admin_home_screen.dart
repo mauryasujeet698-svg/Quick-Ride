@@ -363,27 +363,149 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (!QuickRideBackend.isInitialized) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Quick-Ride Admin')),
-        body: const Center(child: Text('Supabase URL and anon key are required at build time.')),
-      );
-    }
-    if (QuickRideAuth.currentUser == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Quick-Ride Admin')),
-        body: Center(
-          child: FilledButton.icon(
-            onPressed: () => QuickRideAuth.signInWithGoogle(
-              redirectTo: 'in.quickride.admin://login-callback',
-            ),
-            icon: const Icon(Icons.login),
-            label: const Text('Sign in with Google'),
-          ),
+  Widget _previewTile(
+    IconData icon,
+    String title,
+    String description,
+  ) =>
+      Card(
+        child: ListTile(
+          leading: CircleAvatar(child: Icon(icon)),
+          title: Text(title),
+          subtitle: Text(description),
+          trailing: const Icon(Icons.chevron_right),
         ),
       );
+
+  Widget _previewScreen() {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Quick-Ride Admin'),
+        actions: [
+          IconButton(
+            tooltip: 'Sign in',
+            onPressed: QuickRideBackend.isInitialized
+                ? () => QuickRideAuth.signInWithGoogle(
+                      redirectTo: 'in.quickride.admin://login-callback',
+                    )
+                : null,
+            icon: const Icon(Icons.login),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          Text(
+            'Platform control centre',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Explore the management areas before connecting your administrator account.',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: 14),
+          Card(
+            color: colors.secondaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.visibility_outlined,
+                      color: colors.onSecondaryContainer),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Preview mode · Read only\n'
+                      'No real drivers, rides, service areas or financial '
+                      'figures are shown here. Connect the configured Supabase '
+                      'admin account to load and manage live platform data.',
+                      style: TextStyle(color: colors.onSecondaryContainer),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text('Service configuration',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          _previewTile(
+            Icons.location_city_outlined,
+            'Service areas and pincodes',
+            'Create operating areas, add pincodes and manage boundaries',
+          ),
+          _previewTile(
+            Icons.directions_car_outlined,
+            'Vehicle categories',
+            'Create and enable bike, auto, car and other ride categories',
+          ),
+          _previewTile(
+            Icons.currency_rupee_rounded,
+            'Fare and commercial rules',
+            'Configure base fare, distance/time rates and minimum fare',
+          ),
+          _previewTile(
+            Icons.business_center_outlined,
+            'Driver business models',
+            'Set subscription, commission or hybrid model per pincode',
+          ),
+          const SizedBox(height: 14),
+          Text('Platform operations',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          _previewTile(
+            Icons.verified_user_outlined,
+            'Driver and KYC approvals',
+            'Review vehicle details, documents and service-pincode requests',
+          ),
+          _previewTile(
+            Icons.route_outlined,
+            'Ride operations',
+            'Review active rides, driver assignment and operational status',
+          ),
+          _previewTile(
+            Icons.support_agent_outlined,
+            'Customer support',
+            'Review ride-linked support requests and resolutions',
+          ),
+          _previewTile(
+            Icons.sos_outlined,
+            'Safety and SOS queue',
+            'Review driver safety events and emergency escalations',
+          ),
+          const SizedBox(height: 18),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/operations'),
+            icon: const Icon(Icons.dashboard_outlined),
+            label: const Text('Explore operations dashboard'),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: QuickRideBackend.isInitialized
+                ? () => QuickRideAuth.signInWithGoogle(
+                      redirectTo: 'in.quickride.admin://login-callback',
+                    )
+                : null,
+            icon: const Icon(Icons.login),
+            label: const Text('Sign in to manage Quick-Ride'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!QuickRideBackend.isInitialized ||
+        QuickRideAuth.currentUser == null) {
+      return _previewScreen();
     }
 
     final areas = directory?['service_areas'] as List<dynamic>? ?? [];
