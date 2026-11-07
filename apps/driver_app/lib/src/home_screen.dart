@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
@@ -656,6 +657,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             if (ride['pickup_address'] != null) Text('Pickup: ' + ride['pickup_address'].toString()),
             if (ride['destination_address'] != null) Text('Destination: ' + ride['destination_address'].toString()),
             const SizedBox(height: 8),
+            if (status == 'accepted' || status == 'driver_arriving')
+              FilledButton.icon(
+                onPressed: _busy ? null : () => context.push('/ride/$id/navigation'),
+                icon: const Icon(Icons.navigation_rounded),
+                label: Text(status == 'in_progress' ? 'Navigate to destination' : 'Navigate to pickup'),
+              ),
             if (status == 'accepted')
               FilledButton(
                 onPressed: _busy ? null : () => _transition('arriving', id),
@@ -678,11 +685,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                 child: const Text('Start trip'),
               ),
             ],
-            if (status == 'in_progress')
+            if (status == 'in_progress') ...[
+              FilledButton.icon(
+                onPressed: _busy ? null : () => context.push('/ride/$id/navigation'),
+                icon: const Icon(Icons.navigation_rounded),
+                label: const Text('Navigate to destination'),
+              ),
               FilledButton(
                 onPressed: _busy ? null : () => _transition('complete', id),
                 child: const Text('Complete trip'),
               ),
+            ],
             if (['accepted', 'driver_arriving', 'arrived'].contains(status))
               TextButton(
                 onPressed: _busy ? null : () => _transition('cancel', id),
