@@ -63,4 +63,4 @@ Driver location is accepted only for verified drivers with an approved availabil
 
 ## External setup
 
-Supabase URL and publishable key may be supplied to clients. Supabase service-role key remains in server secrets. Mapbox Directions server token is separate from the public mobile token and native SDK download token. Google OAuth settings, FCM credentials, payment provider integration and release signing require owner configuration.
+Supabase URL and publishable key may be supplied to clients. Supabase service-role key remains in server secrets. Maps use `flutter_map` with OpenStreetMap tiles, Nominatim reverse geocoding and OSRM routing; no Mapbox token or native SDK download credential is required. Public OSM community endpoints are development/QA defaults only. Configure `OSM_TILE_URL`, `NOMINATIM_BASE_URL` and `OSRM_BASE_URL` to suitable hosted or self-hosted services for production. Google OAuth settings, FCM credentials, payment provider integration and release signing require owner configuration.
