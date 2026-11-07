@@ -140,6 +140,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     if (_locationSubscription != null) return;
     _locationSubscription = QuickRideMaps.watchDriverPosition().listen(
       (position) async {
+        // The platform stream can emit a null fix before GPS acquires a lock.
+        if (position == null) return;
         final now = DateTime.now();
         if (now.difference(_lastLocationSent) < const Duration(seconds: 8)) return;
         _lastLocationSent = now;
