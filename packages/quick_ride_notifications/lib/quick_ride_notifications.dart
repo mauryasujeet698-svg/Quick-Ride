@@ -95,6 +95,9 @@ class QuickRideNotifications {
           }
         },
       );
+      // Keep FCM registration-token refresh: the server's FCM HTTP v1 sender
+      // targets registration tokens, not Firebase Installation IDs.
+      // ignore: deprecated_member_use
       _tokenSubscription ??= _messaging!.onTokenRefresh.listen((token) {
         final user = QuickRideBackend.client.auth.currentUser;
         if (user != null) unawaited(_saveToken(user.id, token));
@@ -130,6 +133,7 @@ class QuickRideNotifications {
           settings.authorizationStatus != AuthorizationStatus.provisional) {
         return;
       }
+      // ignore: deprecated_member_use
       final token = await messaging.getToken();
       if (token != null && token.isNotEmpty) await _saveToken(userId, token);
     } catch (error) {
@@ -155,6 +159,7 @@ class QuickRideNotifications {
     final user = QuickRideBackend.client.auth.currentUser;
     if (user == null) return;
     try {
+      // ignore: deprecated_member_use
       final token = await _messaging?.getToken();
       if (token == null) return;
       await QuickRideBackend.client
