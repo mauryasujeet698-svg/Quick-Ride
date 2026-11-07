@@ -11,6 +11,7 @@ import 'src/home_screen.dart';
 import 'src/my_rides_screen.dart';
 import 'src/profile_screen.dart';
 import 'src/support_screen.dart';
+import 'src/tracking_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,12 @@ class QuickRideCustomerApp extends StatelessWidget {
     routes: [
       GoRoute(path: '/', builder: (_, __) => const CustomerHomeScreen()),
       GoRoute(path: '/book', builder: (_, __) => const CustomerBookingScreen()),
+      GoRoute(
+        path: '/ride/:rideId',
+        builder: (_, state) => CustomerRideTrackingScreen(
+          rideId: state.pathParameters['rideId']!,
+        ),
+      ),
       GoRoute(path: '/my-rides', builder: (_, __) => const CustomerRidesScreen()),
       GoRoute(path: '/support', builder: (_, state) => CustomerSupportScreen(
         initialRideId: state.uri.queryParameters['rideId'],

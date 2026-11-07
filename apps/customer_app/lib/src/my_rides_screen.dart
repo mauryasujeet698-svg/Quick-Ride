@@ -158,6 +158,12 @@ class _RideCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 4,
               children: [
+                if (active)
+                  FilledButton.icon(
+                    onPressed: () => context.push('/ride/' + Uri.encodeComponent(id)),
+                    icon: const Icon(Icons.my_location, size: 18),
+                    label: const Text('Track ride'),
+                  ),
                 OutlinedButton.icon(
                   onPressed: () => context.push('/support?rideId=' + Uri.encodeComponent(id)),
                   icon: const Icon(Icons.support_agent_outlined, size: 18),

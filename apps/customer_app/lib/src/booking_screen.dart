@@ -426,6 +426,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                       ),
                     ),
                   ),
+                  FilledButton.icon(
+                    onPressed: () => context.push(
+                      '/ride/' + Uri.encodeComponent(_booking!['id'].toString()),
+                    ),
+                    icon: const Icon(Icons.my_location),
+                    label: const Text('Track this ride'),
+                  ),
                   _RideStatusStream(rideId: _booking!['id'].toString()),
                 ],
               ],
