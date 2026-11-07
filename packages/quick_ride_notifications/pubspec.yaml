@@ -1,0 +1,10 @@
+name: quick_ride_notifications
+publish_to: none
+environment:
+  sdk: ^3.12.0
+resolution: workspace
+dependencies:
+  firebase_core: ^5.1.0
+  firebase_messaging: ^17.0.1
+  quick_ride_backend:
+    path: ../quick_ride_backend
