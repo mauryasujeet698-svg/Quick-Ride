@@ -19,10 +19,21 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   final subscriptionAmount = TextEditingController();
   final commissionPercent = TextEditingController();
   final boundaryJson = TextEditingController();
+  final categoryCode = TextEditingController();
+  final categoryName = TextEditingController();
+  final baseFare = TextEditingController();
+  final perKmRate = TextEditingController();
+  final perMinuteRate = TextEditingController(text: '0');
+  final minimumFare = TextEditingController();
+  final bookingFee = TextEditingController(text: '0');
+  final fareMultiplier = TextEditingController(text: '1');
 
   String model = 'subscription';
   String period = 'day';
   String? selectedAreaId;
+  int? selectedCategoryId;
+  List<Map<String, dynamic>> vehicleCategories = [];
+  List<Map<String, dynamic>> fareConfigs = [];
   Map<String, dynamic>? directory;
   bool busy = false;
   String? errorText;
@@ -57,6 +68,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     subscriptionAmount.dispose();
     commissionPercent.dispose();
     boundaryJson.dispose();
+    categoryCode.dispose();
+    categoryName.dispose();
+    baseFare.dispose();
+    perKmRate.dispose();
+    perMinuteRate.dispose();
+    minimumFare.dispose();
+    bookingFee.dispose();
+    fareMultiplier.dispose();
     _authSubscription?.cancel();
     super.dispose();
   }
@@ -85,12 +104,88 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Future<void> loadWithoutBusy() async {
-    directory = await call('list');
+    final results = await Future.wait([
+      call('list'),
+      call('list_vehicle_categories'),
+      call('list_fare_configs'),
+    ]);
+    directory = results[0];
+    vehicleCategories = (results[1]['vehicle_categories'] as List<dynamic>? ?? [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+    fareConfigs = (results[2]['fare_configs'] as List<dynamic>? ?? [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
     final areas = directory?['service_areas'] as List<dynamic>? ?? [];
     if (selectedAreaId == null && areas.isNotEmpty) {
       selectedAreaId = areas.first['id'].toString();
     }
+    final activeCategories = vehicleCategories.where((item) => item['is_active'] == true);
+    if (selectedCategoryId == null || !activeCategories.any((item) => item['id'] == selectedCategoryId)) {
+      selectedCategoryId = activeCategories.isEmpty
+          ? null
+          : (activeCategories.first['id'] as num).toInt();
+    }
     if (mounted) setState(() {});
+  }
+
+  Future<void> createVehicleCategory() async {
+    if (categoryCode.text.trim().isEmpty || categoryName.text.trim().isEmpty) {
+      setState(() => errorText = 'Enter a category code and display name.');
+      return;
+    }
+    await run(() async {
+      final result = await call('create_vehicle_category', {
+        'code': categoryCode.text.trim().toLowerCase(),
+        'name': categoryName.text.trim(),
+      });
+      selectedCategoryId = (result['vehicle_category']['id'] as num).toInt();
+      categoryCode.clear();
+      categoryName.clear();
+      await loadWithoutBusy();
+    });
+  }
+
+  Future<void> setVehicleCategoryActive(int id, bool active) async {
+    await run(() async {
+      await call('set_vehicle_category_active', {
+        'categoryId': id,
+        'isActive': active,
+      });
+      await loadWithoutBusy();
+    });
+  }
+
+  double _fareValue(TextEditingController controller, String label) {
+    final value = double.tryParse(controller.text.trim());
+    if (value == null || !value.isFinite) {
+      throw StateError('Enter a valid $label.');
+    }
+    return value;
+  }
+
+  Future<void> saveFareConfig() async {
+    await run(() async {
+      if (selectedAreaId == null || selectedCategoryId == null) {
+        throw StateError('Select a service area and an active vehicle category.');
+      }
+      await call('create_fare_config', {
+        'serviceAreaId': int.parse(selectedAreaId!),
+        'vehicleCategoryId': selectedCategoryId,
+        'baseFare': _fareValue(baseFare, 'base fare'),
+        'perKmRate': _fareValue(perKmRate, 'per-kilometre rate'),
+        'perMinuteRate': _fareValue(perMinuteRate, 'per-minute rate'),
+        'minimumFare': _fareValue(minimumFare, 'minimum fare'),
+        'bookingFee': _fareValue(bookingFee, 'booking fee'),
+        'multiplier': _fareValue(fareMultiplier, 'fare multiplier'),
+      });
+      await loadWithoutBusy();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('New fare rule published. Previous fare history is retained.')),
+        );
+      }
+    });
   }
 
   Future<void> createArea() async {
@@ -207,6 +302,136 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               Text(errorText!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             ],
             const SizedBox(height: 20),
+            Text('Vehicle categories', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            const Text('Create the vehicle types offered on Quick-Ride. Enable a category only when it is ready for bookings.'),
+            TextField(
+              controller: categoryCode,
+              textCapitalization: TextCapitalization.none,
+              decoration: const InputDecoration(
+                labelText: 'Category code',
+                hintText: 'bike, auto, car',
+                helperText: 'Lowercase letters, numbers and underscores.',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: categoryName,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Display name'),
+            ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: busy ? null : createVehicleCategory,
+              child: const Text('Create vehicle category'),
+            ),
+            if (vehicleCategories.isEmpty)
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('No vehicle categories created yet.'),
+                subtitle: Text('Create the categories your operating area will support.'),
+              )
+            else
+              ...vehicleCategories.map((category) {
+                final id = (category['id'] as num).toInt();
+                final active = category['is_active'] == true;
+                return SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: active,
+                  title: Text(category['name'].toString()),
+                  subtitle: Text(category['code'].toString() + (active ? ' · Available for booking' : ' · Disabled')),
+                  onChanged: busy ? null : (value) => setVehicleCategoryActive(id, value),
+                );
+              }),
+            const Divider(height: 32),
+            Text('Fare rules by service area and vehicle', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            const Text('Publish a new effective-dated fare rule. Existing rides keep the fare snapshot they were quoted.'),
+            DropdownButtonFormField<String>(
+              initialValue: selectedAreaId,
+              decoration: const InputDecoration(labelText: 'Service area'),
+              items: areas.map((item) {
+                final area = Map<String, dynamic>.from(item as Map);
+                return DropdownMenuItem(
+                  value: area['id'].toString(),
+                  child: Text(area['name'].toString() + ' · ' + area['city'].toString()),
+                );
+              }).toList(),
+              onChanged: busy ? null : (value) => setState(() => selectedAreaId = value),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              initialValue: selectedCategoryId,
+              decoration: const InputDecoration(labelText: 'Active vehicle category'),
+              items: vehicleCategories.where((item) => item['is_active'] == true).map((item) {
+                return DropdownMenuItem(
+                  value: (item['id'] as num).toInt(),
+                  child: Text(item['name'].toString()),
+                );
+              }).toList(),
+              onChanged: busy ? null : (value) => setState(() => selectedCategoryId = value),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: baseFare,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Base fare (₹)'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: perKmRate,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Rate per kilometre (₹)'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: perMinuteRate,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Rate per minute (₹)'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: minimumFare,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Minimum fare (₹)'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: bookingFee,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Booking fee (₹)'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: fareMultiplier,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Fare multiplier'),
+            ),
+            const SizedBox(height: 10),
+            FilledButton(
+              onPressed: busy || areas.isEmpty || selectedCategoryId == null ? null : saveFareConfig,
+              child: const Text('Publish fare rule'),
+            ),
+            if (fareConfigs.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Fare configuration history', style: Theme.of(context).textTheme.titleMedium),
+              ...fareConfigs.map((fare) {
+                final area = fare['service_areas'] as Map<String, dynamic>? ?? {};
+                final category = fare['vehicle_categories'] as Map<String, dynamic>? ?? {};
+                final active = fare['is_active'] == true;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text((area['city']?.toString() ?? area['name']?.toString() ?? 'Area') + ' · ' + (category['name']?.toString() ?? 'Vehicle')),
+                  subtitle: Text(
+                    'Base ₹' + (fare['base_fare'] as num).toStringAsFixed(0) +
+                    ' · ₹' + (fare['per_km_rate'] as num).toStringAsFixed(0) + '/km' +
+                    ' · ' + (active ? 'Active' : 'Historical'),
+                  ),
+                  trailing: active ? const Icon(Icons.check_circle, color: Colors.green) : const Icon(Icons.history),
+                );
+              }),
+            ],
+            const Divider(height: 32),
             Text('Create city or operating area', style: Theme.of(context).textTheme.titleLarge),
             TextField(controller: areaName, decoration: const InputDecoration(labelText: 'Area name')),
             const SizedBox(height: 8),
