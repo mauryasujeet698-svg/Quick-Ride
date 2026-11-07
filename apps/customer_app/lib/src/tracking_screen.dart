@@ -398,7 +398,6 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
         lineWidth: 6,
         lineBorderColor: Colors.white.toARGB32(),
         lineBorderWidth: 2,
-        lineJoin: LineJoin.round,
       );
       final existing = _routeAnnotation;
       if (existing == null) {
