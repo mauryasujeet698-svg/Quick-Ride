@@ -1,5 +1,5 @@
 import 'package:geolocator/geolocator.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' show MapboxOptions;
 import 'package:quick_ride_core/quick_ride_core.dart';
 
 class QuickRideMaps {
