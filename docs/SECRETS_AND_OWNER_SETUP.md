@@ -39,7 +39,12 @@ Then open **Actions → Build Quick-Ride Android QA APKs → Run workflow** on `
 
 ## Firebase Cloud Messaging
 
-- Configure Firebase for all three Android application IDs and store FCM server credentials outside the app bundle. Realtime subscriptions are the current live-event mechanism; push notifications are not implemented yet.
+- Create three Android apps in the Firebase project using `in.quickride.customer`, `in.quickride.driver` and `in.quickride.admin` as application IDs.
+- Add repository Actions secrets `FIREBASE_API_KEY`, `FIREBASE_CUSTOMER_APP_ID`, `FIREBASE_DRIVER_APP_ID` and `FIREBASE_ADMIN_APP_ID`, plus Actions variables `FIREBASE_PROJECT_ID` and `FIREBASE_MESSAGING_SENDER_ID`. These values enable the client registration in each app; push remains inactive when they are absent.
+- In Supabase Edge Function secrets, add `FCM_SERVICE_ACCOUNT_JSON` containing the complete Firebase service-account JSON. Enable the Firebase Cloud Messaging API for the project and grant the service account permission to send messages.
+- The apps register FCM tokens after authenticated sign-in and remove the current token on sign-out. Ride offers, driver status changes, ride completion, customer cancellation and driver SOS events invoke the private `send-push` function. The function accepts only the Supabase service-role bearer token and sends through the FCM HTTP v1 API.
+- Keep the Firebase service-account JSON only in Supabase secrets. Never put it in GitHub source, a Flutter build define, the mobile bundle or chat.
+- Test notification permission, foreground delivery, background delivery, notification taps and token refresh on physical Android devices. Realtime continues to provide in-app live updates; push is the wake-up/alert channel.
 
 ## Service-area operations
 
