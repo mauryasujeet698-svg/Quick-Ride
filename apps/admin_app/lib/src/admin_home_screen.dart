@@ -204,7 +204,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 );
               }),
               DropdownButtonFormField<String>(
-                value: selectedAreaId,
+                initialValue: selectedAreaId,
                 decoration: const InputDecoration(labelText: 'Service area for new pincode'),
                 items: areas.map((item) {
                   final area = Map<String, dynamic>.from(item as Map);
@@ -225,7 +225,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               decoration: const InputDecoration(labelText: 'Six-digit Indian pincode', counterText: ''),
             ),
             DropdownButtonFormField<String>(
-              value: model,
+              initialValue: model,
               decoration: const InputDecoration(labelText: 'Business model'),
               items: const [
                 DropdownMenuItem(value: 'subscription', child: Text('Subscription')),
@@ -242,7 +242,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 decoration: const InputDecoration(labelText: 'Subscription amount (INR)'),
               ),
               DropdownButtonFormField<String>(
-                value: period,
+                initialValue: period,
                 decoration: const InputDecoration(labelText: 'Subscription billing period'),
                 items: const [
                   DropdownMenuItem(value: 'day', child: Text('Daily')),
