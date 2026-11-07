@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart' as geolocator;
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
@@ -139,9 +140,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   void _startLocationUpdates() {
     if (_locationSubscription != null) return;
     _locationSubscription = QuickRideMaps.watchDriverPosition().listen(
-      (position) async {
-        // The platform stream can emit a null fix before GPS acquires a lock.
-        if (position == null) return;
+      (rawPosition) async {
+        if (rawPosition is! geolocator.Position) return;
+        final position = rawPosition;
         final now = DateTime.now();
         if (now.difference(_lastLocationSent) < const Duration(seconds: 8)) return;
         _lastLocationSent = now;
