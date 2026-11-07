@@ -9,6 +9,7 @@ import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
@@ -870,6 +871,53 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         ),
       );
 
+  Future<void> _openEmergencyDialer(String rideId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Emergency assistance'),
+        content: const Text(
+          'For an immediate emergency in India, call 112. '
+          'Quick-Ride will try to record an SOS event for this assigned ride, '
+          'then open your phone dialer. You must confirm the call in the dialer. '
+          'Quick-Ride is not an emergency dispatch service.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Open 112 dialer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    var recorded = false;
+    try {
+      await _invoke('safety_event', {'rideId': rideId})
+          .timeout(const Duration(seconds: 3));
+      recorded = true;
+    } catch (_) {
+      // Public emergency access must not depend on platform connectivity.
+    }
+    var dialerOpened = false;
+    try {
+      dialerOpened = await launchUrl(Uri(scheme: 'tel', path: '112'));
+    } catch (_) {
+      dialerOpened = false;
+    }
+    if (!mounted) return;
+    final message = !dialerOpened
+        ? 'Could not open the phone dialer. Please dial 112 manually.'
+        : recorded
+            ? 'SOS event recorded. Confirm the emergency call in your phone dialer.'
+            : 'Emergency dialer opened. SOS could not be recorded; confirm the call in your phone dialer.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Widget _activeRideCard(Map<String, dynamic> ride) {
     final id = ride['id'].toString();
     final status = ride['status'].toString();
@@ -923,6 +971,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                 child: const Text('Complete trip'),
               ),
             ],
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => _openEmergencyDialer(id),
+              icon: const Icon(Icons.call_rounded),
+              label: const Text('Emergency · Call 112'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+            ),
             if (['accepted', 'driver_arriving', 'arrived'].contains(status))
               TextButton(
                 onPressed: _busy ? null : () => _transition('cancel', id),
