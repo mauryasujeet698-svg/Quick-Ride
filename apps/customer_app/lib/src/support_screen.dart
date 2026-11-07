@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
@@ -21,6 +23,7 @@ class _CustomerSupportScreenState extends State<CustomerSupportScreen> {
   List<Map<String, dynamic>> _rides = [];
   bool _loadingRides = false;
   bool _submitting = false;
+  StreamSubscription<dynamic>? _authSubscription;
   String? _message;
 
   @override
@@ -28,10 +31,22 @@ class _CustomerSupportScreenState extends State<CustomerSupportScreen> {
     super.initState();
     _selectedRideId = widget.initialRideId;
     _loadRides();
+    if (QuickRideBackend.isInitialized) {
+      _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
+        if (!mounted) return;
+        setState(() {});
+        if (QuickRideAuth.currentUser != null) {
+          unawaited(_loadRides());
+        } else {
+          setState(() => _rides = []);
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _subject.dispose();
     _description.dispose();
     super.dispose();
@@ -139,6 +154,7 @@ class _CustomerSupportScreenState extends State<CustomerSupportScreen> {
               style: Theme.of(context).textTheme.bodyMedium),
           const SizedBox(height: 18),
           DropdownButtonFormField<String?>(
+            key: ValueKey('ride-selection-' + validSelection.toString() + '-' + (_selectedRideId ?? 'general')),
             initialValue: validSelection ? _selectedRideId : null,
             decoration: const InputDecoration(
               labelText: 'Select a ride',

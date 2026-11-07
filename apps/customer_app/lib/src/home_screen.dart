@@ -17,6 +17,7 @@ class CustomerHomeScreen extends StatefulWidget {
 class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   final _pin = TextEditingController();
   Timer? _lookupTimer;
+  StreamSubscription<dynamic>? _authSubscription;
   List<Map<String, dynamic>> _areas = [];
   List<Map<String, dynamic>> _categories = [];
   bool _loadingAreas = false;
@@ -27,6 +28,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   void initState() {
     super.initState();
     if (QuickRideBackend.isInitialized) {
+      _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
+        if (mounted) setState(() {});
+      });
       unawaited(_loadCategories());
       unawaited(_lookupAreas(''));
     }
@@ -35,6 +39,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   @override
   void dispose() {
     _lookupTimer?.cancel();
+    _authSubscription?.cancel();
     _pin.dispose();
     super.dispose();
   }

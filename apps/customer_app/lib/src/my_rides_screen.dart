@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
@@ -5,8 +7,31 @@ import 'package:quick_ride_backend/quick_ride_backend.dart';
 
 import 'customer_navigation_bar.dart';
 
-class CustomerRidesScreen extends StatelessWidget {
+class CustomerRidesScreen extends StatefulWidget {
   const CustomerRidesScreen({super.key});
+
+  @override
+  State<CustomerRidesScreen> createState() => _CustomerRidesScreenState();
+}
+
+class _CustomerRidesScreenState extends State<CustomerRidesScreen> {
+  StreamSubscription<dynamic>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    if (QuickRideBackend.isInitialized) {
+      _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
