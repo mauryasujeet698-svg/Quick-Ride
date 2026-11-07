@@ -632,27 +632,157 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     });
   }
 
+  Widget _previewTile(
+    IconData icon,
+    String title,
+    String subtitle,
+  ) =>
+      Card(
+        child: ListTile(
+          leading: CircleAvatar(child: Icon(icon)),
+          title: Text(title),
+          subtitle: Text(subtitle),
+          trailing: const Icon(Icons.chevron_right),
+        ),
+      );
+
+  Widget _previewScreen() {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Quick-Ride Driver'),
+        actions: [
+          IconButton(
+            tooltip: 'Sign in',
+            onPressed: QuickRideBackend.isInitialized
+                ? () => QuickRideAuth.signInWithGoogle(
+                      redirectTo: 'in.quickride.driver://login-callback',
+                    )
+                : null,
+            icon: const Icon(Icons.login),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          Text(
+            'Driver partner',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Explore the driver app before connecting your live driver account.',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: 14),
+          Card(
+            color: colors.secondaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.visibility_outlined,
+                      color: colors.onSecondaryContainer),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Preview mode · Read only\n'
+                      'Live actions such as going online, accepting rides, '
+                      'uploading documents and earnings sync become available '
+                      'after Google sign-in and backend setup.',
+                      style: TextStyle(color: colors.onSecondaryContainer),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text('Driver dashboard',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          _previewTile(
+            Icons.toggle_off_outlined,
+            'Availability',
+            'Online/offline status and approved operating pincode',
+          ),
+          _previewTile(
+            Icons.account_balance_wallet_outlined,
+            'Earnings and settlements',
+            'Daily earnings, completed trips and settlement summary',
+          ),
+          const SizedBox(height: 14),
+          Text('Ride management',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          _previewTile(
+            Icons.notifications_active_outlined,
+            'Ride offers',
+            'View pickup details, expiry and accept or reject offers',
+          ),
+          _previewTile(
+            Icons.alt_route_rounded,
+            'Next-ride offers',
+            'See possible follow-up rides near the current destination',
+          ),
+          _previewTile(
+            Icons.navigation_outlined,
+            'Trip navigation',
+            'OpenStreetMap route, live GPS, ETA and spoken directions',
+          ),
+          _previewTile(
+            Icons.pin_outlined,
+            'Pickup verification',
+            'Verify customer OTP and update each trip status',
+          ),
+          const SizedBox(height: 14),
+          Text('Driver onboarding',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          _previewTile(
+            Icons.directions_car_outlined,
+            'Vehicle registration',
+            'Select a vehicle category and submit vehicle information',
+          ),
+          _previewTile(
+            Icons.upload_file_outlined,
+            'Document verification',
+            'Upload driving licence, RC and insurance for admin review',
+          ),
+          _previewTile(
+            Icons.location_on_outlined,
+            'Service pincodes',
+            'Apply to operate in additional approved service areas',
+          ),
+          _previewTile(
+            Icons.sos_outlined,
+            'Emergency support',
+            'Emergency dialer and ride-linked SOS event',
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: QuickRideBackend.isInitialized
+                ? () => QuickRideAuth.signInWithGoogle(
+                      redirectTo: 'in.quickride.driver://login-callback',
+                    )
+                : null,
+            icon: const Icon(Icons.login),
+            label: const Text('Sign in to activate driver features'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = QuickRideAuth.currentUser;
-    if (!QuickRideBackend.isInitialized) {
-      return const Scaffold(
-        body: Center(child: Text('Quick-Ride backend is not configured.')),
-      );
-    }
-    if (user == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Quick-Ride Driver')),
-        body: Center(
-          child: FilledButton.icon(
-            onPressed: () => QuickRideAuth.signInWithGoogle(
-              redirectTo: 'in.quickride.driver://login-callback',
-            ),
-            icon: const Icon(Icons.login),
-            label: const Text('Sign in with Google'),
-          ),
-        ),
-      );
+    if (!QuickRideBackend.isInitialized || user == null) {
+      return _previewScreen();
     }
 
     final profile = QuickRideBackend.client
