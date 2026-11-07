@@ -5,6 +5,11 @@ on:
     branches: ['feature/platform-core']
     paths:
       - '.github/workflows/android-debug-apks.yml'
+      - 'apps/**'
+      - 'packages/**'
+      - 'scripts/**'
+      - 'supabase/functions/**'
+      - 'supabase/migrations/**'
 permissions:
   contents: read
 jobs:
@@ -56,11 +61,17 @@ jobs:
         run: |
           cd apps/admin_app
           flutter build apk --debug --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" --dart-define=MAPBOX_PUBLIC_TOKEN="$MAPBOX_PUBLIC_TOKEN"
+      - name: Name QA APKs and create checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp apps/customer_app/build/app/outputs/flutter-apk/app-debug.apk dist/quick-ride-customer.apk
+          cp apps/driver_app/build/app/outputs/flutter-apk/app-debug.apk dist/quick-ride-driver.apk
+          cp apps/admin_app/build/app/outputs/flutter-apk/app-debug.apk dist/quick-ride-admin.apk
+          sha256sum dist/*.apk > dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: quick-ride-android-qa-apks
-          path: |
-            apps/customer_app/build/app/outputs/flutter-apk/app-debug.apk
-            apps/driver_app/build/app/outputs/flutter-apk/app-debug.apk
-            apps/admin_app/build/app/outputs/flutter-apk/app-debug.apk
+          path: dist/*
           if-no-files-found: error
