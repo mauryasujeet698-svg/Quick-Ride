@@ -383,7 +383,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                         _categoryId = value;
                         _quote = null;
                       });
-                      _clearQuoteRoute();
                     },
                   ),
                 const SizedBox(height: 10),
@@ -404,7 +403,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                 ],
                 const SizedBox(height: 10),
                 FilledButton(
-                  onPressed: _busy || !tokenReady ? null : _getQuote,
+                  onPressed: _busy ? null : _getQuote,
                   child: _busy
                       ? const CircularProgressIndicator()
                       : const Text('Get fare estimate'),
