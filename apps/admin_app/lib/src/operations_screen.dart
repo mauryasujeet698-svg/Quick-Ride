@@ -56,7 +56,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
     _refreshTimer?.cancel();
     if (QuickRideAuth.currentUser == null) return;
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted && !_busy) unawaited(_refresh());
+      if (mounted && !_busy) unawaited(_refreshSafetyEvents());
     });
   }
 
@@ -73,6 +73,21 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
       body: {'action': action, ...body},
     );
     return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<void> _refreshSafetyEvents() async {
+    if (!mounted || _busy || QuickRideAuth.currentUser == null) return;
+    try {
+      final result = await _call('list_safety_events');
+      if (!mounted) return;
+      setState(() {
+        _safetyEvents = (result['safety_events'] as List<dynamic>? ?? [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    }
   }
 
   Future<void> _refresh() async {
