@@ -1,0 +1,34 @@
+name: quick_ride_driver
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: ^3.12.0
+resolution: workspace
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.5.0
+  go_router: ^18.1.3
+  geolocator: ^14.1.2
+  flutter_tts: ^4.2.5
+  file_picker: ^13.3.2
+  supabase_flutter: ^2.18.3
+  url_launcher: ^6.3.3
+  quick_ride_notifications:
+    path: ../../packages/quick_ride_notifications
+  quick_ride_auth:
+    path: ../../packages/quick_ride_auth
+  quick_ride_backend:
+    path: ../../packages/quick_ride_backend
+  quick_ride_core:
+    path: ../../packages/quick_ride_core
+  quick_ride_design_system:
+    path: ../../packages/quick_ride_design_system
+  quick_ride_maps:
+    path: ../../packages/quick_ride_maps
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

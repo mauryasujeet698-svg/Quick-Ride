@@ -1,58 +1,66 @@
 # Quick-Ride — Technical Architecture
 
 ## Approach
-Begin with a modular monolith: Flutter clients, Supabase Auth, PostgreSQL/PostGIS and a small set of server-side Edge Functions. Keep boundaries clear so dispatch, pricing or notifications can be separated later if measured scale requires it. Avoid premature microservices.
 
-## Planned repository structure
-~~~
-apps/
-  customer_app/
-  driver_app/
-  admin_app/
-packages/
-  core/
-  design_system/
-  auth/
-  maps/
-  ride_domain/
-  supabase_client/
-  notifications/
-supabase/
-  migrations/
-  functions/
-docs/
-~~~
+Start with a modular backend: three Flutter applications, shared client packages, Supabase Auth, PostgreSQL/PostGIS and server-side Edge Functions. Keep module boundaries explicit; separate services only when measured load or operational ownership justifies it.
 
-Each Flutter app uses feature-first Clean Architecture:
-~~~
-lib/
-  app/          # bootstrap, router, theme
-  core/         # config, errors, network, utilities
-  features/
-    feature_name/
-      data/
-      domain/
-      presentation/
-~~~
+## Repository structure
 
-## Client stack
-Flutter/Dart, Riverpod, go_router, Supabase Flutter SDK, Mapbox and Firebase Cloud Messaging. Keep business logic out of widgets; repositories expose domain interfaces and domain use cases do not depend on Flutter widgets or Supabase transport models.
+    apps/
+      customer_app/
+      driver_app/
+      admin_app/
+    packages/
+      quick_ride_core/
+      quick_ride_backend/
+      quick_ride_auth/
+      quick_ride_design_system/
+      quick_ride_maps/
+      quick_ride_domain/
+      quick_ride_notifications/
+    supabase/
+      config.toml
+      functions/
+      migrations/
+      types/
+    docs/
+
+Each app will evolve into feature-first Clean Architecture with app bootstrap/router/theme, core config/errors/networking and feature data/domain/presentation layers.
+
+## Commercial configuration
+
+Commercial terms are stored per service pincode and are effective-dated:
+- Subscription: amount and billing period.
+- Commission: percentage of completed ride fare.
+- Hybrid: subscription plus commission.
+
+The selected model and terms are snapshotted on each ride when booked. Later Admin changes must not alter an existing ride's terms.
+
+## Geospatial and dispatch
+
+PostGIS geography and spatial indexes are authoritative for radius matching; a generated geohash is available for location-cell grouping and diagnostics. Nearby driver search applies service-pincode membership, active-pincode selection, verification, online state, location freshness, vehicle class, active ride/offer exclusions and subscription eligibility.
+
+Dispatch creates expiring offers in batches and can expand search radius. Ride-chain discovery finds drivers on an in-progress ride whose destination is near a new pickup. A driver may preaccept, but a next ride is only assigned after the current ride is completed and the candidate ride is still available.
+
+## Backend transaction rules
+
+Server functions validate the JWT and derive user identity from it. PostgreSQL routines own booking, commercial snapshots, driver eligibility, assignment, ride status, OTP checks, completion and commission ledger entries. Row locks and unique constraints prevent double assignments. Client apps must not write assignment, fare, status or admin role fields directly.
 
 ## Backend modules
-- **Identity:** Supabase Auth; profiles; server-managed roles; operations-controlled driver approval.
-- **Configuration:** service areas/boundaries, vehicle categories, effective-dated fare rules.
-- **Booking/dispatch:** server validates area and coordinates, calculates fare, creates request, discovers drivers, creates expiring offers and atomically assigns a driver.
-- **Live location:** PostGIS nearby queries; carefully scoped Realtime; no location disclosure to unrelated users.
-- **Notifications:** FCM for push; Realtime for in-app updates. Push is never the source of truth.
 
-## Transaction rules
-Backend owns all ride transitions, uses row locking/atomic SQL for acceptance, enforces expiry using server time, makes retries idempotent, rejects invalid transitions, snapshots fare inputs and writes audit events. Mobile apps must not directly update ride status, assignment, fare or timestamps.
+The data model includes profiles and roles, driver profiles/documents/service-pincode memberships, service areas/pincodes/commercial and dispatch configuration, vehicle and fare configuration, rides/offers/events, driver locations and ride GPS traces, chain offers, payment/commission/ledger records, safety/support and admin audit logs.
 
-## Data model
-Deployed tables: profiles, user_roles, driver_profiles, service_areas, vehicle_categories, fare_configs, rides, ride_offers, driver_locations and ride_events. PostGIS is in the extensions schema; geography points use SRID 4326.
+Current Edge Functions:
+- admin-service-areas: pincode and commercial management, boundary management, driver approvals.
+- ride-booking: quote, booking, cancellation and initial dispatch.
+- driver-ride-actions: onboarding, pincode requests, location, offers, ride transitions and completion.
+- ride-share: public read-only trip page protected by a random 256-bit bearer token; the database stores only a SHA-256 token hash, links expire after 12 hours, and the customer can revoke or replace them.
+- send-push: service-role-only Firebase Cloud Messaging HTTP v1 sender for authenticated customer, driver and admin devices; device tokens are scoped to the owning user by RLS.
 
-## Secrets and deployment
-Client may contain Supabase URL/publishable key, public Mapbox token and public OAuth client IDs. Never include service-role/secret keys, Google client secrets, private signing keys or FCM service-account JSON in mobile source or public artifacts. Separate dev/prod credentials. Commit migrations, verify them and run Supabase advisors after schema changes. Add CI once Flutter workspace exists.
+## Live location and privacy
 
-## Scaling
-Tune PostGIS queries/indexes; bound location frequency and retention; subscribe selectively to Realtime; add queue/retry infrastructure as needed; separate workers/services only when measured load justifies it.
+Driver location is accepted only for verified drivers with an approved availability state. Ride GPS points are stored while a ride is in progress. Customer access to precise driver location is restricted to an assigned active ride. Realtime is used for in-app live state; Firebase Cloud Messaging complements it for background/terminated app alerts and foreground in-app notices. Trip-share access is a separate bearer-link path with expiration and revocation, and returns no customer phone number or profile data.
+
+## External setup
+
+Supabase URL and publishable key may be supplied to clients. Supabase service-role key remains in server secrets. Maps use `flutter_map` with OpenStreetMap tiles, Nominatim reverse geocoding and OSRM routing; no Mapbox token or native SDK download credential is required. Public OSM community endpoints are development/QA defaults only. Configure `OSM_TILE_URL`, `NOMINATIM_BASE_URL` and `OSRM_BASE_URL` to suitable hosted or self-hosted services for production. Google OAuth settings, FCM credentials, payment provider integration and release signing require owner configuration.

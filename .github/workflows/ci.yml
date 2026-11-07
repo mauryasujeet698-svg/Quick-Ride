@@ -1,0 +1,45 @@
+name: Quick-Ride Flutter CI
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Format Dart sources
+        run: dart format apps packages
+      - name: Analyze applications and shared packages
+        run: |
+          for app in apps/customer_app apps/driver_app apps/admin_app; do
+            (cd "$app" && flutter analyze --no-pub)
+          done
+          for package in packages/*; do
+            (cd "$package" && flutter analyze --no-pub)
+          done
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check Supabase Edge Functions
+        run: |
+          for fn in admin-service-areas driver-ride-actions ride-booking ride-share send-push; do
+            deno check --config "supabase/functions/$fn/deno.json" "supabase/functions/$fn/index.ts"
+          done
+      - name: Run application and shared-package tests
+        run: |
+          for app in apps/customer_app apps/driver_app apps/admin_app; do
+            (cd "$app" && flutter test --no-pub)
+          done
+          for package in packages/*; do
+            if [[ -d "$package/test" ]]; then
+              (cd "$package" && flutter test --no-pub)
+            fi
+          done

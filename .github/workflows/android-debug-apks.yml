@@ -1,0 +1,113 @@
+name: Build Quick-Ride Android QA APKs
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://czbelhtemzklcmssumpc.supabase.co' }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_0es_pudIg1ghhsSciZL_Sw_LGaiO7zh' }}
+      OSM_TILE_URL: ${{ vars.OSM_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' }}
+      OSRM_BASE_URL: ${{ vars.OSRM_BASE_URL || 'https://router.project-osrm.org' }}
+      NOMINATIM_BASE_URL: ${{ vars.NOMINATIM_BASE_URL || 'https://nominatim.openstreetmap.org' }}
+      FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+      FIREBASE_CUSTOMER_APP_ID: ${{ secrets.FIREBASE_CUSTOMER_APP_ID }}
+      FIREBASE_DRIVER_APP_ID: ${{ secrets.FIREBASE_DRIVER_APP_ID }}
+      FIREBASE_ADMIN_APP_ID: ${{ secrets.FIREBASE_ADMIN_APP_ID }}
+      MAX_APK_BYTES: 25000000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Resolve Flutter workspace
+        run: flutter pub get
+      - name: Prepare Android platform files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for app in customer driver admin; do
+            temp_dir="$(mktemp -d)"
+            flutter create --empty --project-name "$app" --org com.quickride --platforms android "$temp_dir"
+            cp -R "$temp_dir/android" "apps/${app}_app/android"
+            manifest="apps/${app}_app/android/app/src/main/AndroidManifest.xml"
+            python3 scripts/configure_android_manifest.py "$manifest" "in.quickride.${app}"
+            python3 - "apps/${app}_app/android/app/build.gradle.kts" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          gradle = path.read_text()
+          marker = "      release {"
+          optimized = """      release {
+                      isMinifyEnabled = true
+                      isShrinkResources = true
+                      proguardFiles(
+                          getDefaultProguardFile("proguard-android-optimize.txt"),
+                          "proguard-rules.pro"
+                      )"""
+          if gradle.count(marker) != 1:
+              raise SystemExit(f"Could not safely enable R8 in {path}")
+          path.write_text(gradle.replace(marker, optimized, 1))
+          (path.parent / "proguard-rules.pro").touch()
+          PY
+          done
+      - name: Build optimized ABI-specific APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for app in customer driver admin; do
+            case "$app" in
+              customer) firebase_app_id="$FIREBASE_CUSTOMER_APP_ID" ;;
+              driver) firebase_app_id="$FIREBASE_DRIVER_APP_ID" ;;
+              admin) firebase_app_id="$FIREBASE_ADMIN_APP_ID" ;;
+              *) echo "::error::Unknown app role: $app"; exit 1 ;;
+            esac
+            (
+              cd "apps/${app}_app"
+              mkdir -p build/symbols
+              flutter build apk --release --split-per-abi \
+                --obfuscate --split-debug-info="build/symbols/${app}" \
+                --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+                --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" \
+                --dart-define=OSM_TILE_URL="$OSM_TILE_URL" \
+                --dart-define=OSRM_BASE_URL="$OSRM_BASE_URL" \
+                --dart-define=NOMINATIM_BASE_URL="$NOMINATIM_BASE_URL" \
+                --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" \
+                --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+                --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+                --dart-define=FIREBASE_APP_ID="$firebase_app_id"
+            )
+            mkdir -p "dist/${app}"
+            for abi in armeabi-v7a arm64-v8a x86_64; do
+              source="apps/${app}_app/build/app/outputs/flutter-apk/app-${abi}-release.apk"
+              output="dist/${app}/quick-ride-${app}-${abi}.apk"
+              test -s "$source"
+              cp "$source" "$output"
+              bytes="$(stat -c%s "$output")"
+              mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n/1000000 }')"
+              echo "${output}: ${mib} MB (${bytes} bytes)"
+              if [ "$bytes" -gt "$MAX_APK_BYTES" ]; then
+                echo "::error::${output} exceeds the 25 MB per-APK limit (${mib} MB)"
+                exit 1
+              fi
+            done
+          done
+      - name: Write APK size report and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          find dist -type f -name '*.apk' -printf '%p %s bytes\n' | sort > dist/APK_SIZES.txt
+          (cd dist && find . -type f -name '*.apk' -print0 | sort -z | xargs -0 sha256sum) > dist/SHA256SUMS.txt
+          cat dist/APK_SIZES.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quick-ride-android-25mb-apks
+          path: dist/*
+          if-no-files-found: error

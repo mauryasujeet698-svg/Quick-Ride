@@ -1,28 +1,36 @@
 # Quick-Ride — Security Baseline
 
 ## Identity and authorization
-Google sign-in authenticates a user; it does not grant privileged access. Driver role and verification require trusted server-side approval. Admin/operations roles are server-assigned. Never use user-editable Auth metadata for authorization. Clients cannot write user_roles, driver verification, ride assignment/state, fare totals or audit events.
 
-## Deployed database controls
-- RLS enabled on all ten application tables.
-- Profiles and roles are readable only by their owner.
-- Driver onboarding inserts are restricted to pending/offline.
-- Customer ride inserts must be requested, unassigned and have no final fare.
-- Ride reads are limited to customer and assigned driver.
-- Drivers read only their own offers.
-- Drivers write their own location only after approval.
-- Customer reads of driver location require an active ride assigned to that driver.
-- ride_events has an explicit deny-all client policy.
-- Explicit table grants use an allow-list: public service configuration is readable; customer/driver access is granted only where required. Broad default client grants were revoked, including write access to roles, rides and audit events. RLS remains mandatory.
+Google sign-in authenticates a user; it does not grant privileged access. New users receive the customer role through a trusted auth trigger. Driver role is granted only after Admin approval. Admin/operations roles are assigned through an out-of-band trusted owner process. Never authorize from user-editable profile metadata or request-body user IDs.
 
-## Backend requirements before pilot
-Implement booking, pricing, dispatch, offer acceptance, transitions, cancellation and OTP server-side. Validate JWT identity; do not trust user IDs in request bodies. Use transactions/row locks, idempotency, rate limits, validation and audit logging. Validate coordinates and service boundaries. Return raw driver location only to the assigned customer during permitted states.
+## Current database safeguards
+
+- RLS is enabled on all 28 current public tables.
+- Client roles cannot insert rides directly; booking is handled by the server-side booking function.
+- Client roles cannot directly assign rides, update authoritative ride states, set fares or write commission/ledger entries.
+- Admin configuration and driver approvals are routed through role-checked server functions.
+- Commercial-model changes use an effective-dated transaction and write audit records.
+- Dispatch requires driver approval, pincode approval, active pincode selection, fresh GPS, matching vehicle class and any active subscription requirement.
+- Ride offers are expiring records; assignment is performed under row locking.
+- Ride-chain acceptance is provisional until the active trip completes.
+- Pickup OTPs are stored as bcrypt hashes; failed attempts are rate-limited.
+- Device push tokens are stored in `device_push_tokens` with RLS limited to the authenticated owner; the server sender reads them only through the service-role key.
+- The `send-push` Edge Function has gateway JWT verification disabled only because it requires an exact service-role bearer token before doing any work; the Firebase service-account JSON stays in Supabase secrets.
+- Security and health advisors returned no findings at the latest check.
+
+## Location privacy
+
+Driver current location is not public. Customer access is limited to the driver assigned to an active ride. Ride GPS trace is available only to ride participants through RLS. Retention and deletion policies must be defined before production launch.
+
+## Server requirements
+
+All critical operations must validate the authenticated JWT, derive actor ID from the token, enforce authorization, validate inputs and use transactions/idempotency. Admin actions must be audited. Rate-limit high-risk actions and redact sensitive data from logs.
 
 ## Secrets
-Never commit Supabase service-role/secret keys, database passwords, Google OAuth client secrets, signing keystores/passwords, FCM service-account private keys or Mapbox secret tokens. Use the publishable key in mobile clients; RLS remains mandatory.
 
-## Data protection
-Request location only when needed and explain why. Stop collection when drivers go offline subject to approved active-trip policy. Define retention/deletion before launch. Keep documents in private storage with short-lived signed access. Provide account deletion and support escalation.
+Never commit Supabase service-role keys, database passwords, Google OAuth client secrets, signing keystores/passwords, FCM service-account private keys or Mapbox secret tokens. The mobile app may contain only the Supabase publishable/anon key and restricted public Mapbox token. RLS remains mandatory.
 
-## Repository visibility
-The repository was observed as public. Private visibility is recommended during active development. No visibility change was made through the available GitHub integration. Add an open-source license only if the owner intends to grant reuse rights.
+## Outstanding controls before public launch
+
+Configure private storage buckets and signed document access, account deletion, cancellation-fee policy, fraud controls, payment webhooks/reconciliation, SOS operations, data-retention schedules, operational alerting and production security review.
