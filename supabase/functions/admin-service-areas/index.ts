@@ -86,6 +86,108 @@ Deno.serve(async (req: Request) => {
       return response(200, { service_areas: data ?? [] });
     }
 
+    if (action === "list_vehicle_categories") {
+      const { data, error } = await admin.from("vehicle_categories")
+        .select("id,code,name,description,is_active,sort_order,created_at")
+        .order("sort_order", { ascending: true }).order("name", { ascending: true });
+      if (error) return fail(500, "Unable to load vehicle categories");
+      return response(200, { vehicle_categories: data ?? [] });
+    }
+
+    if (action === "create_vehicle_category") {
+      const code = typeof body.code === "string" ? body.code.trim().toLowerCase() : "";
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      const description = typeof body.description === "string" ? body.description.trim().slice(0, 500) : null;
+      const sortOrder = body.sortOrder === undefined ? 0 : Number(body.sortOrder);
+      if (!/^[a-z][a-z0-9_]{1,31}$/.test(code) || name.length < 2 || name.length > 60 ||
+          !Number.isSafeInteger(sortOrder) || sortOrder < 0 || sortOrder > 10000) {
+        return fail(400, "Use a short lowercase category code, a 2–60 character name and a valid sort order");
+      }
+      const { data, error } = await admin.from("vehicle_categories")
+        .insert({ code, name, description: description || null, is_active: false, sort_order: sortOrder })
+        .select("id,code,name,description,is_active,sort_order,created_at").single();
+      if (error) return fail(400, error.message);
+      await audit("vehicle_category.created", "vehicle_categories", String(data.id), null, data);
+      return response(201, { vehicle_category: data });
+    }
+
+    if (action === "set_vehicle_category_active") {
+      const id = Number(body.categoryId);
+      const active = body.isActive;
+      if (!Number.isSafeInteger(id) || typeof active !== "boolean") {
+        return fail(400, "Valid categoryId and isActive are required");
+      }
+      const { data: before, error: readError } = await admin.from("vehicle_categories")
+        .select("id,code,name,is_active").eq("id", id).maybeSingle();
+      if (readError || !before) return fail(404, "Vehicle category not found");
+      const { data, error } = await admin.from("vehicle_categories")
+        .update({ is_active: active }).eq("id", id)
+        .select("id,code,name,description,is_active,sort_order,created_at").single();
+      if (error) return fail(400, error.message);
+      await audit("vehicle_category.activation_changed", "vehicle_categories", String(id), before, data);
+      return response(200, { vehicle_category: data });
+    }
+
+    if (action === "list_fare_configs") {
+      const { data, error } = await admin.from("fare_configs")
+        .select("id,service_area_id,vehicle_category_id,currency,base_fare,per_km_rate,per_minute_rate,minimum_fare,booking_fee,multiplier,valid_from,valid_until,is_active,service_areas(id,name,city,state),vehicle_categories(id,code,name)")
+        .order("valid_from", { ascending: false });
+      if (error) return fail(500, "Unable to load fare configurations");
+      return response(200, { fare_configs: data ?? [] });
+    }
+
+    if (action === "create_fare_config") {
+      const serviceAreaId = Number(body.serviceAreaId);
+      const categoryId = Number(body.vehicleCategoryId);
+      const numericFields = ["baseFare", "perKmRate", "perMinuteRate", "minimumFare", "bookingFee", "multiplier"] as const;
+      const values = Object.fromEntries(numericFields.map((key) => [key, Number(body[key])])) as Record<string, number>;
+      if (!Number.isSafeInteger(serviceAreaId) || !Number.isSafeInteger(categoryId) ||
+          numericFields.some((key) => typeof body[key] !== "number" || !Number.isFinite(values[key]))) {
+        return fail(400, "Select a service area and vehicle category and enter all fare values");
+      }
+      if (values.baseFare < 0 || values.perKmRate < 0 || values.perMinuteRate < 0 ||
+          values.minimumFare < 0 || values.bookingFee < 0 ||
+          values.multiplier < 0.1 || values.multiplier > 10) {
+        return fail(400, "Fare amounts must be non-negative and multiplier must be between 0.1 and 10");
+      }
+      const [{ data: area, error: areaError }, { data: category, error: categoryError }] = await Promise.all([
+        admin.from("service_areas").select("id,name").eq("id", serviceAreaId).maybeSingle(),
+        admin.from("vehicle_categories").select("id,name,is_active").eq("id", categoryId).maybeSingle(),
+      ]);
+      if (areaError || !area) return fail(404, "Service area not found");
+      if (categoryError || !category || category.is_active !== true) return fail(409, "Choose an active vehicle category");
+
+      const validFrom = new Date().toISOString();
+      const { data: existing, error: existingError } = await admin.from("fare_configs")
+        .select("id,valid_from,is_active").eq("service_area_id", serviceAreaId)
+        .eq("vehicle_category_id", categoryId).eq("is_active", true);
+      if (existingError) return fail(500, "Unable to check the current fare configuration");
+      const overlappingFuture = (existing ?? []).some((item) => Date.parse(String(item.valid_from)) >= Date.now());
+      if (overlappingFuture) return fail(409, "A future fare configuration already exists for this service area and vehicle category");
+      const { error: closeError } = await admin.from("fare_configs")
+        .update({ is_active: false, valid_until: validFrom })
+        .eq("service_area_id", serviceAreaId).eq("vehicle_category_id", categoryId)
+        .eq("is_active", true).lt("valid_from", validFrom);
+      if (closeError) return fail(500, "Unable to close the previous fare configuration");
+
+      const { data, error } = await admin.from("fare_configs").insert({
+        service_area_id: serviceAreaId,
+        vehicle_category_id: categoryId,
+        currency: "INR",
+        base_fare: values.baseFare,
+        per_km_rate: values.perKmRate,
+        per_minute_rate: values.perMinuteRate,
+        minimum_fare: values.minimumFare,
+        booking_fee: values.bookingFee,
+        multiplier: values.multiplier,
+        valid_from: validFrom,
+        is_active: true,
+      }).select("id,service_area_id,vehicle_category_id,currency,base_fare,per_km_rate,per_minute_rate,minimum_fare,booking_fee,multiplier,valid_from,valid_until,is_active").single();
+      if (error) return fail(400, error.message);
+      await audit("fare_config.created", "fare_configs", String(data.id), existing ?? null, data);
+      return response(201, { fare_config: data });
+    }
+
     if (action === "create_service_area") {
       const name = typeof body.name === "string" ? body.name.trim() : "";
       const city = typeof body.city === "string" ? body.city.trim() : "";
