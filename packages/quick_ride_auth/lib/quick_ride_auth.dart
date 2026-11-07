@@ -1,4 +1,5 @@
 import 'package:quick_ride_backend/quick_ride_backend.dart';
+import 'package:quick_ride_notifications/quick_ride_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class QuickRideAuth {
@@ -19,5 +20,8 @@ class QuickRideAuth {
     );
   }
 
-  static Future<void> signOut() => QuickRideBackend.client.auth.signOut();
+  static Future<void> signOut() async {
+    await QuickRideNotifications.unregisterCurrentDevice();
+    await QuickRideBackend.client.auth.signOut();
+  }
 }
