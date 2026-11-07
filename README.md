@@ -1,8 +1,8 @@
 # Quick-Ride
 
-Independent on-demand ride-hailing platform designed for India, with real-time driver discovery, smart dispatch, configurable commercial rules, trip tracking and operations controls.
+Independent on-demand ride-hailing platform designed for India, with real-time driver discovery, smart dispatch, configurable commercial rules, live trip tracking and operations controls.
 
-> Current status: backend foundations and three functional Flutter app flows are in active development on `feature/platform-core`. This is not a production release or a tested device release.
+> Current status: the three Flutter app flows and Supabase backend are in active development on `feature/platform-core`. This is not a production release or a device-validated build.
 
 ## Product principles
 
@@ -17,40 +17,43 @@ Independent on-demand ride-hailing platform designed for India, with real-time d
 
 | App | Responsibility |
 | --- | --- |
-| Customer | Service-area lookup, pickup/destination, fare quote, booking, driver tracking, OTP, history, support and safety |
-| Driver | Onboarding, service-area applications, availability, GPS, offers, navigation, ride lifecycle and earnings |
-| Admin | Service areas and pincodes, commercial model, geographic boundaries, driver verification, operations and reporting |
+| Customer | Service-area lookup, pickup/destination map, server fare quote, booking, live driver tracking, OTP, ride history, cancellation reasons, support, SOS dialer and revocable trip sharing |
+| Driver | Onboarding, service-area applications, availability, GPS, offers, in-app navigation, OTP ride lifecycle, earnings and SOS dialer |
+| Admin | Service areas and pincodes, commercial/fare/dispatch configuration, driver verification, operational support, safety-event review and reporting |
 
 ## Technology
 
-Flutter workspace, Riverpod 3, go_router, shared domain/auth/design packages, Supabase Auth/PostgreSQL/PostGIS/Realtime/Edge Functions, Mapbox and Firebase Cloud Messaging.
+Flutter workspace, Riverpod 3, go_router, shared domain/auth/design packages, Supabase Auth/PostgreSQL/PostGIS/Realtime/Edge Functions, Mapbox and Firebase Cloud Messaging integration planned.
 
 ## Backend foundation
 
 The connected Supabase project is in Mumbai (ap-south-1) on PostgreSQL 17 with PostGIS in the extensions schema.
 
-The schema currently contains 26 public tables with RLS enabled. Major modules include:
+The schema contains 27 public application tables with RLS enabled. Major modules include:
 - Pincode service-area catalog and geographic coverage boundaries.
-- Effective-dated subscription/commission/hybrid configurations.
-- Fare rules and snapshots.
+- Effective-dated subscription/commission/hybrid configurations and fare rules.
 - Driver document and service-pincode verification.
 - Nearby-driver dispatch, expiring offers and ride chaining.
 - GPS trace, pickup OTP, ride lifecycle and audit trail.
 - Payment records, commission records and ledger entries.
+- Hash-only, revocable and expiring trip-share links.
 
-Deployed Edge Functions (JWT verification enabled):
-- `admin-service-areas` (v8)
-- `ride-booking` (v2)
-- `driver-ride-actions` (v2)
+Deployed Supabase Edge Functions:
+- `admin-service-areas` (v11, JWT verified)
+- `ride-booking` (v4, JWT verified)
+- `driver-ride-actions` (v4, JWT verified)
+- `ride-share` (v1, JWT disabled; every request must present a valid high-entropy share token)
 
-Critical booking, driver eligibility, dispatch acceptance and trip transitions are server-authoritative. Deployed function source is in supabase/functions; generated database types are in supabase/types.
+Critical booking, fare, driver eligibility, dispatch acceptance and trip transitions are server-authoritative. The ride-share endpoint validates the token hash, expiration and revocation state before returning its restricted live-trip snapshot. Function source is in `supabase/functions`; database migrations are in `supabase/migrations`.
+
+The app can record an SOS event and open the Indian 112 emergency dialer, but Quick-Ride does not directly alert emergency responders. The Operations safety queue refreshes only while the screen is open; FCM-based safety alerts are not yet implemented.
 
 ## Development
 
-Active platform integration branch: feature/platform-core.
+Active platform integration branch: `feature/platform-core`.
 
-See the development status, architecture, security, Google sign-in setup and owner setup documents in docs/.
+See the development status, architecture, security, Google sign-in setup and owner setup documents in `docs/`.
 
-No service areas, fare rules, pincode boundaries, admin account or production credentials have been seeded yet. Mapbox server secrets, OAuth, FCM, payment provider and release signing remain owner setup steps.
+The live database has not been seeded with service areas, approved pincodes, fare/category configuration, admin account or driver accounts. Owner-supplied Mapbox, Google OAuth, FCM, payment-provider settings and release signing remain setup/integration tasks. Android APKs are blocked until the required GitHub Actions credentials are configured; source CI does not substitute for native device testing.
 
 Never commit Supabase service-role keys, database passwords, OAuth client secrets, signing keystores or FCM service-account keys. No open-source license has been selected; all rights are reserved unless a license is added.
