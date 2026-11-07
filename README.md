@@ -23,13 +23,13 @@ Independent on-demand ride-hailing platform designed for India, with real-time d
 
 ## Technology
 
-Flutter workspace, Riverpod 3, go_router, shared domain/auth/design packages, Supabase Auth/PostgreSQL/PostGIS/Realtime/Edge Functions, Mapbox and Firebase Cloud Messaging integration planned.
+Flutter workspace, Riverpod 3, go_router, shared domain/auth/design/notification packages, Supabase Auth/PostgreSQL/PostGIS/Realtime/Edge Functions, Mapbox and Firebase Cloud Messaging.
 
 ## Backend foundation
 
 The connected Supabase project is in Mumbai (ap-south-1) on PostgreSQL 17 with PostGIS in the extensions schema.
 
-The schema contains 27 public application tables with RLS enabled. Supabase security and health advisors report no current findings; performance advisories are limited to duplicate permissive profile SELECT policies and unused indexes on an empty pre-pilot database. Major modules include:
+The schema contains 28 public application tables with RLS enabled. Supabase security and health advisors report no current findings; performance advisories are limited to duplicate permissive profile SELECT policies and unused indexes on an empty pre-pilot database. Major modules include:
 - Pincode service-area catalog and geographic coverage boundaries.
 - Effective-dated subscription/commission/hybrid configurations and fare rules.
 - Driver document and service-pincode verification.
@@ -40,13 +40,14 @@ The schema contains 27 public application tables with RLS enabled. Supabase secu
 
 Deployed Supabase Edge Functions:
 - `admin-service-areas` (v11, JWT verified)
-- `ride-booking` (v5, JWT verified)
-- `driver-ride-actions` (v5, JWT verified)
+- `ride-booking` (v6, JWT verified)
+- `driver-ride-actions` (v6, JWT verified)
 - `ride-share` (v1, JWT disabled; every request must present a valid high-entropy share token)
+- `send-push` (v2, JWT disabled; requires the exact Supabase service-role bearer token and uses the server-side Firebase service account)
 
 Critical booking, fare, driver eligibility, dispatch acceptance and trip transitions are server-authoritative. The ride-share endpoint validates the token hash, expiration and revocation state before returning its restricted live-trip snapshot. The `send-push` endpoint requires the Supabase service-role bearer token and sends Firebase Cloud Messaging notifications to authenticated devices. Function source is in `supabase/functions`; database migrations are in `supabase/migrations`.
 
-The app can record an SOS event and open the Indian 112 emergency dialer, but Quick-Ride does not directly alert emergency responders. The Operations safety queue refreshes only while the screen is open; FCM-based safety alerts are not yet implemented.
+The app can record an SOS event, notify registered Admin devices through FCM when Firebase is configured, and open the Indian 112 emergency dialer, but Quick-Ride does not directly contact emergency responders. The Operations safety queue refreshes only while the screen is open; do not treat the app as a 24/7 emergency response service. FCM delivery requires Firebase app identifiers and the server-side `FCM_SERVICE_ACCOUNT_JSON` secret.
 
 ## Development
 
@@ -54,6 +55,6 @@ Active platform integration branch: `feature/platform-core`.
 
 See the development status, architecture, security, Google sign-in setup and owner setup documents in `docs/`.
 
-The live database has not been seeded with service areas, approved pincodes, fare/category configuration, admin account or driver accounts. Owner-supplied Mapbox, Google OAuth, FCM, payment-provider settings and release signing remain setup/integration tasks. Android APKs are blocked until the required GitHub Actions credentials are configured; source CI does not substitute for native device testing.
+The live database has not been seeded with service areas, approved pincodes, fare/category configuration, admin account or driver accounts. Owner-supplied Mapbox downloads/public tokens, Google OAuth, Firebase/FCM credentials, payment-provider settings and release signing remain setup/integration tasks. Android APKs are blocked until `MAPBOX_DOWNLOADS_TOKEN` is added as a GitHub Actions secret; source CI does not substitute for native device testing.
 
 Never commit Supabase service-role keys, database passwords, OAuth client secrets, signing keystores or FCM service-account keys. No open-source license has been selected; all rights are reserved unless a license is added.
