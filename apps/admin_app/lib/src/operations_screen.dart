@@ -17,34 +17,52 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
   List<Map<String, dynamic>> _drivers = [];
   List<Map<String, dynamic>> _pincodeRequests = [];
   List<Map<String, dynamic>> _supportTickets = [];
+  List<Map<String, dynamic>> _safetyEvents = [];
   bool _busy = false;
   String? _error;
   StreamSubscription<dynamic>? _authSubscription;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     if (QuickRideBackend.isInitialized) {
-      if (QuickRideAuth.currentUser != null) unawaited(_refresh());
+      if (QuickRideAuth.currentUser != null) {
+        unawaited(_refresh());
+        _startRefreshTimer();
+      }
       _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
         if (!mounted) return;
         if (QuickRideAuth.currentUser != null) {
           setState(() {});
+          _startRefreshTimer();
           if (_summary == null && !_busy) unawaited(_refresh());
         } else {
+          _refreshTimer?.cancel();
+          _refreshTimer = null;
           setState(() {
             _summary = null;
             _drivers = [];
             _pincodeRequests = [];
             _supportTickets = [];
+            _safetyEvents = [];
           });
         }
       });
     }
   }
 
+  void _startRefreshTimer() {
+    _refreshTimer?.cancel();
+    if (QuickRideAuth.currentUser == null) return;
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && !_busy) unawaited(_refresh());
+    });
+  }
+
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _authSubscription?.cancel();
     super.dispose();
   }
@@ -58,12 +76,15 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
   }
 
   Future<void> _refresh() async {
+    if (_busy || !mounted) return;
     setState(() { _busy = true; _error = null; });
     try {
       final results = await Future.wait([
         _call('dashboard_summary'),
         _call('list_driver_applications'),
         _call('list_driver_pincode_requests', {'status': 'pending'}),
+        _call('list_support_tickets', {'status': 'active'}),
+        _call('list_safety_events'),
       ]);
       if (!mounted) return;
       setState(() {
@@ -76,6 +97,9 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
         _supportTickets = (results[3]['tickets'] as List<dynamic>? ?? [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+        _safetyEvents = (results[4]['safety_events'] as List<dynamic>? ?? [])
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
       });
@@ -135,6 +159,39 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
         'ticketId': id,
         'status': status,
       });
+      await _refresh();
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _resolveSafetyEvent(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Mark safety event reviewed?'),
+        content: const Text(
+          'This records an Operations review entry. It does not mean that '
+          'emergency services have been contacted or that the incident is resolved externally.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Record review'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() { _busy = true; _error = null; });
+    try {
+      await _call('resolve_safety_event', {'eventId': id});
       await _refresh();
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
@@ -375,6 +432,66 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
                         ),
                       ],
                     ),
+                  ),
+                );
+              }),
+            const SizedBox(height: 24),
+            Text('Ride safety alerts', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 5),
+            const Text(
+              'SOS and incident reports are shown here while Operations is open. '
+              'This is not a 24/7 emergency dispatch or public-safety notification service.',
+            ),
+            if (_safetyEvents.isEmpty)
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('No unreviewed safety alerts.'),
+              )
+            else
+              ..._safetyEvents.map((event) {
+                final id = event['id'].toString();
+                final ride = event['rides'] as Map<String, dynamic>?;
+                final created = DateTime.tryParse(event['created_at'].toString());
+                final rideId = event['ride_id'].toString();
+                final shortRideId = rideId.substring(0, rideId.length < 8 ? rideId.length : 8);
+                return Card(
+                  child: ExpansionTile(
+                    leading: Icon(
+                      Icons.warning_amber_rounded,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: Text(
+                      event['event_type'].toString().replaceAll('_', ' ').toUpperCase(),
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      'Ride $shortRideId · ' +
+                      (created?.toLocal().toString().substring(0, 16) ?? 'Time unavailable'),
+                    ),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Reported by: ' + (event['actor_name']?.toString() ?? 'Quick-Ride user')),
+                            if (ride != null) ...[
+                              Text('Ride status: ' + (ride['status']?.toString() ?? 'unknown').replaceAll('_', ' ')),
+                              Text('Pickup: ' + (ride['pickup_address']?.toString() ?? '—')),
+                              Text('Destination: ' + (ride['destination_address']?.toString() ?? '—')),
+                            ],
+                            const SizedBox(height: 8),
+                            const Text('Review the incident and follow your operational emergency procedure.'),
+                            const SizedBox(height: 10),
+                            FilledButton.tonalIcon(
+                              onPressed: _busy ? null : () => _resolveSafetyEvent(id),
+                              icon: const Icon(Icons.fact_check_outlined),
+                              label: const Text('Record Operations review'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 );
               }),
