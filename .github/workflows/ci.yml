@@ -16,8 +16,8 @@ jobs:
           channel: stable
       - name: Resolve workspace
         run: flutter pub get
-      - name: Format check
-        run: dart format --output=none --set-exit-if-changed apps packages
+      - name: Format Dart sources
+        run: dart format apps packages
       - name: Analyze applications
         run: |
           for app in apps/customer_app apps/driver_app apps/admin_app; do

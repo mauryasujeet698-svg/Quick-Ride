@@ -17,6 +17,8 @@ dependencies:
     path: ../../packages/quick_ride_core
   quick_ride_design_system:
     path: ../../packages/quick_ride_design_system
+  quick_ride_maps:
+    path: ../../packages/quick_ride_maps
 dev_dependencies:
   flutter_test:
     sdk: flutter

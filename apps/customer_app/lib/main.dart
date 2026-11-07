@@ -4,11 +4,14 @@ import 'package:go_router/go_router.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_core/quick_ride_core.dart';
 import 'package:quick_ride_design_system/quick_ride_design_system.dart';
+import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'src/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await QuickRideBackend.initialize(QuickRideEnvironment.fromBuildDefines());
+  final environment = QuickRideEnvironment.fromBuildDefines();
+  await QuickRideBackend.initialize(environment);
+  QuickRideMaps.configureToken(environment);
   runApp(const ProviderScope(child: QuickRideCustomerApp()));
 }
 

@@ -1,0 +1,62 @@
+name: Build Quick-Ride Android QA APKs
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      MAPBOX_PUBLIC_TOKEN: ${{ secrets.MAPBOX_PUBLIC_TOKEN }}
+      MAPBOX_DOWNLOADS_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Validate build configuration
+        shell: bash
+        run: |
+          test -n "$SUPABASE_URL" || { echo "Missing GitHub Actions variable SUPABASE_URL"; exit 1; }
+          test -n "$SUPABASE_ANON_KEY" || { echo "Missing GitHub Actions secret SUPABASE_ANON_KEY"; exit 1; }
+          test -n "$MAPBOX_PUBLIC_TOKEN" || { echo "Missing GitHub Actions secret MAPBOX_PUBLIC_TOKEN"; exit 1; }
+          test -n "$MAPBOX_DOWNLOADS_TOKEN" || { echo "Missing GitHub Actions secret MAPBOX_DOWNLOADS_TOKEN"; exit 1; }
+      - name: Configure Mapbox native SDK download access
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.gradle"
+          printf 'MAPBOX_DOWNLOADS_TOKEN=%s\n' "$MAPBOX_DOWNLOADS_TOKEN" >> "$HOME/.gradle/gradle.properties"
+      - name: Resolve Flutter workspace
+        run: flutter pub get
+      - name: Prepare Android platform files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for app in customer driver admin; do
+            temp_dir="$(mktemp -d)"
+            flutter create --empty --project-name "$app" --org in.quickride --platforms android "$temp_dir"
+            cp -R "$temp_dir/android" "apps/${app}_app/android"
+            python3 scripts/configure_android_manifest.py "apps/${app}_app/android/app/src/main/AndroidManifest.xml" "in.quickride.${app}"
+          done
+      - name: Build customer APK
+        run: |
+          cd apps/customer_app
+          flutter build apk --debug --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" --dart-define=MAPBOX_PUBLIC_TOKEN="$MAPBOX_PUBLIC_TOKEN"
+      - name: Build driver APK
+        run: |
+          cd apps/driver_app
+          flutter build apk --debug --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" --dart-define=MAPBOX_PUBLIC_TOKEN="$MAPBOX_PUBLIC_TOKEN"
+      - name: Build admin APK
+        run: |
+          cd apps/admin_app
+          flutter build apk --debug --dart-define=SUPABASE_URL="$SUPABASE_URL" --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" --dart-define=MAPBOX_PUBLIC_TOKEN="$MAPBOX_PUBLIC_TOKEN"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quick-ride-android-qa-apks
+          path: |
+            apps/customer_app/build/app/outputs/flutter-apk/app-debug.apk
+            apps/driver_app/build/app/outputs/flutter-apk/app-debug.apk
+            apps/admin_app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error

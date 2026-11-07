@@ -1,11 +1,15 @@
 import 'package:geolocator/geolocator.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:quick_ride_core/quick_ride_core.dart';
 
 class QuickRideMaps {
   QuickRideMaps._();
 
-  static String accessToken(QuickRideEnvironment environment) =>
-      environment.mapboxPublicToken;
+  static void configureToken(QuickRideEnvironment environment) {
+    if (environment.mapboxPublicToken.isNotEmpty) {
+      MapboxOptions.setAccessToken(environment.mapboxPublicToken);
+    }
+  }
 
   static Future<Position> currentPosition() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
