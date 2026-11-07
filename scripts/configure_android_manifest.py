@@ -136,9 +136,15 @@ def main() -> int:
             groovy_gradle.write_text(gradle_source, encoding="utf-8")
 
         public_token = os.environ.get("MAPBOX_PUBLIC_TOKEN", "").strip()
-        if not public_token.startswith("pk."):
+        if public_token and not public_token.startswith("pk."):
             raise SystemExit(
                 "MAPBOX_PUBLIC_TOKEN must be a restricted public Mapbox pk. token"
+            )
+        if not public_token:
+            print(
+                "WARNING: MAPBOX_PUBLIC_TOKEN is absent; this QA APK will compile "
+                "but Mapbox views/navigation will not work until a public token is configured.",
+                file=sys.stderr,
             )
         values_dir = manifest_path.parents[2] / "src" / "main" / "res" / "values"
         values_dir.mkdir(parents=True, exist_ok=True)
