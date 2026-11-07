@@ -76,7 +76,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
   }
 
   Future<void> _refresh() async {
-    if (_busy || !mounted) return;
+    if (!mounted) return;
     setState(() { _busy = true; _error = null; });
     try {
       final results = await Future.wait([
