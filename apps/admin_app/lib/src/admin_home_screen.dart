@@ -164,6 +164,113 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return value;
   }
 
+  Future<void> _editDispatchConfig(Map<String, dynamic> pincode) async {
+    final configs = pincode['service_area_dispatch_configs'] as List<dynamic>? ?? [];
+    final current = configs.isEmpty
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(configs.first as Map);
+    const defaults = <String, int>{
+      'initial_radius_m': 2000,
+      'max_radius_m': 15000,
+      'radius_step_m': 2000,
+      'offer_batch_size': 5,
+      'offer_ttl_seconds': 15,
+      'location_max_age_seconds': 45,
+      'chain_pickup_distance_m': 1500,
+      'chain_offer_ttl_seconds': 90,
+    };
+    const labels = <String, String>{
+      'initial_radius_m': 'Initial driver search radius (metres)',
+      'max_radius_m': 'Maximum driver search radius (metres)',
+      'radius_step_m': 'Search expansion step (metres)',
+      'offer_batch_size': 'Drivers offered at a time',
+      'offer_ttl_seconds': 'Ride offer expiry (seconds)',
+      'location_max_age_seconds': 'Maximum GPS fix age (seconds)',
+      'chain_pickup_distance_m': 'Next-ride pickup distance (metres)',
+      'chain_offer_ttl_seconds': 'Next-ride offer expiry (seconds)',
+    };
+    final fields = <String, TextEditingController>{
+      for (final entry in defaults.entries)
+        entry.key: TextEditingController(
+          text: (current[entry.key] ?? entry.value).toString(),
+        ),
+    };
+
+    try {
+      final save = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Dispatch settings · ${pincode['pincode']}'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: fields.entries.map((entry) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: TextField(
+                      controller: entry.value,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(labelText: labels[entry.key]),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Save dispatch settings'),
+            ),
+          ],
+        ),
+      );
+      if (save != true) return;
+
+      final values = <String, int>{};
+      for (final entry in fields.entries) {
+        final value = int.tryParse(entry.value.text.trim());
+        if (value == null) {
+          throw StateError('Enter a whole number for ${labels[entry.key]}.');
+        }
+        values[entry.key] = value;
+      }
+      bool within(String key, int min, int max) =>
+          values[key]! >= min && values[key]! <= max;
+      if (!within('initial_radius_m', 100, 50000) ||
+          !within('max_radius_m', 100, 100000) ||
+          values['max_radius_m']! < values['initial_radius_m']! ||
+          !within('radius_step_m', 100, 25000) ||
+          !within('offer_batch_size', 1, 50) ||
+          !within('offer_ttl_seconds', 5, 180) ||
+          !within('location_max_age_seconds', 5, 600) ||
+          !within('chain_pickup_distance_m', 100, 15000) ||
+          !within('chain_offer_ttl_seconds', 10, 600)) {
+        throw StateError('One or more dispatch settings are outside the permitted range. Check the values and try again.');
+      }
+
+      await run(() async {
+        await call('set_dispatch_config', {
+          'pincodeId': (pincode['id'] as num).toInt(),
+          ...values,
+        });
+        await loadWithoutBusy();
+      });
+    } catch (error) {
+      if (mounted) setState(() => errorText = error.toString());
+    } finally {
+      for (final controller in fields.values) {
+        controller.dispose();
+      }
+    }
+  }
+
   Future<void> saveFareConfig() async {
     await run(() async {
       if (selectedAreaId == null || selectedCategoryId == null) {
@@ -544,11 +651,34 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       final modelName = activeConfigs.isEmpty
                           ? 'Not configured'
                           : activeConfigs.last['business_model'].toString();
-                      return SwitchListTile(
-                        value: pincode['is_active'] == true,
-                        title: Text(pincode['pincode'].toString()),
-                        subtitle: Text(modelName),
-                        onChanged: busy ? null : (value) => setPincodeActive(pincode['id'] as int, value),
+                      final dispatchRows = pincode['service_area_dispatch_configs'] as List<dynamic>? ?? [];
+                      final dispatch = dispatchRows.isEmpty
+                          ? <String, dynamic>{}
+                          : Map<String, dynamic>.from(dispatchRows.first as Map);
+                      final radiusLabel = dispatch.isEmpty
+                          ? 'Default dispatch settings'
+                          : '${dispatch['initial_radius_m']} m → ${dispatch['max_radius_m']} m · batch ${dispatch['offer_batch_size']}';
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SwitchListTile(
+                            value: pincode['is_active'] == true,
+                            title: Text(pincode['pincode'].toString()),
+                            subtitle: Text(modelName + ' · ' + radiusLabel),
+                            onChanged: busy ? null : (value) => setPincodeActive(pincode['id'] as int, value),
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 16, bottom: 8),
+                              child: TextButton.icon(
+                                onPressed: busy ? null : () => _editDispatchConfig(pincode),
+                                icon: const Icon(Icons.tune, size: 18),
+                                label: const Text('Configure dispatch'),
+                              ),
+                            ),
+                          ),
+                        ],
                       );
                     }).toList(),
                   ),
