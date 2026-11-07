@@ -38,6 +38,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   final _environment = QuickRideEnvironment.fromBuildDefines();
   MapboxMap? _map;
   CircleAnnotationManager? _markerManager;
+  PolylineAnnotationManager? _routeManager;
+  PolylineAnnotation? _routeAnnotation;
   CircleAnnotation? _pickupMarker;
   CircleAnnotation? _destinationMarker;
   RidePoint? _pickup;
@@ -157,6 +159,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _quote = null;
       });
       await _syncPointMarkers();
+      await _clearQuoteRoute();
       if (moveCamera && _map != null) {
         await _map!.setCamera(CameraOptions(
           center: Point(coordinates: Position(longitude, latitude)),
@@ -184,7 +187,9 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       interactionID: 'quick-ride-pickup-destination',
     );
     _markerManager = await map.annotations.createCircleAnnotationManager();
+    _routeManager = await map.annotations.createPolylineAnnotationManager();
     await _syncPointMarkers();
+    await _drawQuoteRoute();
   }
 
   Future<void> _syncPointMarkers() async {
@@ -228,6 +233,50 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     }
   }
 
+  Future<void> _clearQuoteRoute() async {
+    final manager = _routeManager;
+    final existing = _routeAnnotation;
+    _routeAnnotation = null;
+    if (manager != null && existing != null) {
+      await manager.delete(existing);
+    }
+  }
+
+  Future<void> _drawQuoteRoute() async {
+    final manager = _routeManager;
+    final quote = _quote;
+    if (manager == null || quote == null) return;
+    final geometryValue = quote['route_geometry'];
+    if (geometryValue is! Map) return;
+    final geometry = Map<String, dynamic>.from(geometryValue);
+    final rawCoordinates = geometry['coordinates'];
+    if (rawCoordinates is! List) return;
+    final coordinates = rawCoordinates
+        .whereType<List>()
+        .where((pair) => pair.length >= 2 && pair[0] is num && pair[1] is num)
+        .map((pair) => Position(
+              (pair[0] as num).toDouble(),
+              (pair[1] as num).toDouble(),
+            ))
+        .toList();
+    if (coordinates.length < 2) return;
+
+    final options = PolylineAnnotationOptions(
+      geometry: LineString(coordinates: coordinates),
+      lineColor: Colors.blue.toARGB32(),
+      lineWidth: 6,
+      lineBorderColor: Colors.white.toARGB32(),
+      lineBorderWidth: 2,
+    );
+    final existing = _routeAnnotation;
+    if (existing == null) {
+      _routeAnnotation = await manager.create(options);
+    } else {
+      existing.geometry = options.geometry;
+      await manager.update(existing);
+    }
+  }
+
   Map<String, dynamic> _request(String action) => {
         'action': action,
         'pincode': _pin.text.trim(),
@@ -262,11 +311,14 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         body: _request('quote'),
       );
       final data = Map<String, dynamic>.from(result.data as Map);
-      if (mounted) setState(() {
-        _quote = Map<String, dynamic>.from(data['quote'] as Map);
-        _booking = null;
-        _pickupOtp = null;
-      });
+      if (mounted) {
+        setState(() {
+          _quote = Map<String, dynamic>.from(data['quote'] as Map);
+          _booking = null;
+          _pickupOtp = null;
+        });
+        await _drawQuoteRoute();
+      }
     });
   }
 
@@ -398,10 +450,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                             ' (' + category['code'].toString() + ')'),
                       );
                     }).toList(),
-                    onChanged: _busy ? null : (value) => setState(() {
-                      _categoryId = value;
-                      _quote = null;
-                    }),
+                    onChanged: _busy ? null : (value) {
+                      setState(() {
+                        _categoryId = value;
+                        _quote = null;
+                      });
+                      _clearQuoteRoute();
+                    },
                   ),
                 const SizedBox(height: 10),
                 SegmentedButton<bool>(
