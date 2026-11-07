@@ -17,6 +17,7 @@ Start with a modular backend: three Flutter applications, shared client packages
       quick_ride_design_system/
       quick_ride_maps/
       quick_ride_domain/
+      quick_ride_notifications/
     supabase/
       config.toml
       functions/
@@ -54,10 +55,11 @@ Current Edge Functions:
 - ride-booking: quote, booking, cancellation and initial dispatch.
 - driver-ride-actions: onboarding, pincode requests, location, offers, ride transitions and completion.
 - ride-share: public read-only trip page protected by a random 256-bit bearer token; the database stores only a SHA-256 token hash, links expire after 12 hours, and the customer can revoke or replace them.
+- send-push: service-role-only Firebase Cloud Messaging HTTP v1 sender for authenticated customer, driver and admin devices; device tokens are scoped to the owning user by RLS.
 
 ## Live location and privacy
 
-Driver location is accepted only for verified drivers with an approved availability state. Ride GPS points are stored while a ride is in progress. Customer access to precise driver location is restricted to an assigned active ride. Realtime is used for live state; push notifications will complement it. Trip-share access is a separate bearer-link path with expiration and revocation, and returns no customer phone number or profile data.
+Driver location is accepted only for verified drivers with an approved availability state. Ride GPS points are stored while a ride is in progress. Customer access to precise driver location is restricted to an assigned active ride. Realtime is used for in-app live state; Firebase Cloud Messaging complements it for background/terminated app alerts and foreground in-app notices. Trip-share access is a separate bearer-link path with expiration and revocation, and returns no customer phone number or profile data.
 
 ## External setup
 
