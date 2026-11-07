@@ -120,6 +120,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       }
     } finally {
       _earningsLoading = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -136,6 +137,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     final ledger = _earnings?['ledger'] as List<dynamic>? ?? [];
     final recentRides = _earnings?['recent_completed_rides'] as List<dynamic>? ?? [];
     final completedCount = _earnings?['completed_ride_count'] ?? 0;
+    final recentWindowCount = _earnings?['recent_window_ride_count'] ?? 0;
     final latestSubscription = subscriptions.isEmpty
         ? null
         : Map<String, dynamic>.from(subscriptions.first as Map);
@@ -178,20 +180,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             else if (_earnings == null)
               const LinearProgressIndicator()
             else ...[
-              Text('$completedCount completed rides'),
+              Text('Showing the latest $recentWindowCount of $completedCount completed rides'),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  _earningMetric('Recorded fare', _money(inr['gross_fare'])),
-                  _earningMetric('Platform commission', _money(inr['platform_commission'])),
+                  _earningMetric('Last 30 rides · fare', _money(inr['gross_fare'])),
+                  _earningMetric('Last 30 · commission', _money(inr['platform_commission'])),
                   _earningMetric('After commission*', _money(inr['after_commission'])),
                 ],
               ),
               const SizedBox(height: 8),
               Text(
-                '*Accounting estimate only. This is not confirmation of a bank payout.',
+                '*Recent-ride accounting estimate only. This is not confirmation of a bank payout.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               if (latestSubscription != null) ...[
