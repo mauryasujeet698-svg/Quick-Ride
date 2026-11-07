@@ -84,6 +84,61 @@ Deno.serve(async (req: Request) => {
     return reply(200, { result: data });
   }
 
+  if (action === "create_share_link") {
+    const rideId = String(body.rideId ?? "");
+    if (!rideId) return error(400, "RIDE_REQUIRED", "rideId is required");
+    const { data: ride, error: rideError } = await db.from("rides")
+      .select("id,status,customer_id")
+      .eq("id", rideId).eq("customer_id", user.id).maybeSingle();
+    if (rideError) return error(500, "RIDE_LOOKUP_FAILED", "Unable to verify this ride");
+    if (!ride || !["accepted", "driver_arriving", "arrived", "in_progress"].includes(String(ride.status))) {
+      return error(409, "RIDE_NOT_ACTIVE", "A share link can only be created for an active assigned ride");
+    }
+
+    const tokenBytes = new Uint8Array(32);
+    crypto.getRandomValues(tokenBytes);
+    const token = btoa(String.fromCharCode(...tokenBytes))
+      .replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+    const tokenHash = await sha256Hex(token);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString();
+
+    const { error: revokeError } = await db.from("ride_share_links")
+      .update({ revoked_at: now.toISOString() })
+      .eq("ride_id", rideId).eq("created_by", user.id)
+      .is("revoked_at", null).gt("expires_at", now.toISOString());
+    if (revokeError) return error(500, "SHARE_LINK_REVOKE_FAILED", "Unable to rotate the previous trip-share link");
+
+    const { error: insertError } = await db.from("ride_share_links").insert({
+      ride_id: rideId,
+      created_by: user.id,
+      token_hash: tokenHash,
+      expires_at: expiresAt,
+    });
+    if (insertError) return error(500, "SHARE_LINK_CREATE_FAILED", "Unable to create a trip-share link");
+
+    const baseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\\/+$/, "");
+    if (!baseUrl) return error(500, "SERVER_CONFIG", "Supabase URL is not configured");
+    const shareUrl = baseUrl + "/functions/v1/ride-share?token=" + encodeURIComponent(token);
+    const { error: auditError } = await db.from("ride_safety_events").insert({
+      ride_id: rideId,
+      actor_user_id: user.id,
+      event_type: "trip_shared",
+      details: {
+        source: "customer_app",
+        expires_at: expiresAt,
+        token_hash_prefix: tokenHash.slice(0, 8),
+      },
+    });
+    if (auditError) console.error("Unable to record trip_shared event", auditError);
+    return reply(201, {
+      share_url: shareUrl,
+      expires_at: expiresAt,
+      previous_links_revoked: true,
+      note: "Anyone with this link can view the active ride status, route addresses, driver and vehicle details, and fresh driver location until the link expires. Creating another link revokes the previous link.",
+    });
+  }
+
   if (action === "safety_event") {
     const rideId = String(body.rideId ?? "");
     if (!rideId) return error(400, "RIDE_REQUIRED", "rideId is required");
