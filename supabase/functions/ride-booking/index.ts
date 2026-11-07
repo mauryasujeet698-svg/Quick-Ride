@@ -119,19 +119,29 @@ Deno.serve(async (req: Request) => {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString();
 
+    const { data: createdLink, error: insertError } = await db.from("ride_share_links")
+      .insert({
+        ride_id: rideId,
+        created_by: user.id,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+      })
+      .select("id").single();
+    if (insertError || !createdLink) {
+      return error(500, "SHARE_LINK_CREATE_FAILED", "Unable to create a trip-share link");
+    }
+
+    // Create the new link before revoking the old one. If rotation fails,
+    // remove the newly issued token so the previous link remains usable.
     const { error: revokeError } = await db.from("ride_share_links")
       .update({ revoked_at: now.toISOString() })
       .eq("ride_id", rideId).eq("created_by", user.id)
+      .neq("id", createdLink.id)
       .is("revoked_at", null).gt("expires_at", now.toISOString());
-    if (revokeError) return error(500, "SHARE_LINK_REVOKE_FAILED", "Unable to rotate the previous trip-share link");
-
-    const { error: insertError } = await db.from("ride_share_links").insert({
-      ride_id: rideId,
-      created_by: user.id,
-      token_hash: tokenHash,
-      expires_at: expiresAt,
-    });
-    if (insertError) return error(500, "SHARE_LINK_CREATE_FAILED", "Unable to create a trip-share link");
+    if (revokeError) {
+      await db.from("ride_share_links").delete().eq("id", createdLink.id);
+      return error(500, "SHARE_LINK_REVOKE_FAILED", "Unable to rotate the previous trip-share link");
+    }
 
     const baseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
     if (!baseUrl) return error(500, "SERVER_CONFIG", "Supabase URL is not configured");
