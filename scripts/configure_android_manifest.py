@@ -61,6 +61,20 @@ def main() -> int:
     application = root.find("application")
     if application is None:
         raise SystemExit("Android application element not found")
+    if role in ("customer", "driver", "admin"):
+        fid_enabled = application.find(
+            "meta-data[@android:name='firebase_messaging_installation_id_enabled']"
+        )
+        if fid_enabled is None:
+            ET.SubElement(
+                application,
+                "meta-data",
+                {
+                    f"{{{ANDROID_NS}}}name": "firebase_messaging_installation_id_enabled",
+                    f"{{{ANDROID_NS}}}value": "true",
+                },
+            )
+
     activity = application.find("activity")
     if activity is None:
         raise SystemExit("MainActivity element not found")
