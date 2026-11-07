@@ -337,7 +337,7 @@ class _DriverRideNavigationScreenState
               if (_voiceGuidanceEnabled && _instruction != null) {
                 unawaited(_announceInstruction(_instruction!));
               } else {
-                unawaited(_tts.stop());
+                unawaited(_tts.stop().then<void>((_) {}));
               }
             },
             icon: Icon(
