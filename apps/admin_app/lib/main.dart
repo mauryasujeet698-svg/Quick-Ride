@@ -28,9 +28,24 @@ Future<void> main() async {
       QuickRideAdminApp.router.go('/operations');
     });
   }
+
+  QuickRideNotifications.foregroundMessages.listen((message) {
+    final notification = message.notification;
+    if (notification == null) return;
+    QuickRideAdminApp.messengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text('${notification.title ?? 'Quick-Ride'}\n${notification.body ?? 'You have an operations update.'}'),
+        action: SnackBarAction(
+          label: 'OPEN',
+          onPressed: () => QuickRideAdminApp.router.go('/operations'),
+        ),
+      ),
+    );
+  });
 }
 
 class QuickRideAdminApp extends StatelessWidget {
+  static final messengerKey = GlobalKey<ScaffoldMessengerState>();
   const QuickRideAdminApp({super.key});
   static final router = GoRouter(routes: [
     GoRoute(path: '/', builder: (_, __) => const AdminHomeScreen()),
@@ -39,6 +54,7 @@ class QuickRideAdminApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
+        scaffoldMessengerKey: messengerKey,
         title: 'Quick-Ride Admin',
         theme: QuickRideTheme.light(),
         darkTheme: QuickRideTheme.dark(),
