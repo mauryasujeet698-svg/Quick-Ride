@@ -388,7 +388,9 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function dispatchNext(db: ReturnType<typeof createClient>, rideId: string): Promise<Json> {
+// The service-role client calls dynamically selected SQL RPCs and tables that are
+// intentionally not generated into a static Supabase Database type in this Edge Function.
+async function dispatchNext(db: any, rideId: string): Promise<Json> {
   const { data: context, error: contextError } = await db.rpc("get_ride_dispatch_context", { p_ride_id: rideId });
   if (contextError || !context) return { status: "unavailable" };
   const settings = context.dispatch as Record<string, number>;
