@@ -32,9 +32,29 @@ Future<void> main() async {
       QuickRideDriverApp.router.go('/ride/$rideId/navigation');
     });
   }
+
+  QuickRideNotifications.foregroundMessages.listen((message) {
+    final notification = message.notification;
+    if (notification == null) return;
+    final rideId = message.data['ride_id'];
+    QuickRideDriverApp.messengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text('${notification.title ?? 'Quick-Ride'}\n${notification.body ?? 'You have an update.'}'),
+        action: SnackBarAction(
+          label: 'OPEN',
+          onPressed: () {
+            if (rideId is String && rideId.isNotEmpty) {
+              QuickRideDriverApp.router.go('/ride/$rideId/navigation');
+            }
+          },
+        ),
+      ),
+    );
+  });
 }
 
 class QuickRideDriverApp extends StatelessWidget {
+  static final messengerKey = GlobalKey<ScaffoldMessengerState>();
   const QuickRideDriverApp({super.key});
   static final router = GoRouter(routes: [
     GoRoute(path: '/', builder: (_, __) => const DriverHomeScreen()),
@@ -48,6 +68,7 @@ class QuickRideDriverApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
+        scaffoldMessengerKey: messengerKey,
         title: 'Quick-Ride Driver',
         theme: QuickRideTheme.light(),
         darkTheme: QuickRideTheme.dark(),
