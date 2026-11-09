@@ -28,6 +28,8 @@ jobs:
           channel: stable
       - name: Resolve Flutter workspace
         run: flutter pub get
+      - name: Patch Mapbox Android Kotlin configuration for Flutter AGP 9 default
+        run: python3 scripts/patch_mapbox_gradle.py
       - name: Prepare Android platform files
         shell: bash
         run: |

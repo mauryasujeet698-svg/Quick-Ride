@@ -10,7 +10,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
 
 export 'package:latlong2/latlong.dart';
 
-/// Shared Mapbox Maps, Search Box, Directions and location foundation.
+/// Shared Mapbox Maps, Geocoding, Directions and location foundation.
 class QuickRideMaps {
   QuickRideMaps._();
 
@@ -19,6 +19,11 @@ class QuickRideMaps {
   static const String defaultLanguage = 'en';
 
   static final http.Client _http = http.Client();
+
+  /// Allows widget tests to replace the native Mapbox platform view.
+  /// Production builds leave this null and render the real Mapbox SDK view.
+  static Widget Function(BuildContext context, QuickRideMapView view)?
+      mapWidgetOverride;
 
   static bool get isConfigured =>
       accessToken.isNotEmpty && accessToken.startsWith('pk.');
@@ -539,6 +544,9 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
 
   @override
   Widget build(BuildContext context) {
+    final override = QuickRideMaps.mapWidgetOverride;
+    if (override != null) return override(context, widget);
+
     final initial = widget.currentPosition ??
         widget.initialCenter ??
         const LatLng(20.5937, 78.9629);
