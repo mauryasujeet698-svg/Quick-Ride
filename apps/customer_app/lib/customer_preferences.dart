@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,6 +10,8 @@ class QuickRideCustomerPreferences {
       ValueNotifier<ThemeMode>(ThemeMode.system);
   static final ValueNotifier<Locale> locale =
       ValueNotifier<Locale>(const Locale('en'));
+  static final ValueNotifier<List<Map<String, dynamic>>> recentPlaces =
+      ValueNotifier<List<Map<String, dynamic>>>(const []);
 
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -17,6 +21,46 @@ class QuickRideCustomerPreferences {
       orElse: () => ThemeMode.system,
     );
     locale.value = Locale(prefs.getString('customer_language_code') == 'hi' ? 'hi' : 'en');
+    recentPlaces.value = (prefs.getStringList('customer_recent_places') ?? const [])
+        .map((value) {
+          try {
+            final decoded = jsonDecode(value);
+            return decoded is Map
+                ? Map<String, dynamic>.from(decoded)
+                : <String, dynamic>{};
+          } catch (_) {
+            return <String, dynamic>{};
+          }
+        })
+        .where((place) =>
+            place['name'] is String &&
+            place['address'] is String &&
+            place['latitude'] is num &&
+            place['longitude'] is num)
+        .take(6)
+        .toList(growable: false);
+  }
+
+  static Future<void> addRecentPlace(Map<String, dynamic> place) async {
+    final key = '${place['latitude']},${place['longitude']}';
+    final updated = [
+      place,
+      ...recentPlaces.value.where(
+        (item) => '${item['latitude']},${item['longitude']}' != key,
+      ),
+    ].take(6).toList(growable: false);
+    recentPlaces.value = updated;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      'customer_recent_places',
+      updated.map(jsonEncode).toList(growable: false),
+    );
+  }
+
+  static Future<void> clearRecentPlaces() async {
+    recentPlaces.value = const [];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('customer_recent_places');
   }
 
   static Future<void> setThemeMode(ThemeMode value) async {
