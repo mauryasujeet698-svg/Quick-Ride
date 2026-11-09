@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_notifications/quick_ride_notifications.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../customer_preferences.dart';
 import 'customer_navigation_bar.dart';
@@ -100,6 +101,164 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     }
   }
 
+  Future<void> _showSavedPlaces() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ValueListenableBuilder<List<Map<String, dynamic>>>(
+          valueListenable: QuickRideCustomerPreferences.savedPlaces,
+          builder: (context, places, _) => Padding(
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Saved places',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        )),
+                const SizedBox(height: 8),
+                if (places.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 22),
+                    child: Text('Save a place from Recent places on the home screen.'),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: places.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final place = places[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.favorite_rounded,
+                              color: Color(0xFFE45872)),
+                          title: Text(place['name'].toString()),
+                          subtitle: Text(place['address'].toString()),
+                          trailing: IconButton(
+                            tooltip: 'Remove saved place',
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            onPressed: () =>
+                                QuickRideCustomerPreferences.removeSavedPlace(place),
+                          ),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            this.context.go('/book', extra: {
+                              'pickup': {
+                                'longitude': place['longitude'],
+                                'latitude': place['latitude'],
+                                'address': place['address'],
+                                'pincode': place['postalCode'],
+                              },
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showFareHistory() async {
+    final user = QuickRideAuth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_t('Sign in to view your fare history.', 'किराया इतिहास देखने के लिए साइन इन करें।'))),
+      );
+      return;
+    }
+    try {
+      final rows = await QuickRideBackend.client
+          .from('rides')
+          .select('id,created_at,status,estimated_fare,final_fare,currency')
+          .eq('customer_id', user.id)
+          .order('created_at', ascending: false)
+          .limit(30);
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * 0.72,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Fare history',
+                      style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          )),
+                  const SizedBox(height: 8),
+                  if (rows.isEmpty)
+                    const Expanded(
+                      child: Center(child: Text('Your completed ride fares will appear here.')),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: rows.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final row = Map<String, dynamic>.from(rows[index]);
+                          final id = row['id'].toString();
+                          final date = DateTime.tryParse(row['created_at'].toString());
+                          final fare = row['final_fare'] ?? row['estimated_fare'];
+                          final currency = (row['currency'] ?? 'INR').toString();
+                          final amount = fare is num
+                              ? (currency == 'INR' ? '₹' : currency + ' ') + fare.toStringAsFixed(2)
+                              : 'Fare pending';
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.receipt_long_outlined),
+                            title: Text(amount,
+                                style: const TextStyle(fontWeight: FontWeight.w800)),
+                            subtitle: Text(
+                              (date == null ? '' : date.toLocal().toString().substring(0, 16) + ' · ') +
+                                  row['status'].toString().replaceAll('_', ' '),
+                            ),
+                            trailing: IconButton(
+                              tooltip: 'Share fare summary',
+                              icon: const Icon(Icons.share_outlined),
+                              onPressed: () => SharePlus.instance.share(
+                                ShareParams(
+                                  text: 'Quick Ride fare summary\nRide: ' + id +
+                                      '\nDate: ' + (date?.toLocal().toString() ?? 'Unavailable') +
+                                      '\nStatus: ' + row['status'].toString() +
+                                      '\nFare: ' + amount,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Fare history could not be loaded: ' + error.toString())),
+        );
+      }
+    }
+  }
+
   Widget _heading(BuildContext context, String text) => Padding(
         padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
         child: Text(
@@ -185,6 +344,22 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                   onTap: () => context.go('/my-rides'),
                 ),
                 const Divider(height: 1),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.favorite_border_rounded),
+                  title: Text(_t('Saved places', 'सेव किए गए स्थान')),
+                  subtitle: Text(_t('Home, work and favourite destinations', 'घर, काम और पसंदीदा स्थान')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _showSavedPlaces,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.receipt_long_outlined),
+                  title: Text(_t('Fare history', 'किराया इतिहास')),
+                  subtitle: Text(_t('View and share your ride fare summaries', 'राइड किराया विवरण देखें और साझा करें')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _showFareHistory,
+                ),
                 ListTile(
                   leading: const Icon(Icons.support_agent_outlined),
                   title: Text(_t('Help & support', 'सहायता और सपोर्ट')),
