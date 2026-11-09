@@ -13,15 +13,18 @@ class RidePoint {
     required this.longitude,
     required this.latitude,
     required this.address,
+    this.pincode,
   });
   final double longitude;
   final double latitude;
   final String address;
+  final String? pincode;
 
   Map<String, dynamic> toJson() => {
         'longitude': longitude,
         'latitude': latitude,
         'address': address,
+        'pincode': pincode,
       };
 }
 
@@ -58,6 +61,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     super.initState();
     _pickup = widget.initialPickup;
     _destination = widget.initialDestination;
+    _pin.text = widget.initialPickup?.pincode ?? '';
     _selectPickup = _pickup == null;
     _loadCategories();
     if (_pickup == null) _tryCurrentLocation();
@@ -126,10 +130,14 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     try {
       final address = await _reverseGeocode(longitude, latitude);
       if (!mounted) return;
+      final pincode = RegExp(r'(?<![0-9])[1-9][0-9]{5}(?![0-9])')
+          .firstMatch(address)
+          ?.group(0);
       final point = RidePoint(
         longitude: longitude,
         latitude: latitude,
         address: address,
+        pincode: pincode,
       );
       setState(() {
         if (pickup) {
@@ -189,26 +197,38 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   Future<void> _getQuote() async {
     if (QuickRideAuth.currentUser == null) {
       setState(() => _error = 'Sign in with Google to compare ride options.');
-      await QuickRideAuth.signInWithGoogle(
-        redirectTo: 'in.quickride.customer://login-callback',
-      );
+      try {
+        await QuickRideAuth.signInWithGoogle(
+          redirectTo: 'in.quickride.customer://login-callback',
+        );
+      } catch (error) {
+        if (mounted) setState(() => _error = 'Google sign-in failed: ' + error.toString());
+      }
       return;
     }
     if (_pickup == null || _destination == null) {
-      setState(() => _error = 'Select both pickup and destination on the map.');
+      setState(() => _error = 'Select both pickup and destination.');
       return;
     }
+    final inferredPincode = _pickup!.pincode;
+    if (!RegExp(r'^[1-9][0-9]{5}$').hasMatch(_pin.text.trim()) &&
+        inferredPincode != null) {
+      _pin.text = inferredPincode;
+    }
     if (!RegExp(r'^[1-9][0-9]{5}$').hasMatch(_pin.text.trim())) {
-      setState(() => _error = 'Enter the pickup service pincode.');
+      setState(() => _error =
+          'We could not read the pickup pincode. Enter the six-digit pickup service pincode to check availability.');
       return;
     }
     if (_categories.isEmpty) {
-      setState(() => _error = 'No active vehicle categories are configured.');
+      setState(() => _error =
+          'No active vehicle categories are configured for Quick Ride.');
       return;
     }
 
     await _run(() async {
       final results = <Map<String, dynamic>>[];
+      final failures = <String>[];
       for (final category in _categories) {
         final id = (category['id'] as num).toInt();
         final name = category['name'].toString();
@@ -228,8 +248,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             'passenger_count': 1,
             'quote': quote,
           });
-        } catch (_) {
-          // A category without an active fare/service configuration is not offered.
+        } catch (error) {
+          failures.add(name + ': ' + error.toString());
         }
 
         if (code == 'auto' || code == 'autorickshaw') {
@@ -250,8 +270,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                 'quote': quote,
               });
             }
-          } catch (_) {
-            // Shared Auto is intentionally omitted unless enabled and quotable in this pincode.
+          } catch (error) {
+            failures.add('Shared Auto: ' + error.toString());
           }
         }
       }
@@ -263,7 +283,9 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _sharedAuto = null;
         _pickupOtp = null;
         if (results.isEmpty) {
-          _error = 'No ride services are currently available for this route and pincode.';
+          _error = failures.isEmpty
+              ? 'No ride services are configured for this pickup area.'
+              : 'No ride service returned a fare. Check the pickup pincode, service-area coverage and fare configuration. ' + failures.first;
         } else {
           _error = null;
         }
@@ -288,9 +310,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     final user = QuickRideAuth.currentUser;
     if (user == null) {
       setState(() => _error = 'Sign in before confirming your ride.');
-      await QuickRideAuth.signInWithGoogle(
-        redirectTo: 'in.quickride.customer://login-callback',
-      );
+      try {
+        await QuickRideAuth.signInWithGoogle(
+          redirectTo: 'in.quickride.customer://login-callback',
+        );
+      } catch (error) {
+        if (mounted) setState(() => _error = 'Google sign-in failed: ' + error.toString());
+      }
       return;
     }
     if (_quote == null) return;
