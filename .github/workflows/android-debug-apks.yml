@@ -42,12 +42,16 @@ jobs:
           import sys
           path = Path(sys.argv[1])
           text = path.read_text()
-          repository = '            maven { url = uri("https://api.mapbox.com/downloads/v2/releases/maven") }'
           if 'api.mapbox.com/downloads/v2/releases/maven' not in text:
-              marker = '        repositories {\n'
-              if text.count(marker) != 1:
+              section = text.find('dependencyResolutionManagement {')
+              repository_index = text.find('repositories {', section)
+              if section < 0 or repository_index < 0:
                   raise SystemExit(f"Could not locate dependency repositories in {path}")
-              text = text.replace(marker, marker + repository + '\n', 1)
+              line_end = text.find('\\n', repository_index) + 1
+              line_start = text.rfind('\\n', 0, repository_index) + 1
+              indent = text[line_start:repository_index]
+              repository = indent + '    maven { url = uri("https://api.mapbox.com/downloads/v2/releases/maven") }\\n'
+              text = text[:line_end] + repository + text[line_end:]
               path.write_text(text)
           PY
             python3 - "apps/${app}_app/android/app/build.gradle.kts" <<'PY'
