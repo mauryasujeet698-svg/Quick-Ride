@@ -187,9 +187,6 @@ begin
     shared_auto_trip_id,ride_id,customer_id,passenger_count
   ) values (v_trip.id,v_ride.id,v_ride.customer_id,p_passenger_count);
 
-  select count(*) into v_booking_count from public.shared_auto_trip_bookings
-  where shared_auto_trip_id=v_trip.id and status='confirmed';
-
   update public.rides set ride_mode='shared_auto',passenger_count=p_passenger_count,
     shared_auto_trip_id=v_trip.id where id=v_ride.id;
 
@@ -338,11 +335,11 @@ begin
     raise exception 'Shared Auto route must contain one pickup and dropoff per booking' using errcode='22023';
   end if;
   if exists (
-    select 1 from jsonb_array_elements(p_route_plan) x
+    select 1 from jsonb_array_elements(p_route_plan) as entries(value)
     where not exists (
       select 1 from public.shared_auto_trip_bookings b
       where b.shared_auto_trip_id=v_trip.id and b.status='confirmed'
-        and b.ride_id=(x->>'ride_id')::uuid
+        and b.ride_id=(entries.value->>'ride_id')::uuid
     )
   ) then
     raise exception 'Shared Auto route contains a booking outside this trip' using errcode='22023';
@@ -510,6 +507,7 @@ as $
         'bookings',(
           select coalesce(jsonb_agg(jsonb_build_object(
             'ride_id',r.id,
+            'customer_id',b.customer_id,
             'passenger_count',b.passenger_count,
             'pickup_longitude',extensions.st_x(r.pickup_location::extensions.geometry),
             'pickup_latitude',extensions.st_y(r.pickup_location::extensions.geometry),
@@ -555,10 +553,8 @@ grant execute on function public.join_shared_auto_trip(uuid,uuid,smallint,intege
 grant execute on function public.get_shared_auto_trip_for_ride(uuid)
   to service_role;
 
-grant select,insert,update,delete on public.shared_auto_configs to service_role;
-grant select,insert,update,delete on public.shared_auto_trips to service_role;
-grant select,insert,update,delete on public.shared_auto_trip_bookings to service_role;
-grant select,insert,update,delete on public.shared_auto_trip_stops to service_role;
+grant select on public.shared_auto_trips, public.shared_auto_trip_bookings, public.shared_auto_trip_stops to authenticated;
+grant select, insert, update, delete on public.shared_auto_configs, public.shared_auto_trips, public.shared_auto_trip_bookings, public.shared_auto_trip_stops to service_role;
 
 comment on table public.shared_auto_trips is
   'One shared Auto vehicle journey. Shared Auto only; capacity is hard-limited to three seats.';
