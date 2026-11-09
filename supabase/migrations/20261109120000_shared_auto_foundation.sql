@@ -14,6 +14,7 @@ create table if not exists public.shared_auto_configs (
   seat_capacity smallint not null default 3 check (seat_capacity between 1 and 3),
   max_detour_percent numeric(5,2) not null default 40 check (max_detour_percent between 0 and 100),
   max_extra_minutes smallint not null default 15 check (max_extra_minutes between 0 and 60),
+  fare_share_percent_per_seat numeric(5,2) not null default 35 check (fare_share_percent_per_seat between 10 and 100),
   updated_at timestamptz not null default now(),
   updated_by uuid references auth.users(id) on delete set null
 );
@@ -487,6 +488,57 @@ begin
   );
 end;
 $$;
+
+create or replace function public.list_shared_auto_trip_candidates(
+  p_pincode_id bigint,
+  p_vehicle_category_id bigint
+)
+returns jsonb
+language sql
+security definer
+set search_path = ''
+as $
+  select coalesce(jsonb_agg(candidate.payload order by candidate.created_at), '[]'::jsonb)
+  from (
+    select t.created_at,
+      jsonb_build_object(
+        'id',t.id,
+        'status',t.status,
+        'driver_id',t.driver_id,
+        'seat_capacity',t.seat_capacity,
+        'reserved_seats',t.reserved_seats,
+        'bookings',(
+          select coalesce(jsonb_agg(jsonb_build_object(
+            'ride_id',r.id,
+            'passenger_count',b.passenger_count,
+            'pickup_longitude',extensions.st_x(r.pickup_location::extensions.geometry),
+            'pickup_latitude',extensions.st_y(r.pickup_location::extensions.geometry),
+            'pickup_address',r.pickup_address,
+            'destination_longitude',extensions.st_x(r.destination_location::extensions.geometry),
+            'destination_latitude',extensions.st_y(r.destination_location::extensions.geometry),
+            'destination_address',r.destination_address,
+            'estimated_duration_s',r.estimated_duration_s
+          ) order by b.created_at),'[]'::jsonb)
+          from public.shared_auto_trip_bookings b
+          join public.rides r on r.id=b.ride_id
+          where b.shared_auto_trip_id=t.id and b.status='confirmed'
+            and r.status not in ('cancelled','completed','no_driver_found')
+        )
+      ) as payload
+    from public.shared_auto_trips t
+    where t.pincode_id=p_pincode_id
+      and t.vehicle_category_id=p_vehicle_category_id
+      and t.status in ('matching','assigned')
+      and t.reserved_seats < t.seat_capacity
+    order by t.created_at
+    limit 25
+  ) candidate;
+$;
+
+revoke all on function public.list_shared_auto_trip_candidates(bigint,bigint)
+  from public,anon,authenticated;
+grant execute on function public.list_shared_auto_trip_candidates(bigint,bigint)
+  to service_role;
 
 -- These functions are called by trusted Edge Functions using the service role.
 revoke all on function public.create_shared_auto_trip(uuid,smallint,integer,integer,jsonb)
