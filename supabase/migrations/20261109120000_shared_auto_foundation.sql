@@ -732,9 +732,11 @@ begin
        or v_ride.passenger_count not between 1 and 3 then
       raise exception 'Shared Auto fare snapshot is invalid' using errcode='22023';
     end if;
-    v_final_fare:=round(
-      v_private_final_fare * v_fare_share_percent / 100.0 * v_ride.passenger_count,
-      2
+    -- Shared Auto is a quote-locked fare: a later passenger or route detour
+    -- must not increase this customer's confirmed price.
+    v_final_fare:=coalesce(
+      v_ride.estimated_fare,
+      round(v_private_final_fare * v_fare_share_percent / 100.0 * v_ride.passenger_count, 2)
     );
   end if;
 
@@ -754,7 +756,10 @@ begin
         'booking_fee',v_booking,
         'multiplier',v_multiplier,
         'minimum_fare_applied',v_before_minimum<v_minimum,
-        'private_route_fare',v_private_final_fare,
+        'private_actual_route_fare',v_private_final_fare,
+        'quoted_shared_fare_locked',case
+          when v_ride.ride_mode='shared_auto' then v_ride.estimated_fare
+          else null end,
         'ride_mode',v_ride.ride_mode,
         'passenger_count',v_ride.passenger_count,
         'fare_share_percent_per_seat',case
