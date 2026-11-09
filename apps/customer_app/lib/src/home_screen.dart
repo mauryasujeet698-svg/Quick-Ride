@@ -67,8 +67,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           .from('vehicle_categories')
           .select('id,code,name,description')
           .eq('is_active', true)
-          .order('sort_order')
-          .limit(5);
+          .order('sort_order');
       if (mounted) setState(() => _vehicleCategories = rows);
     } catch (_) {
       // The booking flow will surface the live backend error when needed.
