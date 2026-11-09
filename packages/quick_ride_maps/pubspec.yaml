@@ -6,7 +6,7 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-  flutter_map: ^8.3.2
   geolocator: ^14.1.2
   http: ^1.4.0
   latlong2: ^0.10.1
+  mapbox_maps_flutter: ^3.34.2

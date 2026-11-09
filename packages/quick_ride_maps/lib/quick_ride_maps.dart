@@ -1,60 +1,37 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
 
-export 'package:flutter_map/flutter_map.dart';
 export 'package:latlong2/latlong.dart';
 
-/// OpenStreetMap-backed map, reverse-geocoding and routing services.
-///
-/// The public OSM/OSRM/Nominatim endpoints are suitable for development and
-/// small QA workloads only. Production deployments should point these base
-/// URLs at infrastructure with an availability commitment.
+/// Shared Mapbox Maps, Search Box, Directions and location foundation.
 class QuickRideMaps {
   QuickRideMaps._();
 
-  static const String userAgentPackageName = 'in.quickride.app';
-  static const String _userAgent =
-      'QuickRide/0.1 (+https://github.com/mauryasujeet698-svg/Quick-Ride)';
-  static const String tileUrlTemplate = String.fromEnvironment(
-    'OSM_TILE_URL',
-    defaultValue: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  );
-  static const String routingBaseUrl = String.fromEnvironment(
-    'OSRM_BASE_URL',
-    defaultValue: 'https://router.project-osrm.org',
-  );
-  static const String geocodingBaseUrl = String.fromEnvironment(
-    'NOMINATIM_BASE_URL',
-    defaultValue: 'https://nominatim.openstreetmap.org',
-  );
+  static const String accessToken =
+      String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
+  static const String defaultLanguage = 'en';
 
   static final http.Client _http = http.Client();
-  static final Map<String, String> _geocodeCache = <String, String>{};
-  static DateTime _lastGeocodeRequest =
-      DateTime.fromMillisecondsSinceEpoch(0);
 
-  static TileLayer openStreetMapLayer({
-    required String appPackageName,
-  }) => TileLayer(
-        urlTemplate: tileUrlTemplate,
-        userAgentPackageName: appPackageName,
-        maxZoom: 19,
-      );
+  static bool get isConfigured =>
+      accessToken.isNotEmpty && accessToken.startsWith('pk.');
 
-  static Widget attributionControl() => SimpleAttributionWidget(
-        source: const Text('OpenStreetMap contributors'),
-        backgroundColor: Colors.white.withValues(alpha: 0.85),
-      );
+  static void configure() {
+    if (accessToken.isNotEmpty) {
+      mbx.MapboxOptions.setAccessToken(accessToken);
+    }
+  }
 
   static Future<geo.Position> currentPosition() async {
     if (!await geo.Geolocator.isLocationServiceEnabled()) {
-      throw StateError('Location services are disabled.');
+      throw StateError('Location services are disabled. Enable GPS and try again.');
     }
     var permission = await geo.Geolocator.checkPermission();
     if (permission == geo.LocationPermission.denied) {
@@ -62,7 +39,7 @@ class QuickRideMaps {
     }
     if (permission == geo.LocationPermission.denied ||
         permission == geo.LocationPermission.deniedForever) {
-      throw StateError('Location permission was not granted.');
+      throw StateError('Location permission was not granted. You can still choose a pickup manually.');
     }
     return geo.Geolocator.getCurrentPosition(
       locationSettings: const geo.LocationSettings(
@@ -79,7 +56,7 @@ class QuickRideMaps {
         distanceFilter: 10,
         intervalDuration: const Duration(seconds: 5),
         foregroundNotificationConfig: const geo.ForegroundNotificationConfig(
-          notificationTitle: 'Quick-Ride driver location',
+          notificationTitle: 'Quick Ride Captain location',
           notificationText:
               'Location is shared while you are online or completing a ride.',
           enableWakeLock: true,
@@ -88,45 +65,123 @@ class QuickRideMaps {
     );
   }
 
-  static Future<String> reverseGeocode(LatLng point) async {
-    final key =
-        '${point.latitude.toStringAsFixed(5)},${point.longitude.toStringAsFixed(5)}';
-    final cached = _geocodeCache[key];
-    if (cached != null) return cached;
-
-    // Public Nominatim allows at most one request per second. The app only
-    // reverse-geocodes an explicit user map selection and caches each result.
-    final elapsed = DateTime.now().difference(_lastGeocodeRequest);
-    if (elapsed < const Duration(seconds: 1)) {
-      await Future<void>.delayed(const Duration(seconds: 1) - elapsed);
+  static Future<List<QuickRideSearchResult>> searchSuggestions({
+    required String query,
+    required String sessionToken,
+    LatLng? proximity,
+    String language = defaultLanguage,
+  }) async {
+    final text = query.trim();
+    if (text.length < 2) return const [];
+    if (!isConfigured) {
+      throw StateError('Mapbox is not configured for this build.');
     }
-    _lastGeocodeRequest = DateTime.now();
-
-    final base = geocodingBaseUrl.replaceFirst(RegExp(r'/$'), '');
-    final uri = Uri.parse('$base/reverse').replace(queryParameters: {
-      'format': 'jsonv2',
-      'lat': point.latitude.toString(),
-      'lon': point.longitude.toString(),
-      'zoom': '18',
-      'addressdetails': '1',
-    });
-    final response = await _http.get(uri, headers: {
-      'User-Agent': _userAgent,
-      'Accept': 'application/json',
-    }).timeout(const Duration(seconds: 12));
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/search/searchbox/v1/suggest',
+      {
+        'q': text,
+        'session_token': sessionToken,
+        'access_token': accessToken,
+        'language': language,
+        'country': 'IN',
+        'limit': '8',
+        if (proximity != null)
+          'proximity': '${proximity.longitude},${proximity.latitude}',
+      },
+    );
+    final response = await _http.get(uri).timeout(const Duration(seconds: 12));
     if (response.statusCode != 200) {
-      throw StateError(
-        'OpenStreetMap address lookup failed (${response.statusCode}).',
-      );
+      throw StateError('Mapbox search is unavailable (${response.statusCode}).');
     }
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final address = (payload['display_name'] ?? '').toString().trim();
-    final result = address.isEmpty
-        ? 'Selected location (${point.latitude.toStringAsFixed(5)}, '
-            '${point.longitude.toStringAsFixed(5)})'
-        : address;
-    _geocodeCache[key] = result;
-    return result;
+    final items = payload['suggestions'] as List<dynamic>? ?? const [];
+    return items
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .where((item) => item['mapbox_id'] is String)
+        .map((item) => QuickRideSearchResult(
+              mapboxId: item['mapbox_id'] as String,
+              name: (item['name'] ?? item['place_formatted'] ?? 'Location').toString(),
+              address: (item['full_address'] ??
+                      item['place_formatted'] ??
+                      item['name'] ??
+                      '')
+                  .toString(),
+              resultType: (item['feature_type'] ?? '').toString(),
+            ))
+        .toList(growable: false);
+  }
+
+  static Future<QuickRidePlace> retrieveSearchResult({
+    required String mapboxId,
+    required String sessionToken,
+  }) async {
+    if (!isConfigured) {
+      throw StateError('Mapbox is not configured for this build.');
+    }
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/search/searchbox/v1/retrieve/${Uri.encodeComponent(mapboxId)}',
+      {'session_token': sessionToken, 'access_token': accessToken},
+    );
+    final response = await _http.get(uri).timeout(const Duration(seconds: 12));
+    if (response.statusCode != 200) {
+      throw StateError('Mapbox could not resolve that location (${response.statusCode}).');
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final features = payload['features'] as List<dynamic>? ?? const [];
+    if (features.isEmpty || features.first is! Map) {
+      throw StateError('Mapbox returned no coordinates for that search result.');
+    }
+    final feature = Map<String, dynamic>.from(features.first as Map);
+    final geometry = Map<String, dynamic>.from(feature['geometry'] as Map);
+    final coordinates = geometry['coordinates'] as List<dynamic>;
+    final properties =
+        Map<String, dynamic>.from(feature['properties'] as Map? ?? const {});
+    final longitude = (coordinates[0] as num).toDouble();
+    final latitude = (coordinates[1] as num).toDouble();
+    return QuickRidePlace(
+      point: LatLng(latitude, longitude),
+      name: (properties['name'] ?? 'Selected location').toString(),
+      address: (properties['full_address'] ??
+              properties['place_formatted'] ??
+              properties['name'] ??
+              'Selected location')
+          .toString(),
+    );
+  }
+
+  static Future<String> reverseGeocode(LatLng point) async {
+    if (!isConfigured) {
+      throw StateError('Mapbox is not configured for this build.');
+    }
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/search/searchbox/v1/reverse',
+      {
+        'longitude': point.longitude.toString(),
+        'latitude': point.latitude.toString(),
+        'language': defaultLanguage,
+        'access_token': accessToken,
+      },
+    );
+    final response = await _http.get(uri).timeout(const Duration(seconds: 12));
+    if (response.statusCode != 200) {
+      throw StateError('Mapbox address lookup failed (${response.statusCode}).');
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final features = payload['features'] as List<dynamic>? ?? const [];
+    if (features.isEmpty || features.first is! Map) {
+      return 'Selected location (${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)})';
+    }
+    final properties =
+        Map<String, dynamic>.from((features.first as Map)['properties'] as Map? ?? const {});
+    return (properties['full_address'] ??
+            properties['place_formatted'] ??
+            properties['name'] ??
+            'Selected location')
+        .toString();
   }
 
   static Future<QuickRideRoute> drivingRoute({
@@ -134,81 +189,68 @@ class QuickRideMaps {
     required LatLng destination,
     bool includeSteps = false,
   }) async {
-    final base = routingBaseUrl.replaceFirst(RegExp(r'/$'), '');
-    final coordinates =
-        '${origin.longitude},${origin.latitude};'
-        '${destination.longitude},${destination.latitude}';
-    final uri = Uri.parse('$base/route/v1/driving/$coordinates')
-        .replace(queryParameters: {
-      'overview': 'full',
-      'geometries': 'geojson',
-      'steps': includeSteps ? 'true' : 'false',
-      'alternatives': 'false',
-    });
-    final response = await _http.get(uri, headers: {
-      'User-Agent': _userAgent,
-      'Accept': 'application/json',
-    }).timeout(const Duration(seconds: 15));
-    if (response.statusCode != 200) {
-      throw StateError(
-        'OpenStreetMap routing failed (${response.statusCode}).',
-      );
+    if (!isConfigured) {
+      throw StateError('Mapbox is not configured for this build.');
     }
-
+    final coordinates =
+        '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/directions/v5/mapbox/driving/$coordinates',
+      {
+        'access_token': accessToken,
+        'alternatives': 'false',
+        'overview': 'full',
+        'geometries': 'geojson',
+        'steps': includeSteps ? 'true' : 'false',
+        'language': 'en',
+      },
+    );
+    final response = await _http.get(uri).timeout(const Duration(seconds: 18));
+    if (response.statusCode != 200) {
+      throw StateError('Mapbox routing is unavailable (${response.statusCode}).');
+    }
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     if (payload['code'] != 'Ok') {
-      throw StateError('No drivable route was found for these locations.');
+      throw StateError((payload['message'] ?? 'No drivable route found.').toString());
     }
     final routes = payload['routes'] as List<dynamic>? ?? const [];
-    if (routes.isEmpty) {
-      throw StateError('No drivable route was found for these locations.');
+    if (routes.isEmpty || routes.first is! Map) {
+      throw StateError('Mapbox returned no drivable route.');
     }
     final route = Map<String, dynamic>.from(routes.first as Map);
     final geometry = Map<String, dynamic>.from(route['geometry'] as Map);
-    final rawCoordinates = geometry['coordinates'] as List<dynamic>? ?? [];
-    final points = rawCoordinates
+    final coordinatesJson = geometry['coordinates'] as List<dynamic>? ?? const [];
+    final points = coordinatesJson
         .whereType<List<dynamic>>()
-        .where((pair) =>
-            pair.length >= 2 && pair[0] is num && pair[1] is num)
+        .where((pair) => pair.length >= 2 && pair[0] is num && pair[1] is num)
         .map((pair) => LatLng(
               (pair[1] as num).toDouble(),
               (pair[0] as num).toDouble(),
             ))
         .toList(growable: false);
-    if (points.length < 2) {
-      throw StateError('The routing service returned an incomplete route.');
-    }
+    if (points.length < 2) throw StateError('Mapbox returned an incomplete route.');
 
     final steps = <QuickRideRouteStep>[];
-    final legs = route['legs'] as List<dynamic>? ?? const [];
-    if (legs.isNotEmpty && legs.first is Map) {
-      final rawSteps =
-          (legs.first as Map)['steps'] as List<dynamic>? ?? const [];
-      for (final rawStep in rawSteps) {
-        if (rawStep is! Map) continue;
-        final step = Map<String, dynamic>.from(rawStep);
-        final maneuver = step['maneuver'] is Map
-            ? Map<String, dynamic>.from(step['maneuver'] as Map)
-            : <String, dynamic>{};
-        final location = maneuver['location'] as List<dynamic>? ?? const [];
-        final name = (step['name'] ?? '').toString().trim();
-        final type = (maneuver['type'] ?? '').toString();
-        final modifier = (maneuver['modifier'] ?? '').toString();
-        final instruction = _instruction(type, modifier, name);
-        if (instruction.isEmpty) continue;
-        steps.add(QuickRideRouteStep(
-          instruction: instruction,
-          location: location.length >= 2 &&
-                  location[0] is num &&
-                  location[1] is num
-              ? LatLng(
-                  (location[1] as num).toDouble(),
-                  (location[0] as num).toDouble(),
-                )
-              : null,
-          distanceMeters: (step['distance'] as num?)?.toDouble() ?? 0,
-          durationSeconds: (step['duration'] as num?)?.toDouble() ?? 0,
-        ));
+    if (includeSteps) {
+      final legs = route['legs'] as List<dynamic>? ?? const [];
+      if (legs.isNotEmpty && legs.first is Map) {
+        final rawSteps = (legs.first as Map)['steps'] as List<dynamic>? ?? const [];
+        for (final raw in rawSteps) {
+          if (raw is! Map) continue;
+          final item = Map<String, dynamic>.from(raw);
+          final maneuver =
+              Map<String, dynamic>.from(item['maneuver'] as Map? ?? const {});
+          final location = maneuver['location'] as List<dynamic>? ?? const [];
+          steps.add(QuickRideRouteStep(
+            instruction: (maneuver['instruction'] ?? 'Continue along the route').toString(),
+            location: location.length >= 2 && location[0] is num && location[1] is num
+                ? LatLng((location[1] as num).toDouble(), (location[0] as num).toDouble())
+                : null,
+            distanceMeters: (item['distance'] as num?)?.toDouble() ?? 0,
+            durationSeconds: (item['duration'] as num?)?.toDouble() ?? 0,
+          ));
+        }
       }
     }
 
@@ -219,35 +261,30 @@ class QuickRideMaps {
       steps: steps,
     );
   }
+}
 
-  static String _instruction(String type, String modifier, String road) {
-    final street = road.isEmpty ? '' : ' onto $road';
-    switch (type) {
-      case 'depart':
-        return road.isEmpty ? 'Start driving' : 'Head towards $road';
-      case 'arrive':
-        return 'You have arrived';
-      case 'turn':
-        return 'Turn ${modifier.isEmpty ? 'ahead' : modifier}$street';
-      case 'continue':
-        return road.isEmpty ? 'Continue straight' : 'Continue on $road';
-      case 'roundabout':
-      case 'rotary':
-        return modifier.isEmpty
-            ? 'Enter the roundabout$street'
-            : 'Take the ${modifier} exit$street';
-      case 'merge':
-        return 'Merge${modifier.isEmpty ? '' : ' $modifier'}$street';
-      case 'fork':
-        return 'Keep ${modifier.isEmpty ? 'straight' : modifier}$street';
-      case 'on ramp':
-        return 'Take the ramp$street';
-      case 'off ramp':
-        return 'Take the exit$street';
-      default:
-        return road.isEmpty ? 'Continue towards your destination' : 'Continue on $road';
-    }
-  }
+class QuickRideSearchResult {
+  const QuickRideSearchResult({
+    required this.mapboxId,
+    required this.name,
+    required this.address,
+    required this.resultType,
+  });
+  final String mapboxId;
+  final String name;
+  final String address;
+  final String resultType;
+}
+
+class QuickRidePlace {
+  const QuickRidePlace({
+    required this.point,
+    required this.name,
+    required this.address,
+  });
+  final LatLng point;
+  final String name;
+  final String address;
 }
 
 class QuickRideRoute {
@@ -257,7 +294,6 @@ class QuickRideRoute {
     required this.durationSeconds,
     this.steps = const [],
   });
-
   final List<LatLng> points;
   final double distanceMeters;
   final double durationSeconds;
@@ -271,9 +307,201 @@ class QuickRideRouteStep {
     required this.distanceMeters,
     required this.durationSeconds,
   });
-
   final String instruction;
   final LatLng? location;
   final double distanceMeters;
   final double durationSeconds;
+}
+
+/// Reusable Mapbox map with the live location puck, route and selected points.
+/// The built-in Mapbox logo and attribution ornaments are deliberately retained.
+class QuickRideMapView extends StatefulWidget {
+  const QuickRideMapView({
+    super.key,
+    this.initialCenter,
+    this.initialZoom = 13,
+    this.showUserLocation = true,
+    this.currentPosition,
+    this.pickup,
+    this.destination,
+    this.routePoints = const [],
+    this.onMapCreated,
+    this.onTap,
+    this.followCurrentPosition = false,
+    this.navigationCamera = false,
+  });
+
+  final LatLng? initialCenter;
+  final double initialZoom;
+  final bool showUserLocation;
+  final LatLng? currentPosition;
+  final LatLng? pickup;
+  final LatLng? destination;
+  final List<LatLng> routePoints;
+  final ValueChanged<mbx.MapboxMap>? onMapCreated;
+  final ValueChanged<LatLng>? onTap;
+  final bool followCurrentPosition;
+  final bool navigationCamera;
+
+  @override
+  State<QuickRideMapView> createState() => _QuickRideMapViewState();
+}
+
+class _QuickRideMapViewState extends State<QuickRideMapView> {
+  mbx.MapboxMap? _map;
+  mbx.PointAnnotationManager? _points;
+  mbx.PolylineAnnotationManager? _lines;
+  bool _annotationsReady = false;
+  bool _userMovedCamera = false;
+
+  mbx.Point _mapPoint(LatLng point) =>
+      mbx.Point(coordinates: mbx.Position(point.longitude, point.latitude));
+
+  @override
+  void didUpdateWidget(covariant QuickRideMapView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_annotationsReady &&
+        (oldWidget.pickup != widget.pickup ||
+            oldWidget.destination != widget.destination ||
+            !listEquals(oldWidget.routePoints, widget.routePoints))) {
+      unawaited(_refreshAnnotations());
+    }
+    if (widget.followCurrentPosition &&
+        widget.currentPosition != null &&
+        oldWidget.currentPosition != widget.currentPosition) {
+      unawaited(_moveCamera(widget.currentPosition!, animated: true));
+    }
+  }
+
+  Future<void> _onMapCreated(mbx.MapboxMap map) async {
+    _map = map;
+    widget.onMapCreated?.call(map);
+    try {
+      if (widget.showUserLocation) {
+        await map.location.updateSettings(
+          mbx.LocationComponentSettings(
+            enabled: true,
+            pulsingEnabled: true,
+            puckBearingEnabled: true,
+            puckBearing: mbx.PuckBearing.HEADING,
+            showAccuracyRing: true,
+          ),
+        );
+      }
+      _points = await map.annotations.createPointAnnotationManager();
+      _lines = await map.annotations.createPolylineAnnotationManager();
+      _annotationsReady = true;
+      await _refreshAnnotations();
+      final center = widget.currentPosition ?? widget.initialCenter;
+      if (center != null) {
+        await _moveCamera(center, animated: false);
+      }
+    } catch (error, stack) {
+      debugPrint('Quick Ride Mapbox setup failed: $error\n$stack');
+    }
+  }
+
+  Future<void> _refreshAnnotations() async {
+    final pointManager = _points;
+    final lineManager = _lines;
+    if (pointManager == null || lineManager == null) return;
+    await pointManager.deleteAll();
+    await lineManager.deleteAll();
+
+    final linePoints = widget.routePoints;
+    if (linePoints.length >= 2) {
+      await lineManager.create(
+        mbx.PolylineAnnotationOptions(
+          geometry: mbx.LineString(
+            coordinates: linePoints
+                .map((point) => mbx.Position(point.longitude, point.latitude))
+                .toList(growable: false),
+          ),
+          lineColor: 0xFF2167D5,
+          lineWidth: 6,
+          lineBorderColor: 0xFFFFFFFF,
+          lineBorderWidth: 2,
+          lineJoin: mbx.LineJoin.ROUND,
+        ),
+      );
+    }
+
+    Future<void> addPoint(LatLng? point, String label, int color) async {
+      if (point == null) return;
+      await pointManager.create(
+        mbx.PointAnnotationOptions(
+          geometry: _mapPoint(point),
+          textField: label,
+          textSize: 13,
+          textColor: 0xFFFFFFFF,
+          textHaloColor: color,
+          textHaloWidth: 9,
+          textHaloBlur: 1,
+          textOffset: const [0, -1.2],
+          textAllowOverlap: true,
+        ),
+      );
+    }
+
+    await addPoint(widget.pickup, 'PICKUP', 0xFF159B65);
+    await addPoint(widget.destination, 'DROP', 0xFFD94747);
+  }
+
+  Future<void> _moveCamera(LatLng point, {required bool animated}) async {
+    final map = _map;
+    if (map == null) return;
+    final options = mbx.CameraOptions(
+      center: _mapPoint(point),
+      zoom: widget.navigationCamera ? 17 : 15.5,
+      pitch: widget.navigationCamera ? 48 : 0,
+    );
+    if (animated) {
+      await map.flyTo(options, mbx.MapAnimationOptions(duration: 700));
+    } else {
+      map.setCamera(options);
+    }
+  }
+
+  Future<void> recenter() async {
+    final point = widget.currentPosition ?? widget.initialCenter;
+    if (point == null) return;
+    _userMovedCamera = false;
+    await _moveCamera(point, animated: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = widget.currentPosition ??
+        widget.initialCenter ??
+        const LatLng(20.5937, 78.9629);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        mbx.MapWidget(
+          key: const ValueKey('quick-ride-mapbox-map'),
+          styleUri: mbx.MapboxStyles.STANDARD,
+          viewport: mbx.CameraViewportState(
+            center: _mapPoint(initial),
+            zoom: widget.initialZoom,
+          ),
+          onMapCreated: _onMapCreated,
+          onCameraChangeListener: (_) {
+            // The camera remains gesture-friendly; automatic follow is only
+            // enabled on screens that explicitly opt into follow mode.
+            _userMovedCamera = true;
+          },
+        ),
+        if (widget.onTap != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {},
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }

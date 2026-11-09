@@ -32,6 +32,8 @@ def main() -> int:
             "android.permission.ACCESS_COARSE_LOCATION",
             "android.permission.ACCESS_FINE_LOCATION",
         ])
+    if role == "customer":
+        required.append("android.permission.RECORD_AUDIO")
     if role == "driver":
         required.extend([
             "android.permission.ACCESS_BACKGROUND_LOCATION",
