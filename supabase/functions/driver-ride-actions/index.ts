@@ -368,13 +368,26 @@ Deno.serve(async (req: Request) => {
       const { data, error } = await db.rpc("accept_ride_offer", { p_offer_id: offerId, p_driver_id: user.id });
       if (error) return fail(409, "OFFER_NOT_ACCEPTED", error.message);
       if (offer?.ride_id) {
-        const { data: ride } = await db.from("rides").select("customer_id")
+        const { data: ride } = await db.from("rides")
+          .select("customer_id,shared_auto_trip_id")
           .eq("id", offer.ride_id).maybeSingle();
-        if (ride?.customer_id) await notifyUsers(
-          url, serviceKey, [String(ride.customer_id)], "customer",
-          "Your driver is assigned",
-          "A driver accepted your Quick-Ride request.",
-          { type: "driver_assigned", ride_id: String(offer.ride_id) },
+        let customerIds = ride?.customer_id ? [String(ride.customer_id)] : [];
+        if (ride?.shared_auto_trip_id) {
+          const { data: bookings } = await db.from("shared_auto_trip_bookings")
+            .select("customer_id").eq("shared_auto_trip_id", ride.shared_auto_trip_id).eq("status", "confirmed");
+          customerIds = (bookings ?? []).map((row: { customer_id: string }) => row.customer_id);
+        }
+        await notifyUsers(
+          url, serviceKey, customerIds, "customer",
+          ride?.shared_auto_trip_id ? "Your Shared Auto driver is assigned" : "Your driver is assigned",
+          ride?.shared_auto_trip_id
+            ? "Your shared Auto has been assigned. Follow your own pickup and drop-off details in Quick-Ride."
+            : "A driver accepted your Quick-Ride request.",
+          {
+            type: ride?.shared_auto_trip_id ? "shared_auto_driver_assigned" : "driver_assigned",
+            ride_id: String(offer.ride_id),
+            ...(ride?.shared_auto_trip_id ? { shared_auto_trip_id: String(ride.shared_auto_trip_id) } : {}),
+          },
         );
       }
       return respond(200, { result: data });
@@ -390,6 +403,36 @@ Deno.serve(async (req: Request) => {
       const dispatch = await dispatchNext(db, String(offer.ride_id));
       await notifyOfferedDrivers(db, url, serviceKey, String(offer.ride_id));
       return respond(200, { result: data, dispatch });
+    }
+
+    if (action === "get_shared_auto_trip") {
+      const rideId = String(body.rideId ?? "");
+      if (!rideId) return fail(400, "RIDE_REQUIRED", "rideId is required");
+      const { data: ride, error: rideError } = await db.from("rides")
+        .select("id,shared_auto_trip_id,driver_id")
+        .eq("id", rideId).eq("driver_id", user.id).maybeSingle();
+      if (rideError) return fail(500, "SHARED_AUTO_LOOKUP_FAILED", "Unable to verify this assigned trip");
+      if (!ride?.shared_auto_trip_id) return fail(404, "SHARED_AUTO_NOT_FOUND", "This ride is not part of a shared Auto trip");
+      const { data, error } = await db.rpc("get_shared_auto_trip_for_ride", { p_ride_id: rideId });
+      if (error) return fail(500, "SHARED_AUTO_LOOKUP_FAILED", "Unable to load the shared Auto route");
+      return respond(200, { shared_auto_trip: data });
+    }
+
+    if (action === "set_shared_stop_status") {
+      const tripId = String(body.sharedAutoTripId ?? "");
+      const stopId = Number(body.stopId);
+      const nextStatus = String(body.status ?? "");
+      if (!tripId || !Number.isSafeInteger(stopId) || !["arrived", "completed"].includes(nextStatus)) {
+        return fail(400, "SHARED_AUTO_STOP_FIELDS", "A shared Auto trip, stop and valid status are required");
+      }
+      const { data, error } = await db.rpc("set_shared_auto_stop_status", {
+        p_shared_auto_trip_id: tripId,
+        p_stop_id: stopId,
+        p_driver_id: user.id,
+        p_next_status: nextStatus,
+      });
+      if (error) return fail(409, "SHARED_AUTO_STOP_REJECTED", error.message);
+      return respond(200, { stop: data });
     }
 
     if (action === "preaccept_chain") {
@@ -456,19 +499,28 @@ Deno.serve(async (req: Request) => {
     if (action === "complete") {
       const rideId = String(body.rideId ?? "");
       if (!rideId) return fail(400, "RIDE_REQUIRED", "rideId is required");
-      const { data: rideBefore } = await db.from("rides").select("customer_id")
+      const { data: rideBefore } = await db.from("rides")
+        .select("customer_id,shared_auto_trip_id")
         .eq("id", rideId).eq("driver_id", user.id).maybeSingle();
+      if (!rideBefore) return fail(404, "RIDE_NOT_FOUND", "This ride is not assigned to you");
       const { data, error } = await db.rpc("finish_ride_from_track", {
         p_ride_id: rideId,
         p_driver_id: user.id,
       });
       if (error) return fail(409, "RIDE_COMPLETION_FAILED", error.message);
-      if (rideBefore?.customer_id) await notifyUsers(
+      if (rideBefore.customer_id) await notifyUsers(
         url, serviceKey, [String(rideBefore.customer_id)], "customer",
         "Your ride is complete",
         "Your Quick-Ride trip has been marked complete.",
         { type: "ride_completed", ride_id: rideId },
       );
+      const { count: activeRideCount, error: activeError } = await db.from("rides")
+        .select("id", { count: "exact", head: true })
+        .eq("driver_id", user.id)
+        .in("status", ["accepted", "driver_arriving", "arrived", "in_progress"]);
+      if (!activeError && (activeRideCount ?? 0) > 0) {
+        await db.from("driver_profiles").update({ availability_status: "busy" }).eq("user_id", user.id);
+      }
       return respond(200, { result: data });
     }
 
