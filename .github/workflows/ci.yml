@@ -33,6 +33,8 @@ jobs:
           for fn in admin-service-areas delete-account driver-ride-actions ride-booking ride-share send-push; do
             deno check --config "supabase/functions/$fn/deno.json" "supabase/functions/$fn/index.ts"
           done
+      - name: Test shared Auto route planner
+        run: deno test supabase/functions/_shared/shared-auto-routing.test.ts
       - name: Run application and shared-package tests
         run: |
           for app in apps/customer_app apps/driver_app apps/admin_app; do
