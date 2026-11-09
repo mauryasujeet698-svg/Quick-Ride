@@ -91,8 +91,9 @@ on public.shared_auto_trips for select to authenticated
 using (
   driver_id = (select auth.uid())
   or exists (
-    select 1 from public.shared_auto_trip_bookings b
-    where b.shared_auto_trip_id = public.shared_auto_trips.id and b.customer_id = (select auth.uid())
+    select 1 from public.rides r
+    where r.shared_auto_trip_id = public.shared_auto_trips.id
+      and r.customer_id = (select auth.uid())
   )
 );
 
@@ -412,6 +413,11 @@ begin
     set status=case when new.status='completed' then 'completed' else 'cancelled' end,
         updated_at=now()
     where ride_id=new.id and status='confirmed';
+    if new.status<>'completed' then
+      update public.shared_auto_trip_stops
+      set status='skipped'
+      where ride_id=new.id and status in ('pending','arrived');
+    end if;
 
     if new.status<>'completed' then
       update public.shared_auto_trips
@@ -461,7 +467,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $$ 
 declare
   v_trip public.shared_auto_trips%rowtype;
   v_ride public.rides%rowtype;
@@ -478,10 +484,99 @@ begin
       'ride_id',b.ride_id,'customer_id',b.customer_id,
       'passenger_count',b.passenger_count,'status',b.status,
       'pickup_address',r.pickup_address,'destination_address',r.destination_address,
-      'ride_status',r.status
+      'estimated_fare',r.estimated_fare,'ride_status',r.status
     ) order by b.created_at),'[]'::jsonb)
       from public.shared_auto_trip_bookings b join public.rides r on r.id=b.ride_id
-      where b.shared_auto_trip_id=v_trip.id and b.status='confirmed')
+      where b.shared_auto_trip_id=v_trip.id),
+    'stops',(select coalesce(jsonb_agg(jsonb_build_object(
+      'id',s.id,'ride_id',s.ride_id,'stop_type',s.stop_type,
+      'sequence_index',s.sequence_index,'status',s.status,
+      'address',s.address,
+      'longitude',extensions.st_x(s.location::extensions.geometry),
+      'latitude',extensions.st_y(s.location::extensions.geometry)
+    ) order by s.sequence_index),'[]'::jsonb)
+      from public.shared_auto_trip_stops s where s.shared_auto_trip_id=v_trip.id)
+  );
+end;
+$$;
+
+create or replace function public.set_shared_auto_stop_status(
+  p_shared_auto_trip_id uuid,
+  p_stop_id bigint,
+  p_driver_id uuid,
+  p_next_status text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_trip public.shared_auto_trips%rowtype;
+  v_stop public.shared_auto_trip_stops%rowtype;
+  v_next public.shared_auto_trip_stops%rowtype;
+  v_ride public.rides%rowtype;
+begin
+  if p_next_status not in ('arrived','completed') then
+    raise exception 'Unsupported shared Auto stop status' using errcode='22023';
+  end if;
+  select * into v_trip from public.shared_auto_trips
+  where id=p_shared_auto_trip_id and driver_id=p_driver_id
+  for update;
+  if not found or v_trip.status not in ('assigned','in_progress') then
+    raise exception 'Shared Auto trip is not assigned to this driver' using errcode='42501';
+  end if;
+  select * into v_stop from public.shared_auto_trip_stops
+  where id=p_stop_id and shared_auto_trip_id=v_trip.id
+  for update;
+  if not found then raise exception 'Shared Auto stop was not found' using errcode='P0002'; end if;
+  select * into v_next from public.shared_auto_trip_stops
+  where shared_auto_trip_id=v_trip.id and status not in ('completed','skipped')
+  order by sequence_index limit 1;
+  if not found or v_next.id<>v_stop.id then
+    raise exception 'Complete the previous stop before moving to this stop' using errcode='P0001';
+  end if;
+  select * into v_ride from public.rides where id=v_stop.ride_id;
+  if not found or v_ride.driver_id<>p_driver_id then
+    raise exception 'This booking is not assigned to this driver' using errcode='42501';
+  end if;
+
+  if p_next_status='arrived' then
+    if v_stop.status<>'pending' then
+      raise exception 'This stop is not awaiting arrival' using errcode='P0001';
+    end if;
+    if v_stop.stop_type='pickup' and v_ride.status<>'arrived' then
+      raise exception 'Mark the driver as arrived and verify the pickup stage first' using errcode='P0001';
+    end if;
+    if v_stop.stop_type='dropoff' and v_ride.status<>'in_progress' then
+      raise exception 'This passenger must be onboard before the drop-off stop' using errcode='P0001';
+    end if;
+    update public.shared_auto_trip_stops set status='arrived' where id=v_stop.id;
+  else
+    if v_stop.status<>'arrived' then
+      raise exception 'The stop must be marked arrived first' using errcode='P0001';
+    end if;
+    if v_stop.stop_type='pickup' and v_ride.status<>'in_progress' then
+      raise exception 'Verify this passenger pickup OTP before completing the pickup stop' using errcode='P0001';
+    end if;
+    if v_stop.stop_type='dropoff' and v_ride.status<>'completed' then
+      raise exception 'Complete this passenger booking before completing the drop-off stop' using errcode='P0001';
+    end if;
+    update public.shared_auto_trip_stops set status='completed' where id=v_stop.id;
+  end if;
+
+  if not exists (
+    select 1 from public.shared_auto_trip_stops
+    where shared_auto_trip_id=v_trip.id and status not in ('completed','skipped')
+  ) then
+    update public.shared_auto_trips set status='completed',updated_at=now()
+    where id=v_trip.id;
+  end if;
+
+  return jsonb_build_object(
+    'stop_id',p_stop_id,
+    'status',p_next_status,
+    'shared_auto_trip_id',v_trip.id
   );
 end;
 $$;
@@ -545,12 +640,16 @@ revoke all on function public.join_shared_auto_trip(uuid,uuid,smallint,integer,i
   from public,anon,authenticated;
 revoke all on function public.get_shared_auto_trip_for_ride(uuid)
   from public,anon,authenticated;
+revoke all on function public.set_shared_auto_stop_status(uuid,bigint,uuid,text)
+  from public,anon,authenticated;
 
 grant execute on function public.create_shared_auto_trip(uuid,smallint,integer,integer,jsonb)
   to service_role;
 grant execute on function public.join_shared_auto_trip(uuid,uuid,smallint,integer,integer,numeric,numeric,jsonb)
   to service_role;
 grant execute on function public.get_shared_auto_trip_for_ride(uuid)
+  to service_role;
+grant execute on function public.set_shared_auto_stop_status(uuid,bigint,uuid,text)
   to service_role;
 
 grant select on public.shared_auto_trips, public.shared_auto_trip_bookings, public.shared_auto_trip_stops to authenticated;
