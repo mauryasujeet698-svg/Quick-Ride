@@ -330,6 +330,7 @@ class QuickRideMapView extends StatefulWidget {
     this.followCurrentPosition = false,
     this.navigationCamera = false,
     this.recenterSignal = 0,
+    this.fitRouteBottomInset = 300,
   });
 
   final LatLng? initialCenter;
@@ -344,6 +345,7 @@ class QuickRideMapView extends StatefulWidget {
   final bool followCurrentPosition;
   final bool navigationCamera;
   final int recenterSignal;
+  final double fitRouteBottomInset;
 
   @override
   State<QuickRideMapView> createState() => _QuickRideMapViewState();
@@ -485,7 +487,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
         mbx.MbxEdgeInsets(
           top: 175,
           left: 36,
-          bottom: 300,
+          bottom: widget.fitRouteBottomInset,
           right: 36,
         ),
         null,

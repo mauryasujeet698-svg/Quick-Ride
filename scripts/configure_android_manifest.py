@@ -123,8 +123,14 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    firebase_fid_meta = application.find(
-        "meta-data[@android:name='firebase_messaging_installation_id_enabled']"
+    firebase_fid_meta = next(
+        (
+            node
+            for node in application.findall("meta-data")
+            if node.get(f"{{{ANDROID_NS}}}name")
+            == "firebase_messaging_installation_id_enabled"
+        ),
+        None,
     )
     if firebase_fid_meta is None:
         ET.SubElement(

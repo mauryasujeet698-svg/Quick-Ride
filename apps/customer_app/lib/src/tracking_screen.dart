@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
 
 class CustomerRideTrackingScreen extends StatefulWidget {
   const CustomerRideTrackingScreen({super.key, required this.rideId});
@@ -20,8 +21,7 @@ class CustomerRideTrackingScreen extends StatefulWidget {
 }
 
 class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen> {
-  final MapController _mapController = MapController();
-  bool _mapReady = false;
+  mbx.MapboxMap? _mapboxMap;
   List<LatLng> _routePoints = [];
   RealtimeChannel? _rideChangesChannel;
   RealtimeChannel? _driverLocationChannel;
@@ -244,10 +244,19 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
       driverLocation,
     ));
 
-    if (!_cameraInitialized && _mapReady) {
+    final map = _mapboxMap;
+    if (!_cameraInitialized && map != null) {
       final center = driverLocation ?? pickup ?? destination;
       if (center != null) {
-        _mapController.move(center, 14);
+        await map.flyTo(
+          mbx.CameraOptions(
+            center: mbx.Point(
+              coordinates: mbx.Position(center.longitude, center.latitude),
+            ),
+            zoom: 14,
+          ),
+          const mbx.MapAnimationOptions(duration: 650),
+        );
         _cameraInitialized = true;
       }
     }
@@ -505,7 +514,18 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
         _position(_ride?['pickup']) ??
         _position(_ride?['destination']);
     if (point == null) return;
-    if (_mapReady) _mapController.move(point, 15);
+    final map = _mapboxMap;
+    if (map != null) {
+      await map.flyTo(
+        mbx.CameraOptions(
+          center: mbx.Point(
+            coordinates: mbx.Position(point.longitude, point.latitude),
+          ),
+          zoom: 15,
+        ),
+        const mbx.MapAnimationOptions(duration: 650),
+      );
+    }
   }
 
   String _statusLabel(String status) =>
@@ -547,68 +567,22 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                       height: 290,
                       child: Stack(
                         children: [
-                          FlutterMap(
-                            key: ValueKey('ride-tracking-' + widget.rideId),
-                            mapController: _mapController,
-                            options: MapOptions(
-                              initialCenter: const LatLng(20.5937, 78.9629),
-                              initialZoom: 4.5,
-                              onMapReady: () {
-                                _mapReady = true;
-                                unawaited(_syncMap());
-                              },
-                            ),
-                            children: [
-                              QuickRideMaps.openStreetMapLayer(appPackageName: 'com.quickride.customer'),
-                              if (_routePoints.length >= 2)
-                                PolylineLayer(
-                                  polylines: [
-                                    Polyline(
-                                      points: _routePoints,
-                                      strokeWidth: 6,
-                                      color: Colors.blue,
-                                    ),
-                                  ],
-                                ),
-                              MarkerLayer(
-                                markers: [
-                                  if (_position(ride['pickup']) case final pickupPoint?)
-                                    Marker(
-                                      point: pickupPoint,
-                                      width: 36,
-                                      height: 40,
-                                      child: const Icon(
-                                        Icons.location_on,
-                                        color: Colors.green,
-                                        size: 36,
-                                      ),
-                                    ),
-                                  if (_position(ride['destination']) case final destinationPoint?)
-                                    Marker(
-                                      point: destinationPoint,
-                                      width: 36,
-                                      height: 40,
-                                      child: const Icon(
-                                        Icons.location_on,
-                                        color: Colors.red,
-                                        size: 36,
-                                      ),
-                                    ),
-                                  if (_position(location) case final driverPoint?)
-                                    Marker(
-                                      point: driverPoint,
-                                      width: 42,
-                                      height: 42,
-                                      child: const Icon(
-                                        Icons.directions_car_filled,
-                                        color: Colors.blue,
-                                        size: 32,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              QuickRideMaps.attributionControl(),
-                            ],
+                          QuickRideMapView(
+                            key: ValueKey('ride-tracking-${widget.rideId}'),
+                            initialCenter: _position(ride['pickup']) ??
+                                const LatLng(20.5937, 78.9629),
+                            initialZoom: _position(ride['pickup']) == null ? 4.5 : 14,
+                            showUserLocation: false,
+                            currentPosition: _position(location),
+                            pickup: _position(ride['pickup']),
+                            destination: _position(ride['destination']),
+                            routePoints: _routePoints,
+                            followCurrentPosition: _active,
+                            fitRouteBottomInset: 70,
+                            onMapCreated: (map) {
+                              _mapboxMap = map;
+                              unawaited(_syncMap());
+                            },
                           ),
                           Positioned(
                             right: 14,

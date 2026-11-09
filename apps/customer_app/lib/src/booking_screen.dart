@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -135,7 +136,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _quote = null;
       });
       if (moveCamera) {
-        final center = LatLng(latitude, longitude);
         final map = _mapboxMap;
         if (map != null) {
           unawaited(map.flyTo(
@@ -143,7 +143,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
               center: mbx.Point(coordinates: mbx.Position(longitude, latitude)),
               zoom: 15,
             ),
-            const mbx.MapAnimationOptions(duration: 650),
+            mbx.MapAnimationOptions(duration: 650),
           ));
         }
       }

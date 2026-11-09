@@ -7,7 +7,7 @@ import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'customer_preferences.dart';
+import '../customer_preferences.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
 
 import 'customer_navigation_bar.dart';
@@ -35,7 +35,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   QuickRideRoute? _route;
   String? _searchSession;
   String? _error;
-  String? _pickupSummary;
   bool _loadingLocation = true;
   bool _searching = false;
   bool _listening = false;
@@ -96,7 +95,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       setState(() {
         _currentPosition = point;
         _pickup = QuickRidePlace(point: point, name: 'Current location', address: address);
-        _pickupSummary = address;
         _loadingLocation = false;
         _error = null;
       });
@@ -174,7 +172,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       setState(() {
         if (_selectingPickup) {
           _pickup = place;
-          _pickupSummary = place.address;
         } else {
           _destination = place;
         }
@@ -290,9 +287,11 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     }
     setState(() => _listening = true);
     await _speech.listen(
-      localeId: QuickRideCustomerPreferences.locale.value.languageCode == 'hi' ? 'hi_IN' : 'en_IN',
-      listenFor: const Duration(seconds: 45),
-      pauseFor: const Duration(seconds: 4),
+      listenOptions: stt.SpeechListenOptions(
+        localeId: QuickRideCustomerPreferences.locale.value.languageCode == 'hi' ? 'hi_IN' : 'en_IN',
+        listenFor: const Duration(seconds: 45),
+        pauseFor: const Duration(seconds: 4),
+      ),
       onResult: (result) {
         _searchController.text = result.recognizedWords;
         _searchController.selection = TextSelection.collapsed(
