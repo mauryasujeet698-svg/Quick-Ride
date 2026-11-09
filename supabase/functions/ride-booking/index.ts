@@ -589,7 +589,7 @@ Deno.serve(async (req: Request) => {
         try {
           routePlan = await calculateSharedAutoRoute(
             allLegs,
-            routingBaseUrl,
+            mapboxToken,
             Number(sharedConfig?.max_detour_percent ?? 40),
             Number(sharedConfig?.max_extra_minutes ?? 15),
           );
