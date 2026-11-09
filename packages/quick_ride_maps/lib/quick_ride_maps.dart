@@ -352,7 +352,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
   mbx.PointAnnotationManager? _points;
   mbx.PolylineAnnotationManager? _lines;
   bool _annotationsReady = false;
-  bool _userMovedCamera = false;
+  bool _userMovedCamera = false;\n  StreamSubscription<mbx.MapContentGestureContext>? _panSubscription;
 
   mbx.Point _mapPoint(LatLng point) =>
       mbx.Point(coordinates: mbx.Position(point.longitude, point.latitude));
@@ -375,7 +375,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
 
   Future<void> _onMapCreated(mbx.MapboxMap map) async {
     _map = map;
-    widget.onMapCreated?.call(map);
+    widget.onMapCreated?.call(map);\n    _panSubscription = map.gestures.pan.gestureEvents.listen((_) {\n      _userMovedCamera = true;\n    });
     try {
       if (widget.showUserLocation) {
         await map.location.updateSettings(
