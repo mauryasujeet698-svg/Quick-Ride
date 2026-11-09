@@ -69,15 +69,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     super.dispose();
   }
 
-  String get _selectedCategoryCode {
-    for (final category in _categories) {
-      if ((category['id'] as num).toInt() == _categoryId) {
-        return category['code'].toString().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-      }
-    }
-    return '';
-  }
-
   Future<void> _loadCategories() async {
     try {
       final rows = await QuickRideBackend.client
