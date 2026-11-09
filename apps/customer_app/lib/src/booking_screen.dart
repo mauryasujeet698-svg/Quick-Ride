@@ -78,9 +78,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     return '';
   }
 
-  bool get _canShareAuto =>
-      _selectedCategoryCode == 'auto' || _selectedCategoryCode == 'autorickshaw';
-
   Future<void> _loadCategories() async {
     try {
       final rows = await QuickRideBackend.client
@@ -355,7 +352,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             child: Stack(
               children: [
                 QuickRideMapView(
-                  key: const ValueKey('quick-ride-booking-osm-map'),
+                  key: const ValueKey('quick-ride-booking-map'),
                   initialCenter: _pickup == null
                       ? const LatLng(20.5937, 78.9629)
                       : LatLng(_pickup!.latitude, _pickup!.longitude),
@@ -370,7 +367,16 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                       ? null
                       : LatLng(_destination!.latitude, _destination!.longitude),
                   routePoints: _quoteRoutePoints,
-                  onMapCreated: (map) => _mapController = map,
+                  onMapCreated: (map) {
+                    _mapController = map;
+                    final pickup = _pickup;
+                    if (pickup != null) {
+                      map.moveTo(
+                        LatLng(pickup.latitude, pickup.longitude),
+                        zoom: 15,
+                      );
+                    }
+                  },
                   onTap: (point) => _setPoint(
                     longitude: point.longitude,
                     latitude: point.latitude,
