@@ -285,7 +285,8 @@ Deno.serve(async (req: Request) => {
     const rideId = String(body.rideId ?? "");
     const reason = typeof body.reason === "string" ? body.reason.slice(0, 250) : "customer_cancelled";
     if (!rideId) return error(400, "RIDE_REQUIRED", "rideId is required");
-    const { data: rideBefore } = await db.from("rides").select("driver_id")
+    const { data: rideBefore } = await db.from("rides")
+      .select("driver_id,shared_auto_trip_id,ride_mode")
       .eq("id", rideId).eq("customer_id", user.id).maybeSingle();
     const { data, error: cancelError } = await db.rpc("customer_cancel_ride", {
       p_customer_id: user.id,
@@ -295,10 +296,45 @@ Deno.serve(async (req: Request) => {
     if (cancelError) return error(409, "CANCELLATION_REJECTED", cancelError.message);
     if (rideBefore?.driver_id) await notifyUsers(
       url, serviceKey, [String(rideBefore.driver_id)], "driver",
-      "Ride cancelled by customer",
-      "The customer cancelled this Quick-Ride request.",
-      { type: "ride_cancelled", ride_id: rideId },
+      rideBefore.shared_auto_trip_id ? "Shared Auto route updated" : "Ride cancelled by customer",
+      rideBefore.shared_auto_trip_id
+        ? "A passenger cancelled. The shared Auto route has been updated; review the remaining stops."
+        : "The customer cancelled this Quick-Ride request.",
+      {
+        type: rideBefore.shared_auto_trip_id ? "shared_auto_route_updated" : "ride_cancelled",
+        ride_id: rideId,
+        ...(rideBefore.shared_auto_trip_id ? { shared_auto_trip_id: String(rideBefore.shared_auto_trip_id) } : {}),
+      },
     );
+
+    if (rideBefore?.shared_auto_trip_id && !rideBefore.driver_id) {
+      const { data: trip } = await db.from("shared_auto_trips")
+        .select("lead_ride_id,driver_id,status")
+        .eq("id", rideBefore.shared_auto_trip_id).maybeSingle();
+      if (trip?.status === "matching" && !trip.driver_id && trip.lead_ride_id &&
+          String(trip.lead_ride_id) !== rideId) {
+        const leadRideId = String(trip.lead_ride_id);
+        const { data: dispatchContext, error: dispatchContextError } = await db.rpc(
+          "get_ride_dispatch_context", { p_ride_id: leadRideId },
+        );
+        if (!dispatchContextError && dispatchContext) {
+          const settings = dispatchContext.dispatch as Record<string, number>;
+          const initial = Number(settings.initial_radius_m ?? 2000);
+          const max = Number(settings.max_radius_m ?? 15000);
+          const step = Number(settings.radius_step_m ?? 2000);
+          let radius = initial;
+          while (radius <= max) {
+            const { data: outcome, error: dispatchError } = await db.rpc("create_ride_offer_batch", {
+              p_ride_id: leadRideId,
+              p_radius_m: radius,
+            });
+            if (dispatchError || outcome?.status !== "no_drivers") break;
+            radius += step;
+          }
+          await notifyOfferedDrivers(db, url, serviceKey, leadRideId);
+        }
+      }
+    }
     return reply(200, { result: data });
   }
 
