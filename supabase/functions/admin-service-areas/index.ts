@@ -134,7 +134,7 @@ Deno.serve(async (req: Request) => {
         },
         body: JSON.stringify({
           userIds,
-          ...(appRole === "all" ? {} : { appRole }),
+          ...(recipientMode === "self" || appRole === "all" ? {} : { appRole }),
           title,
           body: messageBody,
           data: { notification_source: "admin_console" },

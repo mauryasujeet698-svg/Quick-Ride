@@ -218,7 +218,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       setState(() {
         if (_selectingPickup) {
           _pickup = place;
-          _pickupSummary = address;
         } else {
           _destination = place;
         }
