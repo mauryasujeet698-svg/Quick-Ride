@@ -57,7 +57,7 @@ Each booking receives its own fare. The initial implementation calculates a shar
 
 The default per-passenger percentage is 35%, and Admin can adjust it per pincode. This is a configurable starting rule, not a final commercial decision. The final pricing must be reviewed against local costs, driver earnings and customer expectations before a real pilot.
 
-Another booking joining does not change an earlier customer's quoted fare.
+Another booking joining does not change an earlier customer's quoted fare. At completion, the shared booking remains locked to its confirmed estimate; actual GPS distance and duration are retained separately for audit/review rather than increasing the passenger's agreed price.
 
 ## Driver flow
 
