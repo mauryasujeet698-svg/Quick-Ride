@@ -40,7 +40,7 @@ Deno.test("shared Auto planner creates six ordered stops for three bookings", as
   const legs = [createLeg("ride-a", 0), createLeg("ride-b", 1), createLeg("ride-c", 2)];
   const route = await calculateSharedAutoRoute(
     legs,
-    "https://router.example.test",
+    "pk.test-mapbox-token",
     1000,
     60,
     mockTableFetcher(6, 60),
@@ -68,7 +68,7 @@ Deno.test("shared Auto planner rejects a route exceeding detour and extra-time l
   const legs = [createLeg("ride-a", 0), createLeg("ride-b", 1)];
   const route = await calculateSharedAutoRoute(
     legs,
-    "https://router.example.test",
+    "pk.test-mapbox-token",
     10,
     1,
     mockTableFetcher(4, 120),
@@ -79,7 +79,7 @@ Deno.test("shared Auto planner rejects a route exceeding detour and extra-time l
 Deno.test("shared Auto planner does not try to match a single booking", async () => {
   const route = await calculateSharedAutoRoute(
     [createLeg("ride-a", 0)],
-    "https://router.example.test",
+    "pk.test-mapbox-token",
     40,
     15,
     async () => {
