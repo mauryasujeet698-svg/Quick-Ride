@@ -294,7 +294,7 @@ class QuickRideMaps {
       final legs = route['legs'] as List<dynamic>? ?? const [];
       for (final rawLeg in legs) {
         if (rawLeg is! Map) continue;
-        final rawSteps = (rawLeg as Map)['steps'] as List<dynamic>? ?? const [];
+        final rawSteps = rawLeg['steps'] as List<dynamic>? ?? const [];
         for (final raw in rawSteps) {
           if (raw is! Map) continue;
           final item = Map<String, dynamic>.from(raw);
@@ -353,7 +353,7 @@ class QuickRideMapController {
     final latSpan = (maxLat - minLat).abs();
     final lngSpan = (maxLng - minLng).abs();
     final span = max(latSpan, lngSpan);
-    final zoom = span < 0.006 ? 16.5 : span < 0.02 ? 15 : span < 0.08 ? 13 : span < 0.3 ? 11 : 9;
+    final double zoom = span < 0.006 ? 16.5 : span < 0.02 ? 15.0 : span < 0.08 ? 13.0 : span < 0.3 ? 11.0 : 9.0;
     unawaited(_map.setCamera(mb.CameraOptions(
       center: _toMapbox(center),
       zoom: zoom,
