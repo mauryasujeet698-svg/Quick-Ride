@@ -262,7 +262,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       'destination': {
         'longitude': destination.point.longitude,
         'latitude': destination.point.latitude,
-        'address': desti  @override
+        'address': destination.address,
+      },
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final pickupLabel = _pickup?.address ??
