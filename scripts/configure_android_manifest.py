@@ -95,10 +95,10 @@ def main() -> int:
     launcher = (
         '<vector xmlns:android="http://schemas.android.com/apk/res/android" '
         'android:width="108dp" android:height="108dp" '
-        'android:viewportWidth="108" android:viewportHeight="108">\\n'
-        f'<path android:fillColor="{fill}" android:pathData="{circle_path}"/>\\n'
-        f'<path android:fillColor="#FFFFFFFF" android:pathData="{symbol_path}"/>\\n'
-        '</vector>\\n'
+        'android:viewportWidth="108" android:viewportHeight="108">\n'
+        f'<path android:fillColor="{fill}" android:pathData="{circle_path}"/>\n'
+        f'<path android:fillColor="#FFFFFFFF" android:pathData="{symbol_path}"/>\n'
+        '</vector>\n'
     )
     (drawable_dir / "quick_ride_launcher.xml").write_text(launcher, encoding="utf-8")
     application.set(f"{{{ANDROID_NS}}}icon", "@drawable/quick_ride_launcher")
@@ -107,22 +107,23 @@ def main() -> int:
     values_dir = manifest_path.parent / "src" / "main" / "res" / "values"
     values_dir.mkdir(parents=True, exist_ok=True)
     (values_dir / "quick_ride_branding.xml").write_text(
-        '<?xml version="1.0" encoding="utf-8"?>\\n'
-        '<resources>\\n'
-        f'  <color name="quick_ride_splash_background">{fill}</color>\\n'
-        '</resources>\\n',
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<resources>\n'
+        f'  <color name="quick_ride_splash_background">{fill}</color>\n'
+        '</resources>\n',
         encoding="utf-8",
     )
     (drawable_dir / "launch_background.xml").write_text(
-        '<?xml version="1.0" encoding="utf-8"?>\\n'
-        '<layer-list xmlns:android="http://schemas.android.com/apk/res/android">\\n'
-        '  <item android:drawable="@color/quick_ride_splash_background"/>\\n'
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<layer-list xmlns:android="http://schemas.android.com/apk/res/android">\n'
+        '  <item android:drawable="@color/quick_ride_splash_background"/>\n'
         '  <item android:drawable="@drawable/quick_ride_launcher" '
-        'android:gravity="center" android:width="144dp" android:height="144dp"/>\\n'
-        '</layer-list>\\n',
+        'android:gravity="center" android:width="144dp" android:height="144dp"/>\n'
+        '</layer-list>\n',
         encoding="utf-8",
     )
-\n    firebase_fid_meta = application.find(
+
+    firebase_fid_meta = application.find(
         "meta-data[@android:name='firebase_messaging_installation_id_enabled']"
     )
     if firebase_fid_meta is None:
