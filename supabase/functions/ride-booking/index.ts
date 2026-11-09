@@ -313,7 +313,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const routingBaseUrl = (Deno.env.get("OSRM_BASE_URL") ?? "https://router.project-osrm.org").replace(/\/$/, "");
+  const mapboxToken = Deno.env.get("MAPBOX_ACCESS_TOKEN") ?? "";
   const pincode = body.pincode;
   const categoryId = Number(body.vehicleCategoryId);
   const pickup = body.pickup;
@@ -350,10 +350,14 @@ Deno.serve(async (req: Request) => {
     }
 
     const coords = `${pickup.longitude},${pickup.latitude};${destination.longitude},${destination.latitude}`;
-    const routeUrl = new URL(`${routingBaseUrl}/route/v1/driving/${coords}`);
-    routeUrl.searchParams.set("overview", "simplified");
+    if (!mapboxToken.startsWith("pk.") && !mapboxToken.startsWith("sk.")) {
+      return error(503, "MAPBOX_NOT_CONFIGURED", "Mapbox routing is not configured on the ride service. Set the MAPBOX_ACCESS_TOKEN Edge Function secret.");
+    }
+    const routeUrl = new URL(`https://api.mapbox.com/directions/v5/mapbox/driving/${coords}`);
+    routeUrl.searchParams.set("overview", "full");
     routeUrl.searchParams.set("geometries", "geojson");
     routeUrl.searchParams.set("steps", "false");
+    routeUrl.searchParams.set("access_token", mapboxToken);
 
     const routeResponse = await fetch(routeUrl, {
       headers: {
@@ -364,7 +368,7 @@ Deno.serve(async (req: Request) => {
     });
     if (!routeResponse.ok) return error(502, "ROUTE_PROVIDER_ERROR", "The route service could not calculate this trip");
     const routePayload = await routeResponse.json();
-    const route = routePayload?.routes?.[0];
+    const route = routePayload?.code === "Ok" ? routePayload?.routes?.[0] : null;
     if (!route || typeof route.distance !== "number" || typeof route.duration !== "number") {
       return error(422, "NO_ROUTE", "No drivable route was found between these locations");
     }
