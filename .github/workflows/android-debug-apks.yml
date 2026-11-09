@@ -17,7 +17,9 @@ jobs:
       FIREBASE_CUSTOMER_APP_ID: ${{ secrets.FIREBASE_CUSTOMER_APP_ID }}
       FIREBASE_DRIVER_APP_ID: ${{ secrets.FIREBASE_DRIVER_APP_ID }}
       FIREBASE_ADMIN_APP_ID: ${{ secrets.FIREBASE_ADMIN_APP_ID }}
-      MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN || secrets.MAPBOX_API_KEY || secrets.MAPBOX_API || secrets.MAPBOX }}
+      OSM_TILE_URL: ${{ vars.OSM_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' }}
+      PHOTON_BASE_URL: ${{ vars.PHOTON_BASE_URL || 'https://photon.komoot.io' }}
+      OSRM_BASE_URL: ${{ vars.OSRM_BASE_URL || 'https://router.project-osrm.org' }}
       MAX_APK_BYTES: 25000000
     steps:
       - uses: actions/checkout@v4
@@ -26,8 +28,6 @@ jobs:
           channel: stable
       - name: Resolve Flutter workspace
         run: flutter pub get
-      - name: Patch Mapbox Android Kotlin configuration for Flutter AGP 9 default
-        run: python3 scripts/patch_mapbox_gradle.py
       - name: Prepare Android platform files
         shell: bash
         run: |
@@ -62,10 +62,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          if [[ -z "$MAPBOX_ACCESS_TOKEN" || "$MAPBOX_ACCESS_TOKEN" != pk.* ]]; then
-            echo "::error::Set a public Mapbox token (pk.*) as MAPBOX_ACCESS_TOKEN, MAPBOX_API_KEY or MAPBOX_API in repository Actions secrets."
-            exit 1
-          fi
           for app in customer driver admin; do
             case "$app" in
               customer) firebase_app_id="$FIREBASE_CUSTOMER_APP_ID" ;;
@@ -84,7 +80,9 @@ jobs:
           defines = {
               "SUPABASE_URL": os.environ["SUPABASE_URL"].strip(),
               "SUPABASE_PUBLISHABLE_KEY": os.environ["SUPABASE_PUBLISHABLE_KEY"].strip(),
-              "MAPBOX_ACCESS_TOKEN": os.environ["MAPBOX_ACCESS_TOKEN"].strip(),
+              "OSM_TILE_URL": os.environ["OSM_TILE_URL"].strip(),
+              "PHOTON_BASE_URL": os.environ["PHOTON_BASE_URL"].strip(),
+              "OSRM_BASE_URL": os.environ["OSRM_BASE_URL"].strip(),
               "FIREBASE_API_KEY": os.environ["FIREBASE_API_KEY"].strip(),
               "FIREBASE_PROJECT_ID": os.environ["FIREBASE_PROJECT_ID"].strip(),
               "FIREBASE_MESSAGING_SENDER_ID": os.environ["FIREBASE_MESSAGING_SENDER_ID"].strip(),
