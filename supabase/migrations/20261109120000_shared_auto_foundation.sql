@@ -141,7 +141,6 @@ declare
   v_trip public.shared_auto_trips%rowtype;
   v_stop jsonb;
   v_stop_count integer := 0;
-  v_booking_count integer := 0;
 begin
   if p_passenger_count is null or p_passenger_count not between 1 and 3 then
     raise exception 'Shared Auto supports one to three passengers per booking' using errcode='22023';
@@ -255,6 +254,7 @@ declare
   v_reserved integer;
   v_stop jsonb;
   v_stop_count integer := 0;
+  v_booking_count integer := 0;
 begin
   if p_passenger_count is null or p_passenger_count not between 1 and 3
      or p_route_distance_m is null or p_route_distance_m <= 0
@@ -302,6 +302,9 @@ begin
   insert into public.shared_auto_trip_bookings(
     shared_auto_trip_id,ride_id,customer_id,passenger_count
   ) values (v_trip.id,v_ride.id,v_ride.customer_id,p_passenger_count);
+
+  select count(*) into v_booking_count from public.shared_auto_trip_bookings
+  where shared_auto_trip_id=v_trip.id and status='confirmed';
 
   update public.rides set ride_mode='shared_auto',passenger_count=p_passenger_count,
     shared_auto_trip_id=v_trip.id,
