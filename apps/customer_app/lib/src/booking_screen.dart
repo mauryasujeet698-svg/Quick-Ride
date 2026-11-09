@@ -43,6 +43,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   int? _categoryId;
   String _rideMode = 'private';
   int _passengerCount = 1;
+  int _sharedAutoCapacity = 3;
   bool _selectPickup = true;
   bool _busy = false;
   bool _loadingCategories = true;
@@ -223,11 +224,24 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       );
       final data = Map<String, dynamic>.from(result.data as Map);
       if (mounted) {
+        final quote = Map<String, dynamic>.from(data['quote'] as Map);
+        final shared = quote['shared_auto'] is Map
+            ? Map<String, dynamic>.from(quote['shared_auto'] as Map)
+            : null;
+        final configuredCapacity = (shared?['max_passengers'] as num?)?.toInt() ?? 3;
         setState(() {
-          _quote = Map<String, dynamic>.from(data['quote'] as Map);
+          _sharedAutoCapacity = configuredCapacity.clamp(1, 3);
           _booking = null;
           _sharedAuto = null;
           _pickupOtp = null;
+          if (_rideMode == 'shared_auto' && _passengerCount > _sharedAutoCapacity) {
+            _passengerCount = _sharedAutoCapacity;
+            _quote = null;
+            _error = 'This service area currently allows up to $_sharedAutoCapacity passengers per shared Auto. Please check the fare again.';
+          } else {
+            _quote = quote;
+            _error = null;
+          }
         });
       }
     });
@@ -405,11 +419,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                         labelText: 'Number of passengers',
                         helperText: 'Shared Auto supports up to 3 passengers in total.',
                       ),
-                      items: const [
-                        DropdownMenuItem(value: 1, child: Text('1 passenger')),
-                        DropdownMenuItem(value: 2, child: Text('2 passengers')),
-                        DropdownMenuItem(value: 3, child: Text('3 passengers')),
-                      ],
+                      items: [1, 2, 3]
+                          .where((count) => count <= _sharedAutoCapacity)
+                          .map((count) => DropdownMenuItem(
+                                value: count,
+                                child: Text('$count passenger${count == 1 ? '' : 's'}'),
+                              ))
+                          .toList(),
                       onChanged: _busy ? null : (value) {
                         if (value == null) return;
                         setState(() {
