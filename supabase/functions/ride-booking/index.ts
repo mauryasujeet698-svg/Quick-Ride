@@ -40,6 +40,44 @@ async function sha256Hex(value: string): Promise<string> {
 
 
 
+async function getNearbyDriverAvailability(
+  db: any,
+  pincodeId: number,
+  vehicleCategoryId: number,
+): Promise<{ available_count: number; checked_at: string }> {
+  const cutoff = new Date(Date.now() - 120_000).toISOString();
+  const { data: drivers, error: driverError } = await db
+    .from("driver_profiles")
+    .select("user_id")
+    .eq("verification_status", "approved")
+    .eq("availability_status", "online")
+    .eq("vehicle_category_id", vehicleCategoryId)
+    .eq("active_pincode_id", pincodeId)
+    .limit(250);
+  if (driverError) throw driverError;
+  const driverIds = [...new Set((drivers ?? [])
+    .map((row: { user_id?: string }) => row.user_id)
+    .filter((id: unknown): id is string => typeof id === "string"))];
+  if (!driverIds.length) {
+    return { available_count: 0, checked_at: new Date().toISOString() };
+  }
+
+  const { data: locations, error: locationError } = await db
+    .from("driver_locations")
+    .select("driver_id,recorded_at")
+    .in("driver_id", driverIds)
+    .gte("recorded_at", cutoff)
+    .limit(250);
+  if (locationError) throw locationError;
+  const freshDrivers = new Set((locations ?? [])
+    .map((row: { driver_id?: string }) => row.driver_id)
+    .filter((id: unknown): id is string => typeof id === "string"));
+  return {
+    available_count: freshDrivers.size,
+    checked_at: new Date().toISOString(),
+  };
+}
+
 async function notifyUsers(
   url: string,
   serviceKey: string,
@@ -409,7 +447,7 @@ Deno.serve(async (req: Request) => {
       estimatedFare = Math.round(privateEstimatedFare * perSeatPercent / 100 * passengerCount * 100) / 100;
     }
     const breakdown = {
-      provider: "osrm-openstreetmap",
+      provider: "mapbox-directions",
       distance_m: distanceM,
       duration_s: durationS,
       base_fare: base,
@@ -430,6 +468,16 @@ Deno.serve(async (req: Request) => {
     };
 
     if (action === "quote") {
+      let availability: { available_count: number; checked_at: string } | null = null;
+      try {
+        availability = await getNearbyDriverAvailability(
+          db,
+          Number(context.pincode_id),
+          categoryId,
+        );
+      } catch (availabilityError) {
+        console.warn("Nearby driver availability could not be loaded", String(availabilityError));
+      }
       return reply(200, {
         quote: {
           pincode,
@@ -437,6 +485,7 @@ Deno.serve(async (req: Request) => {
           distance_m: distanceM,
           duration_s: durationS,
           estimated_fare: estimatedFare,
+          availability,
           currency: breakdown.currency,
           fare_breakdown: breakdown,
           route_geometry: route.geometry,
