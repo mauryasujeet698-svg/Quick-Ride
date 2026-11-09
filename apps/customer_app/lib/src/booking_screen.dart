@@ -430,74 +430,9 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                     prefixIcon: Icon(Icons.pin_drop_outlined),
                   ),
                 ),
-                if (_loadingCategories)
-                  const LinearProgressIndicator()
-                else
-                  DropdownButtonFormField<int>(
-                    initialValue: _categoryId,
-                    decoration: const InputDecoration(labelText: 'Vehicle type'),
-                    items: _categories.map((category) {
-                      final id = (category['id'] as num).toInt();
-                      return DropdownMenuItem(
-                        value: id,
-                        child: Text(category['name'].toString() +
-                            ' (' + category['code'].toString() + ')'),
-                      );
-                    }).toList(),
-                    onChanged: _busy ? null : (value) {
-                      setState(() {
-                        _categoryId = value;
-                        _rideMode = 'private';
-                        _passengerCount = 1;
-                        _quote = null;
-                        _sharedAuto = null;
-                      });
-                    },
-                  ),
-                if (_canShareAuto) ...[
-                  const SizedBox(height: 10),
-                  Text('Auto booking type', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 6),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'private', label: Text('Private Auto')),
-                      ButtonSegment(value: 'shared_auto', label: Text('Shared Auto')),
-                    ],
-                    selected: {_rideMode},
-                    onSelectionChanged: _busy ? null : (selection) {
-                      setState(() {
-                        _rideMode = selection.first;
-                        _quote = null;
-                        _sharedAuto = null;
-                        if (_rideMode == 'private') _passengerCount = 1;
-                      });
-                    },
-                  ),
-                  if (_rideMode == 'shared_auto') ...[
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<int>(
-                      initialValue: _passengerCount,
-                      decoration: const InputDecoration(
-                        labelText: 'Number of passengers',
-                        helperText: 'Shared Auto supports up to 3 passengers in total.',
-                      ),
-                      items: [1, 2, 3]
-                          .where((count) => count <= _sharedAutoCapacity)
-                          .map((count) => DropdownMenuItem(
-                                value: count,
-                                child: Text('$count passenger${count == 1 ? '' : 's'}'),
-                              ))
-                          .toList(),
-                      onChanged: _busy ? null : (value) {
-                        if (value == null) return;
-                        setState(() {
-                          _passengerCount = value;
-                          _quote = null;
-                        });
-                      },
-                    ),
-                  ],
-                ],
+                if (_loadingCategories) const LinearProgressIndicator(),
+                if (!_loadingCategories && _categories.isEmpty)
+                  const Text('No vehicle services are configured yet.'),
                 const SizedBox(height: 10),
                 SegmentedButton<bool>(
                   segments: const [
@@ -521,8 +456,89 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                       ? const CircularProgressIndicator()
                       : const Text('Get fare estimate'),
                 ),
-                if (_quote != null) ...[
+                if (_serviceQuotes.isNotEmpty) ...[
                   const SizedBox(height: 14),
+                  Text('Available rides for your route',
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  ..._serviceQuotes.map((option) {
+                    final quote = Map<String, dynamic>.from(option['quote'] as Map);
+                    final isSelected = _quote != null &&
+                        _categoryId == (option['category_id'] as num).toInt() &&
+                        _rideMode == option['ride_mode'];
+                    final distance = (quote['distance_m'] as num?)?.toDouble() ?? 0;
+                    final duration = (quote['duration_s'] as num?)?.toInt() ?? 0;
+                    final shared = option['ride_mode'] == 'shared_auto';
+                    return Card(
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : null,
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          child: Icon(shared
+                              ? Icons.groups_2_outlined
+                              : option['category_code'] == 'bike'
+                                  ? Icons.two_wheeler
+                                  : option['category_code'] == 'auto' ||
+                                          option['category_code'] == 'autorickshaw'
+                                      ? Icons.electric_rickshaw
+                                      : Icons.local_taxi_outlined),
+                        ),
+                        title: Text(option['category_name'].toString()),
+                        subtitle: Text(
+                          '${(distance / 1000).toStringAsFixed(1)} km · ${(duration / 60).ceil()} min'
+                          '${shared ? ' · 1 passenger' : ''}',
+                        ),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '₹${(quote['estimated_fare'] as num).toStringAsFixed(0)}',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            TextButton(
+                              onPressed: _busy ? null : () => _selectServiceOption(option),
+                              child: Text(isSelected ? 'Selected' : 'Choose'),
+                            ),
+                          ],
+                        ),
+                        onTap: _busy ? null : () => _selectServiceOption(option),
+                      ),
+                    );
+                  }),
+                ],
+                if (_quote != null) ...[
+                  const SizedBox(height: 10),
+                  if (_rideMode == 'shared_auto') ...[
+                    DropdownButtonFormField<int>(
+                      initialValue: _passengerCount,
+                      decoration: const InputDecoration(
+                        labelText: 'Shared Auto passengers',
+                        helperText: 'Maximum 3 passengers, subject to pincode settings.',
+                      ),
+                      items: [1, 2, 3]
+                          .where((count) => count <= _sharedAutoCapacity)
+                          .map((count) => DropdownMenuItem(
+                                value: count,
+                                child: Text('$count passenger${count == 1 ? '' : 's'}'),
+                              ))
+                          .toList(),
+                      onChanged: _busy ? null : (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _passengerCount = value;
+                          _quote = null;
+                          _serviceQuotes = [];
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: _busy ? null : _getQuote,
+                      child: const Text('Refresh Shared Auto fare'),
+                    ),
+                  ],
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -532,18 +548,20 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                           Text(
                             _rideMode == 'shared_auto'
                                 ? 'Shared Auto · $_passengerCount passenger(s)'
-                                : 'Estimated fare',
+                                : 'Selected ride · ${_categories.firstWhere(
+                                    (item) => (item['id'] as num).toInt() == _categoryId,
+                                    orElse: () => {'name': 'Ride'},
+                                  )['name']}',
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           if (_rideMode == 'shared_auto')
-                            const Text('Your price is per booking. Other passengers have separate bookings and fares.'),
+                            const Text('Your fare is separate from other passengers’ bookings.'),
                           Text(
-                            '₹' + (_quote!['estimated_fare'] as num).toStringAsFixed(2),
+                            '₹${(_quote!['estimated_fare'] as num).toStringAsFixed(2)}',
                             style: Theme.of(context).textTheme.headlineMedium,
                           ),
                           Text(
-                            ((_quote!['distance_m'] as num) / 1000).toStringAsFixed(1) +
-                                ' km · ' + (((_quote!['duration_s'] as num) / 60).ceil()).toString() + ' min',
+                            '${((_quote!['distance_m'] as num) / 1000).toStringAsFixed(1)} km · ${(((_quote!['duration_s'] as num) / 60).ceil())} min',
                           ),
                           const SizedBox(height: 10),
                           FilledButton(
