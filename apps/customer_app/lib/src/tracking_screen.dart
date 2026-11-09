@@ -505,7 +505,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
         _position(_ride?['pickup']) ??
         _position(_ride?['destination']);
     if (point == null) return;
-    final map = _mapboxMap;
+    final map = _mapController;
     if (map != null) {
       map.moveTo(point, zoom: 15);
     }
