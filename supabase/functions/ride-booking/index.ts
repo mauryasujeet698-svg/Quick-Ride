@@ -154,6 +154,25 @@ Deno.serve(async (req: Request) => {
       },
     );
 
+    if (rideBefore?.shared_auto_trip_id) {
+      const { data: remainingBookings, error: remainingError } = await db.from("shared_auto_trip_bookings")
+        .select("customer_id")
+        .eq("shared_auto_trip_id", rideBefore.shared_auto_trip_id)
+        .eq("status", "confirmed");
+      if (remainingError) {
+        console.warn("Unable to notify remaining Shared Auto passengers", remainingError.message);
+      } else {
+        await notifyUsers(
+          url,
+          serviceKey,
+          (remainingBookings ?? []).map((row: { customer_id: string }) => row.customer_id),
+          "customer",
+          "Shared Auto route updated",
+          "A passenger cancelled. Your booking and confirmed fare remain unchanged; the driver route has been updated.",
+          { type: "shared_auto_route_updated", shared_auto_trip_id: String(rideBefore.shared_auto_trip_id) },
+        );
+      }
+    }
     if (rideBefore?.shared_auto_trip_id && !rideBefore.driver_id) {
       const { data: trip } = await db.from("shared_auto_trips")
         .select("lead_ride_id,driver_id,status")
