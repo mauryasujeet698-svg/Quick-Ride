@@ -105,8 +105,13 @@ async function calculateSharedAutoRoute(
   if (durations.some((row) => !Array.isArray(row) || row.length !== nodes.length) ||
       distances.some((row) => !Array.isArray(row) || row.length !== nodes.length)) return null;
 
-  const best: { order: number[]; distance: number; duration: number; detour: number; extra: number } | null = null;
-  let chosen = best;
+  const candidates: {
+    order: number[];
+    distance: number;
+    duration: number;
+    detour: number;
+    extra: number;
+  }[] = [];
   const used = new Array(nodes.length).fill(false);
   const order: number[] = [];
   const picked = new Set<string>();
@@ -135,15 +140,13 @@ async function calculateSharedAutoRoute(
       worstDetour = Math.max(worstDetour, detour);
     }
     if (worstDetour > maxDetourPercent || worstExtraSeconds / 60 > maxExtraMinutes) return;
-    if (!chosen || totalDuration < chosen.duration) {
-      chosen = {
-        order: [...candidateOrder],
-        distance: totalDistance,
-        duration: totalDuration,
-        detour: worstDetour,
-        extra: worstExtraSeconds / 60,
-      };
-    }
+    candidates.push({
+      order: [...candidateOrder],
+      distance: totalDistance,
+      duration: totalDuration,
+      detour: worstDetour,
+      extra: worstExtraSeconds / 60,
+    });
   };
 
   const walk = (totalDuration: number, totalDistance: number) => {
@@ -171,6 +174,8 @@ async function calculateSharedAutoRoute(
     }
   };
   walk(0, 0);
+  candidates.sort((a, b) => a.duration - b.duration);
+  const chosen = candidates[0];
   if (!chosen) return null;
   return {
     stops: chosen.order.map((nodeIndex, index) => ({
