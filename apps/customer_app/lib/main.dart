@@ -85,6 +85,7 @@ class QuickRideCustomerApp extends StatelessWidget {
               longitude: longitude.toDouble(),
               latitude: latitude.toDouble(),
               address: address,
+              pincode: data['pincode']?.toString(),
             );
           }
           return CustomerBookingScreen(
