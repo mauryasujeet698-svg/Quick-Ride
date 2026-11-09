@@ -480,6 +480,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             'Safety and SOS queue',
             'Review driver safety events and emergency escalations',
           ),
+          ListTile(
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('Notification centre'),
+            subtitle: const Text('Send a test push to Customer, Captain, Admin or selected devices'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/notifications'),
+          ),
           const SizedBox(height: 18),
           OutlinedButton.icon(
             onPressed: () => context.push('/operations'),
@@ -513,6 +520,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       appBar: AppBar(
         title: const Text('Operations centre'),
         actions: [
+          IconButton(
+            onPressed: () => context.push('/notifications'),
+            icon: const Icon(Icons.notifications_active_outlined),
+            tooltip: 'Notification centre',
+          ),
           IconButton(onPressed: busy ? null : load, icon: const Icon(Icons.refresh)),
           IconButton(onPressed: () => context.push('/operations'), icon: const Icon(Icons.dashboard_outlined), tooltip: 'Operations'),
           IconButton(onPressed: QuickRideAuth.signOut, icon: const Icon(Icons.logout)),

@@ -77,6 +77,98 @@ Deno.serve(async (req: Request) => {
   };
 
   try {
+
+    if (action === "send_notification") {
+      const appRole = typeof body.appRole === "string" ? body.appRole : "";
+      const recipientMode = typeof body.recipientMode === "string" ? body.recipientMode : "";
+      const title = typeof body.title === "string" ? body.title.trim().slice(0, 100) : "";
+      const messageBody = typeof body.body === "string" ? body.body.trim().slice(0, 250) : "";
+      if (!["customer", "driver", "admin", "all"].includes(appRole)) {
+        return fail(400, "Select a valid application audience");
+      }
+      if (!["self", "selected", "app_users"].includes(recipientMode)) {
+        return fail(400, "Select a valid recipient mode");
+      }
+      if (!title || !messageBody) {
+        return fail(400, "A notification title and message are required");
+      }
+
+      let userIds: string[] = [];
+      let truncated = false;
+      if (recipientMode === "self") {
+        userIds = [user.id];
+      } else if (recipientMode === "selected") {
+        const requested = Array.isArray(body.userIds) ? body.userIds : [];
+        userIds = [...new Set(requested.filter((value): value is string =>
+          typeof value === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+        ))].slice(0, 100);
+        if (userIds.length === 0) return fail(400, "Enter at least one valid user UUID");
+      } else {
+        let deviceQuery = admin.from("device_push_tokens").select("user_id");
+        if (appRole !== "all") deviceQuery = deviceQuery.eq("app_role", appRole);
+        const { data: deviceRows, error: deviceError } = await deviceQuery
+          .order("created_at", { ascending: false })
+          .limit(1000);
+        if (deviceError) return fail(500, "Unable to find registered notification devices");
+        const uniqueIds = [...new Set((deviceRows ?? []).map((row) => String(row.user_id)))];
+        truncated = uniqueIds.length > 100;
+        userIds = uniqueIds.slice(0, 100);
+      }
+
+      if (userIds.length === 0) {
+        return response(200, {
+          attempted: 0,
+          sent: 0,
+          message: "No registered notification devices matched this audience",
+          truncated: false,
+        });
+      }
+
+      const pushResponse = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${serviceRoleKey}`,
+          "apikey": serviceRoleKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userIds,
+          ...(appRole === "all" ? {} : { appRole }),
+          title,
+          body: messageBody,
+          data: { notification_source: "admin_console" },
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      let delivery: Json = {};
+      try {
+        delivery = await pushResponse.json() as Json;
+      } catch {
+        return fail(502, "Push service returned an unreadable response");
+      }
+      if (!pushResponse.ok) {
+        console.error("Admin notification send failed", pushResponse.status);
+        return fail(502, "Push delivery service could not send the notification");
+      }
+      await audit(
+        "notification.sent",
+        "device_push_tokens",
+        null,
+        null,
+        {
+          app_role: appRole,
+          recipient_mode: recipientMode,
+          recipient_users: userIds.length,
+          title,
+          attempted: delivery.attempted ?? 0,
+          sent: delivery.sent ?? 0,
+          truncated,
+        },
+      );
+      return response(200, { ...delivery, recipient_users: userIds.length, truncated });
+    }
+
     if (action === "list") {
       const { data, error } = await admin
         .from("service_areas")
