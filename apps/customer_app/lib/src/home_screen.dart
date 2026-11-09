@@ -21,7 +21,6 @@ class CustomerHomeScreen extends StatefulWidget {
 class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   final _searchController = TextEditingController();
   final _speech = stt.SpeechToText();
-  final _random = Random.secure();
   Timer? _searchDebounce;
   StreamSubscription<dynamic>? _authSubscription;
   mbx.MapboxMap? _map;
