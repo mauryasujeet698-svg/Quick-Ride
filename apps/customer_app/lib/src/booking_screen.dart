@@ -255,7 +255,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
           try {
             final response = await QuickRideBackend.invoke(
               'ride-booking',
-              body: _request('quote', categoryId: id, rideMode: 'shared_auto', passengerCount: 1),
+              body: _request('quote', categoryId: id, rideMode: 'shared_auto', passengerCount: _passengerCount),
             );
             final data = Map<String, dynamic>.from(response.data as Map);
             final quote = Map<String, dynamic>.from(data['quote'] as Map);
@@ -529,8 +529,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                         setState(() {
                           _passengerCount = value;
                           _quote = null;
-                          _serviceQuotes = [];
                         });
+                        unawaited(_getQuote());
                       },
                     ),
                     const SizedBox(height: 8),
