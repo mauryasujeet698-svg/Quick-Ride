@@ -255,7 +255,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
             ),
             zoom: 14,
           ),
-          const mbx.MapAnimationOptions(duration: 650),
+          mbx.MapAnimationOptions(duration: 650),
         );
         _cameraInitialized = true;
       }
@@ -523,7 +523,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
           ),
           zoom: 15,
         ),
-        const mbx.MapAnimationOptions(duration: 650),
+        mbx.MapAnimationOptions(duration: 650),
       );
     }
   }
