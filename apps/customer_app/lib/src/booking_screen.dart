@@ -362,6 +362,12 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                   controller: _pin,
                   keyboardType: TextInputType.number,
                   maxLength: 6,
+                  onChanged: (_) => setState(() {
+                    _sharedAutoCapacity = 3;
+                    _quote = null;
+                    _sharedAuto = null;
+                    _error = null;
+                  }),
                   decoration: const InputDecoration(
                     labelText: 'Pickup pincode',
                     counterText: '',
