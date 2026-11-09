@@ -1,7 +1,7 @@
 name: Quick-Ride Flutter CI
 on:
   push:
-    branches: [main, feature/mapbox-three-app-redesign]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
