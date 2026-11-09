@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
 
 
 class DriverRideNavigationScreen extends StatefulWidget {
@@ -23,7 +22,7 @@ class DriverRideNavigationScreen extends StatefulWidget {
 
 class _DriverRideNavigationScreenState
     extends State<DriverRideNavigationScreen> {
-  mbx.MapboxMap? _mapboxMap;
+  QuickRideMapController? _mapController;
   final FlutterTts _tts = FlutterTts();
 
   StreamSubscription<dynamic>? _locationSubscription;
@@ -288,18 +287,8 @@ class _DriverRideNavigationScreenState
   void _centerMap() {
     setState(() => _mapRecenterSignal++);
     final center = _currentPosition ?? _targetPosition;
-    final map = _mapboxMap;
-    if (center != null && map != null) {
-      unawaited(map.flyTo(
-        mbx.CameraOptions(
-          center: mbx.Point(
-            coordinates: mbx.Position(center.longitude, center.latitude),
-          ),
-          zoom: 17,
-          pitch: 48,
-        ),
-        mbx.MapAnimationOptions(duration: 650),
-      ));
+    if (center != null) {
+      _mapController?.moveTo(center, zoom: 17);
     }
   }
 
@@ -377,7 +366,7 @@ class _DriverRideNavigationScreenState
                       children: [
                         Expanded(
                           child: QuickRideMapView(
-                            key: ValueKey('driver-navigation-mapbox-${widget.rideId}'),
+                            key: ValueKey('driver-navigation-osm-${widget.rideId}'),
                             initialCenter: current,
                             currentPosition: current,
                             pickup: _navigatingToDestination ? null : target,
@@ -386,7 +375,7 @@ class _DriverRideNavigationScreenState
                             followCurrentPosition: true,
                             navigationCamera: true,
                             recenterSignal: _mapRecenterSignal,
-                            onMapCreated: (map) => _mapboxMap = map,
+                            onMapCreated: (map) => _mapController = map,
                           ),
                         ),
                         if (_error != null)
