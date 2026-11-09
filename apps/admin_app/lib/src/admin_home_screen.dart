@@ -356,6 +356,99 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     });
   }
 
+  Future<void> _configureSharedAuto(Map<String, dynamic> pincode) async {
+    final configRows = pincode['shared_auto_configs'] as List<dynamic>? ?? [];
+    final current = configRows.isEmpty
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(configRows.first as Map);
+    final seatCapacity = TextEditingController(text: (current['seat_capacity'] ?? 3).toString());
+    final maxDetour = TextEditingController(text: (current['max_detour_percent'] ?? 40).toString());
+    final maxExtraMinutes = TextEditingController(text: (current['max_extra_minutes'] ?? 15).toString());
+    final fareSharePercent = TextEditingController(text: (current['fare_share_percent_per_seat'] ?? 35).toString());
+    var enabled = current['is_enabled'] == true;
+    try {
+      final save = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: Text('Shared Auto · ${pincode['pincode']}'),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: enabled,
+                      title: const Text('Enable Shared Auto'),
+                      subtitle: const Text('Auto only. Private rides remain available independently.'),
+                      onChanged: (value) => setDialogState(() => enabled = value),
+                    ),
+                    TextField(
+                      controller: seatCapacity,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Maximum passengers per Auto',
+                        helperText: 'Hard maximum: 3 passengers across all bookings.',
+                      ),
+                    ),
+                    TextField(
+                      controller: maxDetour,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Maximum passenger route detour (%)'),
+                    ),
+                    TextField(
+                      controller: maxExtraMinutes,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Maximum extra travel time (minutes)'),
+                    ),
+                    TextField(
+                      controller: fareSharePercent,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Fare share per passenger (%)',
+                        helperText: 'Applied to the private fare estimate for each booking.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+              FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Save settings')),
+            ],
+          ),
+        ),
+      );
+      if (save != true) return;
+      final capacity = int.tryParse(seatCapacity.text.trim());
+      final detour = double.tryParse(maxDetour.text.trim());
+      final extra = int.tryParse(maxExtraMinutes.text.trim());
+      final fareShare = double.tryParse(fareSharePercent.text.trim());
+      if (capacity == null || detour == null || extra == null || fareShare == null) {
+        throw StateError('Enter valid numeric values for every Shared Auto setting.');
+      }
+      await run(() async {
+        await call('configure_shared_auto', {
+          'pincodeId': (pincode['id'] as num).toInt(),
+          'isEnabled': enabled,
+          'seatCapacity': capacity,
+          'maxDetourPercent': detour,
+          'maxExtraMinutes': extra,
+          'fareSharePercentPerSeat': fareShare,
+        });
+        await loadWithoutBusy();
+      });
+    } finally {
+      seatCapacity.dispose();
+      maxDetour.dispose();
+      maxExtraMinutes.dispose();
+      fareSharePercent.dispose();
+    }
+  }
+
   Future<void> setPincodeActive(int id, bool active) async {
     await run(() async {
       await call('set_pincode_active', {'pincodeId': id, 'isActive': active});
@@ -805,10 +898,21 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             alignment: Alignment.centerLeft,
                             child: Padding(
                               padding: const EdgeInsets.only(left: 16, bottom: 8),
-                              child: TextButton.icon(
-                                onPressed: busy ? null : () => _editDispatchConfig(pincode),
-                                icon: const Icon(Icons.tune, size: 18),
-                                label: const Text('Configure dispatch'),
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
+                                  TextButton.icon(
+                                    onPressed: busy ? null : () => _editDispatchConfig(pincode),
+                                    icon: const Icon(Icons.tune, size: 18),
+                                    label: const Text('Configure dispatch'),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: busy ? null : () => _configureSharedAuto(pincode),
+                                    icon: const Icon(Icons.groups_2_outlined, size: 18),
+                                    label: const Text('Shared Auto settings'),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
