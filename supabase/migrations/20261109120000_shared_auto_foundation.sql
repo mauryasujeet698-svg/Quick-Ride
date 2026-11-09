@@ -655,6 +655,130 @@ grant execute on function public.set_shared_auto_stop_status(uuid,bigint,uuid,te
 grant select on public.shared_auto_trips, public.shared_auto_trip_bookings, public.shared_auto_trip_stops to authenticated;
 grant select, insert, update, delete on public.shared_auto_configs, public.shared_auto_trips, public.shared_auto_trip_bookings, public.shared_auto_trip_stops to service_role;
 
+create or replace function public.finish_ride_from_track(
+  p_ride_id uuid,
+  p_driver_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_ride public.rides%rowtype;
+  v_point_count integer;
+  v_track_distance_m integer;
+  v_duration_s integer;
+  v_distance_m integer;
+  v_fare_config jsonb;
+  v_base numeric;
+  v_per_km numeric;
+  v_per_minute numeric;
+  v_minimum numeric;
+  v_booking numeric;
+  v_multiplier numeric;
+  v_distance_charge numeric;
+  v_time_charge numeric;
+  v_before_minimum numeric;
+  v_private_final_fare numeric;
+  v_final_fare numeric;
+  v_fare_share_percent numeric;
+  v_mode text;
+  v_result jsonb;
+begin
+  select * into v_ride from public.rides
+  where id=p_ride_id and driver_id=p_driver_id and status='in_progress'
+  for update;
+  if not found then raise exception 'Active ride assigned to this driver not found' using errcode='P0002'; end if;
+
+  select count(*)::integer,
+    greatest(1,round(extensions.st_length(
+      extensions.st_makeline(location::extensions.geometry order by recorded_at)::extensions.geography
+    )))::integer
+  into v_point_count,v_track_distance_m
+  from public.ride_location_points
+  where ride_id=p_ride_id and driver_id=p_driver_id;
+
+  if v_point_count>=2 and v_track_distance_m>0 then
+    v_distance_m:=v_track_distance_m;
+    v_duration_s:=greatest(1,ceil(extract(epoch from (now()-v_ride.started_at)))::integer);
+    v_mode:='gps_track';
+  else
+    v_distance_m:=coalesce(v_ride.estimated_distance_m,1);
+    v_duration_s:=coalesce(v_ride.estimated_duration_s,1);
+    v_mode:='route_estimate_fallback';
+  end if;
+
+  v_fare_config:=v_ride.fare_config_snapshot;
+  v_base:=coalesce((v_fare_config->>'base_fare')::numeric,0);
+  v_per_km:=coalesce((v_fare_config->>'per_km_rate')::numeric,0);
+  v_per_minute:=coalesce((v_fare_config->>'per_minute_rate')::numeric,0);
+  v_minimum:=coalesce((v_fare_config->>'minimum_fare')::numeric,0);
+  v_booking:=coalesce((v_fare_config->>'booking_fee')::numeric,0);
+  v_multiplier:=coalesce((v_fare_config->>'multiplier')::numeric,1);
+
+  v_distance_charge:=round((v_distance_m/1000.0*v_per_km)::numeric,2);
+  v_time_charge:=round((v_duration_s/60.0*v_per_minute)::numeric,2);
+  v_before_minimum:=(v_base+v_distance_charge+v_time_charge+v_booking)*v_multiplier;
+  v_private_final_fare:=round(greatest(v_minimum,v_before_minimum),2);
+  v_final_fare:=v_private_final_fare;
+
+  if v_ride.ride_mode='shared_auto' then
+    v_fare_share_percent:=coalesce(
+      (v_ride.fare_breakdown->>'fare_share_percent_per_seat')::numeric,
+      35
+    );
+    if v_fare_share_percent not between 10 and 100
+       or v_ride.passenger_count not between 1 and 3 then
+      raise exception 'Shared Auto fare snapshot is invalid' using errcode='22023';
+    end if;
+    v_final_fare:=round(
+      v_private_final_fare * v_fare_share_percent / 100.0 * v_ride.passenger_count,
+      2
+    );
+  end if;
+
+  v_result:=public.finish_ride(p_ride_id,p_driver_id,v_final_fare);
+
+  update public.rides
+  set actual_distance_m=v_distance_m,
+      actual_duration_s=v_duration_s,
+      final_fare_breakdown=jsonb_build_object(
+        'calculation_source',v_mode,
+        'gps_points_count',v_point_count,
+        'distance_m',v_distance_m,
+        'duration_s',v_duration_s,
+        'base_fare',v_base,
+        'distance_charge',v_distance_charge,
+        'time_charge',v_time_charge,
+        'booking_fee',v_booking,
+        'multiplier',v_multiplier,
+        'minimum_fare_applied',v_before_minimum<v_minimum,
+        'private_route_fare',v_private_final_fare,
+        'ride_mode',v_ride.ride_mode,
+        'passenger_count',v_ride.passenger_count,
+        'fare_share_percent_per_seat',case
+          when v_ride.ride_mode='shared_auto' then v_fare_share_percent
+          else null end,
+        'final_fare',v_final_fare,
+        'currency',coalesce(v_fare_config->>'currency','INR')
+      )
+  where id=p_ride_id;
+
+  return v_result || jsonb_build_object(
+    'actual_distance_m',v_distance_m,
+    'actual_duration_s',v_duration_s,
+    'fare_calculation_source',v_mode,
+    'gps_points_count',v_point_count
+  );
+end;
+$$;
+
+revoke all on function public.finish_ride_from_track(uuid,uuid)
+  from public,anon,authenticated;
+grant execute on function public.finish_ride_from_track(uuid,uuid)
+  to service_role;
+
 comment on table public.shared_auto_trips is
   'One shared Auto vehicle journey. Shared Auto only; capacity is hard-limited to three seats.';
 comment on table public.shared_auto_trip_bookings is
