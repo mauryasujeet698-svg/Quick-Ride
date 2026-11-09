@@ -7,7 +7,6 @@ import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../customer_preferences.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
 
 import 'customer_navigation_bar.dart';
 
@@ -23,7 +22,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   final _speech = stt.SpeechToText();
   Timer? _searchDebounce;
   StreamSubscription<dynamic>? _authSubscription;
-  mbx.MapboxMap? _map;
+  QuickRideMapController? _map;
   LatLng? _currentPosition;
   QuickRidePlace? _pickup;
   QuickRidePlace? _destination;
@@ -88,7 +87,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       });
       final map = _map;
       if (map != null) {
-        await map.flyTo(_cameraOptions(point, 15), _animationOptions());
+        map.moveTo(point, zoom: 15);
       }
     } catch (error) {
       if (!mounted) return;
@@ -98,17 +97,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       });
     }
   }
-
-  mbx.CameraOptions _cameraOptions(LatLng point, double zoom) =>
-      mbx.CameraOptions(
-        center: mbx.Point(
-          coordinates: mbx.Position(point.longitude, point.latitude),
-        ),
-        zoom: zoom,
-      );
-
-  mbx.MapAnimationOptions _animationOptions() =>
-      mbx.MapAnimationOptions(duration: 650);
 
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
@@ -162,10 +150,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     });
     final map = _map;
     if (map != null) {
-      await map.flyTo(
-        _cameraOptions(place.point, 15.5),
-        _animationOptions(),
-      );
+      map.moveTo(place.point, zoom: 15.5);
     }
     await _refreshRoute();
   }
@@ -223,7 +208,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         _route = route;
         _routePoints = route.points;
       });
-      // QuickRideMapView automatically fits the complete Mapbox route.
+      // QuickRideMapView automatically fits the complete OpenStreetMap route.
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -318,7 +303,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 _map = map;
                 final current = _currentPosition;
                 if (current != null) {
-                  unawaited(map.flyTo(_cameraOptions(current, 15), _animationOptions()));
+                  map.moveTo(current, zoom: 15);
                 }
               },
               onTap: _selectMapPoint,
