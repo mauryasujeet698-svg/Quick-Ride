@@ -19,6 +19,7 @@ jobs:
       FIREBASE_ADMIN_APP_ID: ${{ secrets.FIREBASE_ADMIN_APP_ID }}
       MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN || secrets.MAPBOX_TOKEN || vars.MAPBOX_ACCESS_TOKEN || '' }}
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID || vars.GOOGLE_WEB_CLIENT_ID || '' }}
+      MAPBOX_DOWNLOADS_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN || '' }}
       MAX_APK_BYTES: 25000000
     steps:
       - uses: actions/checkout@v4
@@ -42,19 +43,30 @@ jobs:
           import sys
           path = Path(sys.argv[1])
           text = path.read_text()
-          if 'api.mapbox.com/downloads/v2/releases/maven' not in text:
-              section = text.find('dependencyResolutionManagement {')
-              repository_index = text.find('repositories {', section)
-              if section < 0 or repository_index < 0:
-                  raise SystemExit(f"Could not locate dependency repositories in {path}")
-              line_end = text.find('\n', repository_index) + 1
-              line_start = text.rfind('\n', 0, repository_index) + 1
-              indent = text[line_start:repository_index]
-              repository = indent + '    maven { url = uri("https://api.mapbox.com/downloads/v2/releases/maven") }\\n'
-              text = text[:line_end] + repository + text[line_end:]
+          if "api.mapbox.com/downloads/v2/releases/maven" not in text:
+              block = """dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven {
+                      url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
+                      credentials {
+                          username = "mapbox"
+                          password = System.getenv("MAPBOX_DOWNLOADS_TOKEN") ?: ""
+                      }
+                  }
+              }
+          }
+
+          """
+              marker = "plugins {"
+              if marker not in text:
+                  raise SystemExit(f"Could not locate plugins block in {path}")
+              text = text.replace(marker, block + marker, 1)
               path.write_text(text)
           PY
-            python3 - "apps/${app}_app/android/app/build.gradle.kts" <<'PY'
+           python3 - "apps/${app}_app/android/app/build.gradle.kts" <<'PY'
           from pathlib import Path
           import sys
           path = Path(sys.argv[1])
