@@ -668,6 +668,15 @@ Deno.serve(async (req: Request) => {
           route_duration_s: routePlan.duration_s,
         };
 
+        const existingCustomerIds = existingBookings
+          .map((item) => String(item.customer_id ?? ""))
+          .filter((id) => id && id !== user.id);
+        await notifyUsers(
+          url, serviceKey, existingCustomerIds, "customer",
+          "Your Shared Auto booking was updated",
+          "Another passenger joined your Auto. Your booking and confirmed fare remain unchanged.",
+          { type: "shared_auto_route_updated", shared_auto_trip_id: String(candidate.id) },
+        );
         const tripDriverId = joinResult.driver_id ? String(joinResult.driver_id) : null;
         if (tripDriverId) {
           await notifyUsers(
@@ -675,15 +684,6 @@ Deno.serve(async (req: Request) => {
             "Passenger added to your shared Auto",
             "A compatible passenger booking joined your shared Auto. Review the updated pickup and drop-off list.",
             { type: "shared_auto_booking_added", shared_auto_trip_id: String(candidate.id), ride_id: String(ride.id) },
-          );
-          const existingCustomerIds = existingBookings
-            .map((item) => String(item.customer_id ?? ""))
-            .filter((id) => id && id !== user.id);
-          await notifyUsers(
-            url, serviceKey, existingCustomerIds, "customer",
-            "Your Shared Auto route was updated",
-            "Another passenger joined your Auto. Your booking and confirmed fare remain unchanged.",
-            { type: "shared_auto_route_updated", shared_auto_trip_id: String(candidate.id) },
           );
         }
         break;
