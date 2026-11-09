@@ -19,6 +19,8 @@ class QuickRideMaps {
   static const String accessToken = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
   static final http.Client _http = http.Client();
   static final Random _random = Random.secure();
+  static String? _activeSearchSessionToken;
+  static DateTime? _searchSessionStartedAt;
   static bool _configured = false;
 
   /// Allows widget tests to replace the native map canvas. Production leaves this null.
@@ -105,7 +107,14 @@ class QuickRideMaps {
   }) async {
     final text = query.trim();
     if (text.length < 2) return const [];
-    final sessionToken = _sessionToken();
+    final startedAt = _searchSessionStartedAt;
+    if (_activeSearchSessionToken == null ||
+        startedAt == null ||
+        DateTime.now().difference(startedAt) > const Duration(minutes: 2)) {
+      _activeSearchSessionToken = _sessionToken();
+      _searchSessionStartedAt = DateTime.now();
+    }
+    final sessionToken = _activeSearchSessionToken!;
     final uri = _searchUri('/suggest', {
       'q': text,
       'session_token': sessionToken,
@@ -156,6 +165,10 @@ class QuickRideMaps {
     final response = await _http
         .get(uri, headers: const {'Accept': 'application/geo+json'})
         .timeout(const Duration(seconds: 12));
+    if (_activeSearchSessionToken == suggestion.sessionToken) {
+      _activeSearchSessionToken = null;
+      _searchSessionStartedAt = null;
+    }
     if (response.statusCode != 200) {
       throw StateError('Mapbox could not retrieve the selected place (${response.statusCode}).');
     }
@@ -171,6 +184,11 @@ class QuickRideMaps {
       throw StateError('Mapbox returned invalid coordinates for this place.');
     }
     final properties = Map<String, dynamic>.from(feature['properties'] as Map? ?? const {});
+    final context = Map<String, dynamic>.from(properties['context'] as Map? ?? const {});
+    final postcodeContext = context['postcode'];
+    final contextPostalCode = postcodeContext is Map
+        ? (postcodeContext['name'] ?? postcodeContext['text'])?.toString()
+        : null;
     final longitude = (coordinates[0] as num).toDouble();
     final latitude = (coordinates[1] as num).toDouble();
     final name = (properties['name'] ?? suggestion.name).toString();
@@ -182,7 +200,7 @@ class QuickRideMaps {
       point: LatLng(latitude, longitude),
       name: name,
       address: address,
-      postalCode: _postalCode(address),
+      postalCode: _postalCode(address) ?? contextPostalCode,
     );
   }
 
