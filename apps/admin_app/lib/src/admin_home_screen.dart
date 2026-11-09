@@ -381,7 +381,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Quick-Ride Admin'),
+        title: const Text('Admin'),
         actions: [
           IconButton(
             tooltip: 'Sign in',
