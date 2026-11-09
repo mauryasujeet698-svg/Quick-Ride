@@ -495,7 +495,7 @@ Deno.serve(async (req: Request) => {
       if (!config || config.is_enabled !== true) {
         return error(409, "SHARED_AUTO_UNAVAILABLE", "Shared Auto is not enabled in this service pincode");
       }
-      if (passengerCount > Number(config.seat_capacity ?? 3)) {
+      if (action === "book" && passengerCount > Number(config.seat_capacity ?? 3)) {
         return error(409, "SHARED_AUTO_CAPACITY", "This Auto cannot accept that many passengers");
       }
       sharedConfig = config as Record<string, unknown>;
