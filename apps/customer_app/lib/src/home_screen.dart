@@ -162,6 +162,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         'longitude': place.point.longitude,
         'postalCode': place.postalCode,
       });
+      if (mounted) setState(() {});
       await _refreshRoute();
     } catch (error) {
       if (mounted) setState(() {
@@ -432,30 +433,23 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 ],
               ),
             ),
-            if (QuickRideCustomerPreferences.recentPlaces.value.isNotEmpty) ...[
+            if (QuickRideCustomerPreferences.savedPlaces.value.isNotEmpty) ...[
               const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('Recent places',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            )),
-                  ),
-                  TextButton(
-                    onPressed: QuickRideCustomerPreferences.clearRecentPlaces,
-                    child: const Text('Clear'),
-                  ),
-                ],
+              Text(
+                'Saved places',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
               ),
-              ...QuickRideCustomerPreferences.recentPlaces.value.map((place) {
+              const SizedBox(height: 6),
+              ...QuickRideCustomerPreferences.savedPlaces.value.map((place) {
                 final title = place['name']?.toString() ?? 'Saved place';
                 final address = place['address']?.toString() ?? '';
                 final latitude = (place['latitude'] as num).toDouble();
                 final longitude = (place['longitude'] as num).toDouble();
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.history_rounded),
+                  leading: const Icon(Icons.favorite_rounded, color: Color(0xFFE45872)),
                   title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text(address, maxLines: 1, overflow: TextOverflow.ellipsis),
                   onTap: () {
@@ -478,6 +472,70 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 );
               }),
             ],
+            if (QuickRideCustomerPreferences.recentPlaces.value.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Recent places',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            )),
+                  ),
+                  TextButton(
+                    onPressed: QuickRideCustomerPreferences.clearRecentPlaces,
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+              ...QuickRideCustomerPreferences.recentPlaces.value.map((place) {
+                final title = place['name']?.toString() ?? 'Recent place';
+                final address = place['address']?.toString() ?? '';
+                final latitude = (place['latitude'] as num).toDouble();
+                final longitude = (place['longitude'] as num).toDouble();
+                final key = '$latitude,$longitude';
+                final isSaved = QuickRideCustomerPreferences.savedPlaces.value.any(
+                  (item) => '${item['latitude']},${item['longitude']}' == key,
+                );
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.history_rounded),
+                  title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(address, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  trailing: IconButton(
+                    tooltip: isSaved ? 'Remove favourite' : 'Save place',
+                    onPressed: () async {
+                      if (isSaved) {
+                        await QuickRideCustomerPreferences.removeSavedPlace(place);
+                      } else {
+                        await QuickRideCustomerPreferences.addSavedPlace(place);
+                      }
+                      if (mounted) setState(() {});
+                    },
+                    icon: Icon(
+                      isSaved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                      color: isSaved ? const Color(0xFFE45872) : colors.onSurfaceVariant,
+                    ),
+                  ),
+                  onTap: () {
+                    final selected = QuickRidePlace(
+                      point: LatLng(latitude, longitude),
+                      name: title,
+                      address: address,
+                      postalCode: place['postalCode']?.toString(),
+                    );
+                    setState(() {
+                      if (_selectingPickup) {
+                        _pickup = selected;
+                        _selectingPickup = false;
+                      } else {
+                        _destination = selected;
+                      }
+                    });
+                    unawaited(_refreshRoute());
+                  },
+                );
+              }),            ],
             if (_route != null) ...[
               const SizedBox(height: 14),
               Card(
