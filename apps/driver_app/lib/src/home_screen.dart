@@ -622,6 +622,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           child: Stack(
             children: [
               QuickRideMapView(
+                userAgentPackageName: 'com.quickride.driver',
                 key: const ValueKey('quick-ride-captain-map'),
                 initialCenter: _currentPosition ?? const LatLng(20.5937, 78.9629),
                 initialZoom: _currentPosition == null ? 4.5 : 15.5,
