@@ -850,6 +850,14 @@ for each row
 when (old.status is distinct from new.status)
 execute function public.refresh_shared_auto_driver_availability();
 
+-- Trigger helpers are not RPC endpoints. Keep direct execution private.
+revoke all on function public.sync_shared_auto_trip_from_ride()
+  from public,anon,authenticated,service_role;
+revoke all on function public.keep_shared_auto_driver_busy()
+  from public,anon,authenticated,service_role;
+revoke all on function public.refresh_shared_auto_driver_availability()
+  from public,anon,authenticated,service_role;
+
 comment on table public.shared_auto_trips is
   'One shared Auto vehicle journey. Shared Auto only; capacity is hard-limited to three seats.';
 comment on table public.shared_auto_trip_bookings is
