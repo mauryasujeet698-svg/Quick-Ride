@@ -517,7 +517,7 @@ declare
   v_next public.shared_auto_trip_stops%rowtype;
   v_ride public.rides%rowtype;
 begin
-  if p_next_status not in ('arrived','completed') then
+  if p_next_status is null or p_next_status not in ('arrived','completed') then
     raise exception 'Unsupported shared Auto stop status' using errcode='22023';
   end if;
   select * into v_trip from public.shared_auto_trips
