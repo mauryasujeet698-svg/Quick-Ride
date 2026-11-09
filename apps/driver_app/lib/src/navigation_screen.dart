@@ -298,7 +298,7 @@ class _DriverRideNavigationScreenState
           zoom: 17,
           pitch: 48,
         ),
-        const mbx.MapAnimationOptions(duration: 650),
+        mbx.MapAnimationOptions(duration: 650),
       ));
     }
   }
