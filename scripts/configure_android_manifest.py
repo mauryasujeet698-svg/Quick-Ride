@@ -32,6 +32,8 @@ def main() -> int:
             "android.permission.ACCESS_COARSE_LOCATION",
             "android.permission.ACCESS_FINE_LOCATION",
         ])
+    if role == "customer":
+        required.append("android.permission.RECORD_AUDIO")
     if role == "driver":
         required.extend([
             "android.permission.ACCESS_BACKGROUND_LOCATION",
@@ -39,6 +41,11 @@ def main() -> int:
             "android.permission.FOREGROUND_SERVICE_LOCATION",
         ])
 
+    app_labels = {
+        "customer": "Quick Ride",
+        "driver": "Quick Ride Captain",
+        "admin": "Admin",
+    }
     tree = ET.parse(manifest_path)
     root = tree.getroot()
     if root.tag != "manifest":
@@ -61,6 +68,17 @@ def main() -> int:
     application = root.find("application")
     if application is None:
         raise SystemExit("Android application element not found")
+    application.set(f"{{{ANDROID_NS}}}label", app_labels.get(role, "Quick Ride"))
+
+    # Android 11+ discovery for voice-search recognition services.
+    if role == "customer" and root.find("queries") is None:
+        queries = ET.Element("queries")
+        intent_query = ET.SubElement(queries, "intent")
+        ET.SubElement(intent_query, "action", {
+            f"{{{ANDROID_NS}}}name": "android.speech.RecognitionService"
+        })
+        root.insert(0, queries)
+
     activity = application.find("activity")
     if activity is None:
         raise SystemExit("MainActivity element not found")

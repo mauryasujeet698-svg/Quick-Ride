@@ -7,6 +7,7 @@ import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
 
 import 'customer_navigation_bar.dart';
 
@@ -23,7 +24,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   final _random = Random.secure();
   Timer? _searchDebounce;
   StreamSubscription<dynamic>? _authSubscription;
-  dynamic _map;
+  mbx.MapboxMap? _map;
   LatLng? _currentPosition;
   QuickRidePlace? _pickup;
   QuickRidePlace? _destination;
@@ -98,11 +99,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         _loadingLocation = false;
         _error = null;
       });
-      _map?.flyTo(
-        // A relaxed city-level zoom at launch; the user may freely zoom in.
-        mbxCamera(point, 15),
-        mbxAnimation(),
-      );
+      final map = _map;
+      if (map != null) {
+        await map.flyTo(_cameraOptions(point, 15), _animationOptions());
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -112,15 +112,16 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     }
   }
 
-  // Keep Mapbox types isolated from this screen's UI code.
-  dynamic mbxCamera(LatLng point, double zoom) {
-    return {
-      'center': [point.longitude, point.latitude],
-      'zoom': zoom,
-    };
-  }
+  mbx.CameraOptions _cameraOptions(LatLng point, double zoom) =>
+      mbx.CameraOptions(
+        center: mbx.Point(
+          coordinates: mbx.Position(point.longitude, point.latitude),
+        ),
+        zoom: zoom,
+      );
 
-  dynamic mbxAnimation() => const Duration(milliseconds: 650);
+  mbx.MapAnimationOptions _animationOptions() =>
+      mbx.MapAnimationOptions(duration: 650);
 
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
@@ -194,15 +195,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     }
   }
 
-  dynamic _mapCamera(LatLng point, double zoom) {
-    // Use the SDK's typed objects via the map package's controller adapter.
-    return _cameraOptions(point, zoom);
-  }
+  mbx.CameraOptions _mapCamera(LatLng point, double zoom) =>
+      _cameraOptions(point, zoom);
 
-  dynamic _mapAnimation() => _animationOptions();
-
-  dynamic _cameraOptions(LatLng point, double zoom) => MapboxCameraFactory.camera(point, zoom);
-  dynamic _animationOptions() => MapboxCameraFactory.animation(650);
+  mbx.MapAnimationOptions _mapAnimation() => _animationOptions();
 
   Future<void> _selectMapPoint(LatLng point) async {
     if (point.latitude < 6 || point.latitude > 38 ||
@@ -260,7 +256,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       });
       final map = _map;
       if (map != null) {
-        map.flyTo(
+        await map.flyTo(
           _cameraOptions(route.points[route.points.length ~/ 2], 12.5),
           _animationOptions(),
         );
@@ -357,7 +353,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 _map = map;
                 final current = _currentPosition;
                 if (current != null) {
-                  map.flyTo(_cameraOptions(current, 15), _animationOptions());
+                  unawaited(map.flyTo(_cameraOptions(current, 15), _animationOptions()));
                 }
               },
               onTap: _selectMapPoint,
