@@ -67,7 +67,6 @@ class QuickRideMaps {
 
   static Future<List<QuickRideSearchResult>> searchSuggestions({
     required String query,
-    required String sessionToken,
     LatLng? proximity,
     String language = defaultLanguage,
   }) async {
@@ -76,99 +75,103 @@ class QuickRideMaps {
     if (!isConfigured) {
       throw StateError('Mapbox is not configured for this build.');
     }
+
+    // Mapbox Search Box API currently serves the US, Canada and Europe.
+    // Quick Ride launches in India, so use Geocoding v6 for India-wide
+    // address/street/place search. Geocoding v6 does not include POIs.
     final uri = Uri.https(
       'api.mapbox.com',
-      '/search/searchbox/v1/suggest',
+      '/search/geocode/v6/forward',
       {
         'q': text,
-        'session_token': sessionToken,
-        'access_token': accessToken,
-        'language': language,
+        'autocomplete': 'true',
+        'permanent': 'true',
         'country': 'IN',
+        'worldview': 'in',
+        'types': 'address,street,neighborhood,locality,place,postcode',
         'limit': '8',
+        'language': language,
+        'access_token': accessToken,
         if (proximity != null)
           'proximity': '${proximity.longitude},${proximity.latitude}',
       },
     );
     final response = await _http.get(uri).timeout(const Duration(seconds: 12));
     if (response.statusCode != 200) {
-      throw StateError('Mapbox search is unavailable (${response.statusCode}).');
+      throw StateError(
+        'Mapbox address search is unavailable (${response.statusCode}). '
+        'Check your Mapbox account and permanent-geocoding entitlement.',
+      );
     }
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final items = payload['suggestions'] as List<dynamic>? ?? const [];
-    return items
+    final features = payload['features'] as List<dynamic>? ?? const [];
+    return features
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
-        .where((item) => item['mapbox_id'] is String)
-        .map((item) => QuickRideSearchResult(
-              mapboxId: item['mapbox_id'] as String,
-              name: (item['name'] ?? item['place_formatted'] ?? 'Location').toString(),
-              address: (item['full_address'] ??
-                      item['place_formatted'] ??
-                      item['name'] ??
-                      '')
-                  .toString(),
-              resultType: (item['feature_type'] ?? '').toString(),
-            ))
+        .where((item) => item['geometry'] is Map && item['properties'] is Map)
+        .map((item) {
+          final geometry = Map<String, dynamic>.from(item['geometry'] as Map);
+          final coordinates = geometry['coordinates'] as List<dynamic>? ?? const [];
+          final properties = Map<String, dynamic>.from(item['properties'] as Map);
+          final longitude = (properties['coordinates'] is Map)
+              ? (properties['coordinates']['longitude'] as num?)?.toDouble()
+              : (coordinates.length >= 2 && coordinates[0] is num
+                  ? (coordinates[0] as num).toDouble()
+                  : null);
+          final latitude = (properties['coordinates'] is Map)
+              ? (properties['coordinates']['latitude'] as num?)?.toDouble()
+              : (coordinates.length >= 2 && coordinates[1] is num
+                  ? (coordinates[1] as num).toDouble()
+                  : null);
+          return (longitude == null || latitude == null)
+              ? null
+              : QuickRideSearchResult(
+                  mapboxId: (properties['mapbox_id'] ?? item['id'] ?? '').toString(),
+                  point: LatLng(latitude, longitude),
+                  name: (properties['name'] ?? properties['place_formatted'] ?? 'Location').toString(),
+                  address: (properties['full_address'] ??
+                          [
+                            properties['name'],
+                            properties['place_formatted'],
+                          ].whereType<String>().where((value) => value.isNotEmpty).join(', '))
+                      .toString(),
+                  resultType: (properties['feature_type'] ?? '').toString(),
+                );
+        })
+        .whereType<QuickRideSearchResult>()
         .toList(growable: false);
   }
 
-  static Future<QuickRidePlace> retrieveSearchResult({
-    required String mapboxId,
-    required String sessionToken,
+  static Future<String> reverseGeocode(
+    LatLng point, {
+    String language = defaultLanguage,
   }) async {
     if (!isConfigured) {
       throw StateError('Mapbox is not configured for this build.');
     }
+    // Pickup and destination labels are persisted with ride records, so request
+    // permanent results. Mapbox requires a payment method or enterprise
+    // entitlement for permanent geocoding.
     final uri = Uri.https(
       'api.mapbox.com',
-      '/search/searchbox/v1/retrieve/${Uri.encodeComponent(mapboxId)}',
-      {'session_token': sessionToken, 'access_token': accessToken},
-    );
-    final response = await _http.get(uri).timeout(const Duration(seconds: 12));
-    if (response.statusCode != 200) {
-      throw StateError('Mapbox could not resolve that location (${response.statusCode}).');
-    }
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final features = payload['features'] as List<dynamic>? ?? const [];
-    if (features.isEmpty || features.first is! Map) {
-      throw StateError('Mapbox returned no coordinates for that search result.');
-    }
-    final feature = Map<String, dynamic>.from(features.first as Map);
-    final geometry = Map<String, dynamic>.from(feature['geometry'] as Map);
-    final coordinates = geometry['coordinates'] as List<dynamic>;
-    final properties =
-        Map<String, dynamic>.from(feature['properties'] as Map? ?? const {});
-    final longitude = (coordinates[0] as num).toDouble();
-    final latitude = (coordinates[1] as num).toDouble();
-    return QuickRidePlace(
-      point: LatLng(latitude, longitude),
-      name: (properties['name'] ?? 'Selected location').toString(),
-      address: (properties['full_address'] ??
-              properties['place_formatted'] ??
-              properties['name'] ??
-              'Selected location')
-          .toString(),
-    );
-  }
-
-  static Future<String> reverseGeocode(LatLng point) async {
-    if (!isConfigured) {
-      throw StateError('Mapbox is not configured for this build.');
-    }
-    final uri = Uri.https(
-      'api.mapbox.com',
-      '/search/searchbox/v1/reverse',
+      '/search/geocode/v6/reverse',
       {
         'longitude': point.longitude.toString(),
         'latitude': point.latitude.toString(),
-        'language': defaultLanguage,
+        'language': language,
+        'country': 'IN',
+        'worldview': 'in',
+        'types': 'address,street,neighborhood,locality,place,postcode',
+        'permanent': 'true',
         'access_token': accessToken,
       },
     );
     final response = await _http.get(uri).timeout(const Duration(seconds: 12));
     if (response.statusCode != 200) {
-      throw StateError('Mapbox address lookup failed (${response.statusCode}).');
+      throw StateError(
+        'Mapbox address lookup failed (${response.statusCode}). '
+        'Check your Mapbox account and permanent-geocoding entitlement.',
+      );
     }
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final features = payload['features'] as List<dynamic>? ?? const [];
@@ -177,11 +180,15 @@ class QuickRideMaps {
     }
     final properties =
         Map<String, dynamic>.from((features.first as Map)['properties'] as Map? ?? const {});
-    return (properties['full_address'] ??
-            properties['place_formatted'] ??
-            properties['name'] ??
-            'Selected location')
-        .toString();
+    final name = properties['name']?.toString();
+    final formatted = properties['place_formatted']?.toString();
+    final full = properties['full_address']?.toString();
+    if (full != null && full.isNotEmpty) return full;
+    final parts = [name, formatted]
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+    return parts.isEmpty ? 'Selected location' : parts.join(', ');
   }
 
   static Future<QuickRideRoute> drivingRoute({
@@ -266,11 +273,13 @@ class QuickRideMaps {
 class QuickRideSearchResult {
   const QuickRideSearchResult({
     required this.mapboxId,
+    required this.point,
     required this.name,
     required this.address,
     required this.resultType,
   });
   final String mapboxId;
+  final LatLng point;
   final String name;
   final String address;
   final String resultType;

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -33,7 +32,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   List<Map<String, dynamic>> _vehicleCategories = const [];
   List<LatLng> _routePoints = const [];
   QuickRideRoute? _route;
-  String? _searchSession;
   String? _error;
   bool _loadingLocation = true;
   bool _searching = false;
@@ -62,14 +60,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     _searchController.dispose();
     unawaited(_speech.cancel());
     super.dispose();
-  }
-
-  String _newSearchSession() {
-    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
   Future<void> _loadVehicleCategories() async {
@@ -135,7 +125,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   }
 
   Future<void> _loadSuggestions(String query) async {
-    final session = _searchSession ??= _newSearchSession();
     setState(() {
       _searching = true;
       _error = null;
@@ -143,7 +132,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     try {
       final results = await QuickRideMaps.searchSuggestions(
         query: query,
-        sessionToken: session,
         proximity: _currentPosition,
       );
       if (!mounted) return;
@@ -156,47 +144,33 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   }
 
   Future<void> _chooseSuggestion(QuickRideSearchResult suggestion) async {
-    final session = _searchSession;
-    if (session == null) return;
     setState(() {
-      _searching = true;
+      _searching = false;
       _suggestions = const [];
       _error = null;
     });
-    try {
-      final place = await QuickRideMaps.retrieveSearchResult(
-        mapboxId: suggestion.mapboxId,
-        sessionToken: session,
-      );
-      if (!mounted) return;
-      setState(() {
-        if (_selectingPickup) {
-          _pickup = place;
-        } else {
-          _destination = place;
-        }
-        _searchSession = null;
-        _searchController.clear();
-      });
-      final map = _map;
-      if (map != null) {
-        map.flyTo(
-          _mapCamera(place.point, 15.5),
-          _mapAnimation(),
-        );
+    final place = QuickRidePlace(
+      point: suggestion.point,
+      name: suggestion.name,
+      address: suggestion.address,
+    );
+    setState(() {
+      if (_selectingPickup) {
+        _pickup = place;
+      } else {
+        _destination = place;
       }
-      await _refreshRoute();
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    } finally {
-      if (mounted) setState(() => _searching = false);
+      _searchController.clear();
+    });
+    final map = _map;
+    if (map != null) {
+      await map.flyTo(
+        _cameraOptions(place.point, 15.5),
+        _animationOptions(),
+      );
     }
+    await _refreshRoute();
   }
-
-  mbx.CameraOptions _mapCamera(LatLng point, double zoom) =>
-      _cameraOptions(point, zoom);
-
-  mbx.MapAnimationOptions _mapAnimation() => _animationOptions();
 
   Future<void> _selectMapPoint(LatLng point) async {
     if (point.latitude < 6 || point.latitude > 38 ||
