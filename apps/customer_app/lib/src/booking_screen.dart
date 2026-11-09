@@ -41,12 +41,15 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   RidePoint? _destination;
   List<Map<String, dynamic>> _categories = [];
   int? _categoryId;
+  String _rideMode = 'private';
+  int _passengerCount = 1;
   bool _selectPickup = true;
   bool _busy = false;
   bool _loadingCategories = true;
   String? _error;
   Map<String, dynamic>? _quote;
   Map<String, dynamic>? _booking;
+  Map<String, dynamic>? _sharedAuto;
   String? _pickupOtp;
 
   @override
@@ -64,6 +67,18 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     _pin.dispose();
     super.dispose();
   }
+
+  String get _selectedCategoryCode {
+    for (final category in _categories) {
+      if ((category['id'] as num).toInt() == _categoryId) {
+        return category['code'].toString().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      }
+    }
+    return '';
+  }
+
+  bool get _canShareAuto =>
+      _selectedCategoryCode == 'auto' || _selectedCategoryCode == 'autorickshaw';
 
   Future<void> _loadCategories() async {
     try {
@@ -175,6 +190,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         'action': action,
         'pincode': _pin.text.trim(),
         'vehicleCategoryId': _categoryId,
+        'rideMode': _rideMode,
+        'passengerCount': _rideMode == 'shared_auto' ? _passengerCount : 1,
         'pickup': _pickup!.toJson(),
         'destination': _destination!.toJson(),
       };
@@ -209,6 +226,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         setState(() {
           _quote = Map<String, dynamic>.from(data['quote'] as Map);
           _booking = null;
+          _sharedAuto = null;
           _pickupOtp = null;
         });
       }
@@ -235,6 +253,9 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       final data = Map<String, dynamic>.from(response.data as Map);
       if (mounted) setState(() {
         _booking = Map<String, dynamic>.from(data['ride'] as Map);
+        _sharedAuto = data['shared_auto'] is Map
+            ? Map<String, dynamic>.from(data['shared_auto'] as Map)
+            : null;
         _pickupOtp = data['pickup_otp']?.toString();
       });
     });
@@ -350,10 +371,55 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                     onChanged: _busy ? null : (value) {
                       setState(() {
                         _categoryId = value;
+                        _rideMode = 'private';
+                        _passengerCount = 1;
                         _quote = null;
+                        _sharedAuto = null;
                       });
                     },
                   ),
+                if (_canShareAuto) ...[
+                  const SizedBox(height: 10),
+                  Text('Auto booking type', style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 6),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'private', label: Text('Private Auto')),
+                      ButtonSegment(value: 'shared_auto', label: Text('Shared Auto')),
+                    ],
+                    selected: {_rideMode},
+                    onSelectionChanged: _busy ? null : (selection) {
+                      setState(() {
+                        _rideMode = selection.first;
+                        _quote = null;
+                        _sharedAuto = null;
+                        if (_rideMode == 'private') _passengerCount = 1;
+                      });
+                    },
+                  ),
+                  if (_rideMode == 'shared_auto') ...[
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      initialValue: _passengerCount,
+                      decoration: const InputDecoration(
+                        labelText: 'Number of passengers',
+                        helperText: 'Shared Auto supports up to 3 passengers in total.',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 1, child: Text('1 passenger')),
+                        DropdownMenuItem(value: 2, child: Text('2 passengers')),
+                        DropdownMenuItem(value: 3, child: Text('3 passengers')),
+                      ],
+                      onChanged: _busy ? null : (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _passengerCount = value;
+                          _quote = null;
+                        });
+                      },
+                    ),
+                  ],
+                ],
                 const SizedBox(height: 10),
                 SegmentedButton<bool>(
                   segments: const [
@@ -385,7 +451,14 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Estimated fare', style: Theme.of(context).textTheme.titleMedium),
+                          Text(
+                            _rideMode == 'shared_auto'
+                                ? 'Shared Auto · $_passengerCount passenger(s)'
+                                : 'Estimated fare',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          if (_rideMode == 'shared_auto')
+                            const Text('Your price is per booking. Other passengers have separate bookings and fares.'),
                           Text(
                             '₹' + (_quote!['estimated_fare'] as num).toStringAsFixed(2),
                             style: Theme.of(context).textTheme.headlineMedium,
@@ -411,8 +484,20 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Ride requested', style: Theme.of(context).textTheme.titleLarge),
+                          Text(
+                            _sharedAuto == null ? 'Ride requested' : 'Shared Auto requested',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
                           Text('Ride ID: ' + _booking!['id'].toString()),
+                          if (_sharedAuto != null) ...[
+                            Text('Shared Auto seats reserved: ' +
+                                (_sharedAuto!['reserved_seats'] ?? _passengerCount).toString() +
+                                ' of ' + (_sharedAuto!['seat_capacity'] ?? 3).toString()),
+                            if (_sharedAuto!['joined_existing_trip'] == true)
+                              const Text('You joined an existing compatible Auto trip.'),
+                            if (_sharedAuto!['status'] != null)
+                              Text('Shared trip status: ' + _sharedAuto!['status'].toString().replaceAll('_', ' ')),
+                          ],
                           Text('Status: ' + _booking!['status'].toString()),
                           if (_pickupOtp != null) ...[
                             const SizedBox(height: 8),
