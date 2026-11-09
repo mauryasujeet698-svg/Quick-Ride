@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
 
 
 class RidePoint {
@@ -36,7 +35,7 @@ class CustomerBookingScreen extends StatefulWidget {
 
 class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   final _pin = TextEditingController();
-  mbx.MapboxMap? _mapboxMap;
+  QuickRideMapController? _mapController;
   RidePoint? _pickup;
   RidePoint? _destination;
   List<Map<String, dynamic>> _categories = [];
@@ -153,16 +152,10 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _quote = null;
       });
       if (moveCamera) {
-        final map = _mapboxMap;
-        if (map != null) {
-          unawaited(map.flyTo(
-            mbx.CameraOptions(
-              center: mbx.Point(coordinates: mbx.Position(longitude, latitude)),
-              zoom: 15,
-            ),
-            mbx.MapAnimationOptions(duration: 650),
-          ));
-        }
+        _mapController?.moveTo(
+          LatLng(latitude, longitude),
+          zoom: 15,
+        );
       }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
@@ -362,7 +355,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             child: Stack(
               children: [
                 QuickRideMapView(
-                  key: const ValueKey('quick-ride-booking-mapbox-map'),
+                  key: const ValueKey('quick-ride-booking-osm-map'),
                   initialCenter: _pickup == null
                       ? const LatLng(20.5937, 78.9629)
                       : LatLng(_pickup!.latitude, _pickup!.longitude),
@@ -377,7 +370,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                       ? null
                       : LatLng(_destination!.latitude, _destination!.longitude),
                   routePoints: _quoteRoutePoints,
-                  onMapCreated: (map) => _mapboxMap = map,
+                  onMapCreated: (map) => _mapController = map,
                   onTap: (point) => _setPoint(
                     longitude: point.longitude,
                     latitude: point.latitude,
