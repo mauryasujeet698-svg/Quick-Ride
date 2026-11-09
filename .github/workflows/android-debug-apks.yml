@@ -47,8 +47,8 @@ jobs:
               repository_index = text.find('repositories {', section)
               if section < 0 or repository_index < 0:
                   raise SystemExit(f"Could not locate dependency repositories in {path}")
-              line_end = text.find('\\n', repository_index) + 1
-              line_start = text.rfind('\\n', 0, repository_index) + 1
+              line_end = text.find('\n', repository_index) + 1
+              line_start = text.rfind('\n', 0, repository_index) + 1
               indent = text[line_start:repository_index]
               repository = indent + '    maven { url = uri("https://api.mapbox.com/downloads/v2/releases/maven") }\\n'
               text = text[:line_end] + repository + text[line_end:]
