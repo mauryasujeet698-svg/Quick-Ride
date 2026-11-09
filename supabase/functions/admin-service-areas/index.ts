@@ -446,7 +446,8 @@ Deno.serve(async (req: Request) => {
         const { data: fares, error: fareError } = await admin.from("fare_configs")
           .select("id").eq("service_area_id", pin.service_area_id)
           .in("vehicle_category_id", autoIds).eq("is_active", true)
-          .lte("valid_from", new Date().toISOString()).limit(1);
+          .lte("valid_from", new Date().toISOString())
+          .or(`valid_until.is.null,valid_until.gt.${new Date().toISOString()}`).limit(1);
         if (fareError) return fail(500, "Unable to verify Auto fare configuration");
         if (!fares?.length) return fail(409, "Configure an active Auto fare before enabling Shared Auto");
       }
