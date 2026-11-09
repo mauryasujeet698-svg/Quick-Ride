@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { calculateSharedAutoRoute, type SharedAutoLeg, type SharedAutoRoute } from "../_shared/shared-auto-routing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
