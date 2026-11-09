@@ -134,7 +134,7 @@ class _AdminNotificationCenterScreenState
                   ),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<String>(
-                    value: _appRole,
+                    initialValue: _appRole,
                     decoration:
                         const InputDecoration(labelText: 'Application audience'),
                     items: const [
@@ -151,7 +151,7 @@ class _AdminNotificationCenterScreenState
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: _recipientMode,
+                    initialValue: _recipientMode,
                     decoration: const InputDecoration(labelText: 'Recipients'),
                     items: const [
                       DropdownMenuItem(
