@@ -172,7 +172,7 @@ Deno.serve(async (req: Request) => {
     if (action === "list") {
       const { data, error } = await admin
         .from("service_areas")
-        .select("id,name,city,state,country_code,timezone,is_active,service_area_pincodes(id,pincode,label,is_active,service_area_commercial_configs(id,business_model,subscription_amount,subscription_period,commission_percent,currency,valid_from,valid_until,is_active),service_area_dispatch_configs(id,initial_radius_m,max_radius_m,radius_step_m,offer_batch_size,offer_ttl_seconds,location_max_age_seconds,chain_pickup_distance_m,chain_offer_ttl_seconds))")
+        .select("id,name,city,state,country_code,timezone,is_active,service_area_pincodes(id,pincode,label,is_active,service_area_commercial_configs(id,business_model,subscription_amount,subscription_period,commission_percent,currency,valid_from,valid_until,is_active),service_area_dispatch_configs(id,initial_radius_m,max_radius_m,radius_step_m,offer_batch_size,offer_ttl_seconds,location_max_age_seconds,chain_pickup_distance_m,chain_offer_ttl_seconds),shared_auto_configs(pincode_id,is_enabled,seat_capacity,max_detour_percent,max_extra_minutes,fare_share_percent_per_seat))")
         .order("city", { ascending: true });
       if (error) return fail(500, "Unable to load service areas");
       return response(200, { service_areas: data ?? [] });
@@ -402,6 +402,73 @@ Deno.serve(async (req: Request) => {
       });
       if (error) return fail(400, error.message);
       return response(201, data as Json);
+    }
+
+    if (action === "configure_shared_auto") {
+      const pincodeId = Number(body.pincodeId);
+      const isEnabled = body.isEnabled;
+      const seatCapacity = Number(body.seatCapacity);
+      const maxDetourPercent = Number(body.maxDetourPercent);
+      const maxExtraMinutes = Number(body.maxExtraMinutes);
+      const fareSharePercent = Number(body.fareSharePercentPerSeat);
+      if (!Number.isSafeInteger(pincodeId) || typeof isEnabled !== "boolean") {
+        return fail(400, "A valid pincodeId and isEnabled value are required");
+      }
+      if (!Number.isSafeInteger(seatCapacity) || seatCapacity < 1 || seatCapacity > 3) {
+        return fail(400, "Shared Auto capacity must be between one and three passengers");
+      }
+      if (!Number.isFinite(maxDetourPercent) || maxDetourPercent < 0 || maxDetourPercent > 100) {
+        return fail(400, "Maximum route detour must be between 0 and 100 percent");
+      }
+      if (!Number.isSafeInteger(maxExtraMinutes) || maxExtraMinutes < 0 || maxExtraMinutes > 60) {
+        return fail(400, "Maximum extra travel time must be between zero and 60 minutes");
+      }
+      if (!Number.isFinite(fareSharePercent) || fareSharePercent < 10 || fareSharePercent > 100) {
+        return fail(400, "Fare share per passenger must be between 10 and 100 percent");
+      }
+
+      const { data: pin, error: pinError } = await admin.from("service_area_pincodes")
+        .select("id,pincode,is_active,service_area_id,service_areas!inner(is_active)")
+        .eq("id", pincodeId).maybeSingle();
+      if (pinError || !pin) return fail(404, "Service pincode not found");
+      if (isEnabled) {
+        const area = pin.service_areas as unknown as { is_active?: boolean } | null;
+        if (pin.is_active !== true || area?.is_active !== true) {
+          return fail(409, "Activate the service area and pincode before enabling Shared Auto");
+        }
+        const { data: autoCategories, error: categoryError } = await admin.from("vehicle_categories")
+          .select("id,code").eq("is_active", true);
+        if (categoryError) return fail(500, "Unable to verify Auto category");
+        const autoIds = (autoCategories ?? [])
+          .filter((item) => ["auto", "autorickshaw"].includes(String(item.code).toLowerCase().replace(/[^a-z0-9]/g, "")))
+          .map((item) => Number(item.id));
+        if (!autoIds.length) return fail(409, "Create and activate the Auto vehicle category first");
+        const { data: fares, error: fareError } = await admin.from("fare_configs")
+          .select("id").eq("service_area_id", pin.service_area_id)
+          .in("vehicle_category_id", autoIds).eq("is_active", true)
+          .lte("valid_from", new Date().toISOString()).limit(1);
+        if (fareError) return fail(500, "Unable to verify Auto fare configuration");
+        if (!fares?.length) return fail(409, "Configure an active Auto fare before enabling Shared Auto");
+      }
+
+      const { data: before, error: beforeError } = await admin.from("shared_auto_configs")
+        .select("*").eq("pincode_id", pincodeId).maybeSingle();
+      if (beforeError) return fail(500, "Unable to load current Shared Auto settings");
+      const updates = {
+        pincode_id: pincodeId,
+        is_enabled: isEnabled,
+        seat_capacity: seatCapacity,
+        max_detour_percent: maxDetourPercent,
+        max_extra_minutes: maxExtraMinutes,
+        fare_share_percent_per_seat: fareSharePercent,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id,
+      };
+      const { data, error } = await admin.from("shared_auto_configs")
+        .upsert(updates, { onConflict: "pincode_id" }).select("*").single();
+      if (error) return fail(400, "Unable to save Shared Auto settings");
+      await audit("shared_auto_config.updated", "shared_auto_configs", String(pincodeId), before, data);
+      return response(200, { shared_auto_config: data });
     }
 
     if (action === "set_dispatch_config") {
