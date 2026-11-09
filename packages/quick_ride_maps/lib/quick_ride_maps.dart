@@ -305,7 +305,7 @@ class QuickRideMapController {
 
   void fitRoute(List<LatLng> points, {EdgeInsets padding = const EdgeInsets.fromLTRB(36, 175, 36, 250)}) {
     if (!_ready || points.length < 2) return;
-    final bounds = LatLngBounds.fromPoints(points);
+    final bounds = fm.LatLngBounds.fromPoints(points);
     _controller.fitCamera(fm.CameraFit.bounds(bounds: bounds, padding: padding));
   }
 
