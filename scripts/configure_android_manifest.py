@@ -90,7 +90,10 @@ def main() -> int:
         ),
     }
     fill, circle_path, symbol_path = icon_paths.get(role, icon_paths["customer"])
-    drawable_dir = manifest_path.parent / "src" / "main" / "res" / "drawable"
+    # MANIFEST_PATH already lives in app/src/main/, so resources belong
+    # beside it under app/src/main/res (not another nested src/main tree).
+    res_dir = manifest_path.parent / "res"
+    drawable_dir = res_dir / "drawable"
     drawable_dir.mkdir(parents=True, exist_ok=True)
     launcher = (
         '<vector xmlns:android="http://schemas.android.com/apk/res/android" '
@@ -104,7 +107,7 @@ def main() -> int:
     application.set(f"{{{ANDROID_NS}}}icon", "@drawable/quick_ride_launcher")
     application.set(f"{{{ANDROID_NS}}}roundIcon", "@drawable/quick_ride_launcher")
 
-    values_dir = manifest_path.parent / "src" / "main" / "res" / "values"
+    values_dir = res_dir / "values"
     values_dir.mkdir(parents=True, exist_ok=True)
     (values_dir / "quick_ride_branding.xml").write_text(
         '<?xml version="1.0" encoding="utf-8"?>\n'
