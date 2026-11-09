@@ -364,11 +364,15 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
   @override
   void didUpdateWidget(covariant QuickRideMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final routeChanged = !listEquals(oldWidget.routePoints, widget.routePoints);
     if (_annotationsReady &&
         (oldWidget.pickup != widget.pickup ||
             oldWidget.destination != widget.destination ||
-            !listEquals(oldWidget.routePoints, widget.routePoints))) {
+            routeChanged)) {
       unawaited(_refreshAnnotations());
+      if (routeChanged && !widget.navigationCamera && widget.routePoints.length >= 2) {
+        unawaited(_fitRoute());
+      }
     }
     if (widget.recenterSignal != oldWidget.recenterSignal) {
       _userMovedCamera = false;
@@ -469,6 +473,28 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
 
     await addPoint(widget.pickup, 'PICKUP', 0xFF159B65);
     await addPoint(widget.destination, 'DROP', 0xFFD94747);
+  }
+
+  Future<void> _fitRoute() async {
+    final map = _map;
+    final points = widget.routePoints;
+    if (map == null || points.length < 2) return;
+    try {
+      final fitted = await map.cameraForCoordinates(
+        points.map(_mapPoint).toList(growable: false),
+        mbx.MbxEdgeInsets(
+          top: 175,
+          left: 36,
+          bottom: 300,
+          right: 36,
+        ),
+        null,
+        null,
+      );
+      await map.flyTo(fitted, mbx.MapAnimationOptions(duration: 800));
+    } catch (error) {
+      debugPrint('Quick Ride route camera fit failed: $error');
+    }
   }
 
   Future<void> _moveCamera(LatLng point, {required bool animated}) async {
