@@ -523,7 +523,7 @@ begin
   select * into v_trip from public.shared_auto_trips
   where id=p_shared_auto_trip_id and driver_id=p_driver_id
   for update;
-  if not found or v_trip.status not in ('assigned','in_progress') then
+  if not found or v_trip.status not in ('assigned','in_progress','completed') then
     raise exception 'Shared Auto trip is not assigned to this driver' using errcode='42501';
   end if;
   select * into v_stop from public.shared_auto_trip_stops
