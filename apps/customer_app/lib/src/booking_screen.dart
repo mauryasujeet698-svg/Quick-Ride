@@ -230,7 +230,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             : null;
         final configuredCapacity = (shared?['max_passengers'] as num?)?.toInt() ?? 3;
         setState(() {
-          _sharedAutoCapacity = configuredCapacity.clamp(1, 3);
+          _sharedAutoCapacity = configuredCapacity.clamp(1, 3).toInt();
           _booking = null;
           _sharedAuto = null;
           _pickupOtp = null;
