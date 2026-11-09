@@ -740,6 +740,15 @@ begin
     );
   end if;
 
+  if v_ride.shared_auto_trip_id is not null then
+    -- A shared Auto driver must finish the whole group before a preaccepted
+    -- sequential ride can be activated.
+    update public.ride_chain_offers
+    set status='withdrawn',responded_at=now()
+    where current_ride_id=p_ride_id and driver_id=p_driver_id
+      and status='preaccepted';
+  end if;
+
   v_result:=public.finish_ride(p_ride_id,p_driver_id,v_final_fare);
 
   update public.rides
@@ -783,6 +792,63 @@ revoke all on function public.finish_ride_from_track(uuid,uuid)
   from public,anon,authenticated;
 grant execute on function public.finish_ride_from_track(uuid,uuid)
   to service_role;
+
+create or replace function public.keep_shared_auto_driver_busy()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.availability_status='online' and exists (
+    select 1
+    from public.rides r
+    join public.shared_auto_trips t on t.id=r.shared_auto_trip_id
+    where r.driver_id=new.user_id
+      and r.status in ('accepted','driver_arriving','arrived','in_progress')
+      and t.status in ('assigned','in_progress')
+  ) then
+    new.availability_status:='busy';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists driver_profiles_keep_shared_auto_busy on public.driver_profiles;
+create trigger driver_profiles_keep_shared_auto_busy
+before update of availability_status on public.driver_profiles
+for each row execute function public.keep_shared_auto_driver_busy();
+
+create or replace function public.refresh_shared_auto_driver_availability()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_busy boolean;
+begin
+  if new.status not in ('completed','cancelled') or new.driver_id is null then
+    return new;
+  end if;
+  select exists (
+    select 1 from public.rides r
+    where r.driver_id=new.driver_id
+      and r.status in ('accepted','driver_arriving','arrived','in_progress')
+  ) into v_busy;
+  update public.driver_profiles
+  set availability_status=case when v_busy then 'busy' else 'online' end
+  where user_id=new.driver_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists shared_auto_trip_refresh_driver_availability on public.shared_auto_trips;
+create trigger shared_auto_trip_refresh_driver_availability
+after update of status on public.shared_auto_trips
+for each row
+when (old.status is distinct from new.status)
+execute function public.refresh_shared_auto_driver_availability();
 
 comment on table public.shared_auto_trips is
   'One shared Auto vehicle journey. Shared Auto only; capacity is hard-limited to three seats.';
