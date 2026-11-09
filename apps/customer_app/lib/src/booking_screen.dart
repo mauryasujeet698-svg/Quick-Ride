@@ -49,6 +49,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   bool _loadingCategories = true;
   String? _error;
   Map<String, dynamic>? _quote;
+  List<Map<String, dynamic>> _serviceQuotes = [];
   Map<String, dynamic>? _booking;
   Map<String, dynamic>? _sharedAuto;
   String? _pickupOtp;
@@ -187,19 +188,26 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         .toList(growable: false);
   }
 
-  Map<String, dynamic> _request(String action) => {
+  Map<String, dynamic> _request(
+    String action, {
+    int? categoryId,
+    String? rideMode,
+    int? passengerCount,
+  }) => {
         'action': action,
         'pincode': _pin.text.trim(),
-        'vehicleCategoryId': _categoryId,
-        'rideMode': _rideMode,
-        'passengerCount': _rideMode == 'shared_auto' ? _passengerCount : 1,
+        'vehicleCategoryId': categoryId ?? _categoryId,
+        'rideMode': rideMode ?? _rideMode,
+        'passengerCount': (rideMode ?? _rideMode) == 'shared_auto'
+            ? (passengerCount ?? _passengerCount)
+            : 1,
         'pickup': _pickup!.toJson(),
         'destination': _destination!.toJson(),
       };
 
   Future<void> _getQuote() async {
     if (QuickRideAuth.currentUser == null) {
-      setState(() => _error = 'Sign in with Google to request a fare estimate.');
+      setState(() => _error = 'Sign in with Google to compare ride options.');
       await QuickRideAuth.signInWithGoogle(
         redirectTo: 'in.quickride.customer://login-callback',
       );
@@ -213,37 +221,85 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       setState(() => _error = 'Enter the pickup service pincode.');
       return;
     }
-    if (_categoryId == null) {
-      setState(() => _error = 'No active vehicle category is configured.');
+    if (_categories.isEmpty) {
+      setState(() => _error = 'No active vehicle categories are configured.');
       return;
     }
+
     await _run(() async {
-      final result = await QuickRideBackend.invoke(
-        'ride-booking',
-        body: _request('quote'),
-      );
-      final data = Map<String, dynamic>.from(result.data as Map);
-      if (mounted) {
-        final quote = Map<String, dynamic>.from(data['quote'] as Map);
-        final shared = quote['shared_auto'] is Map
-            ? Map<String, dynamic>.from(quote['shared_auto'] as Map)
-            : null;
-        final configuredCapacity = (shared?['max_passengers'] as num?)?.toInt() ?? 3;
-        setState(() {
-          _sharedAutoCapacity = configuredCapacity.clamp(1, 3).toInt();
-          _booking = null;
-          _sharedAuto = null;
-          _pickupOtp = null;
-          if (_rideMode == 'shared_auto' && _passengerCount > _sharedAutoCapacity) {
-            _passengerCount = _sharedAutoCapacity;
-            _quote = null;
-            _error = 'This service area currently allows up to $_sharedAutoCapacity passengers per shared Auto. Please check the fare again.';
-          } else {
-            _quote = quote;
-            _error = null;
+      final results = <Map<String, dynamic>>[];
+      for (final category in _categories) {
+        final id = (category['id'] as num).toInt();
+        final name = category['name'].toString();
+        final code = category['code'].toString().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        try {
+          final response = await QuickRideBackend.invoke(
+            'ride-booking',
+            body: _request('quote', categoryId: id, rideMode: 'private'),
+          );
+          final data = Map<String, dynamic>.from(response.data as Map);
+          final quote = Map<String, dynamic>.from(data['quote'] as Map);
+          results.add({
+            'category_id': id,
+            'category_name': name,
+            'category_code': code,
+            'ride_mode': 'private',
+            'passenger_count': 1,
+            'quote': quote,
+          });
+        } catch (_) {
+          // A category without an active fare/service configuration is not offered.
+        }
+
+        if (code == 'auto' || code == 'autorickshaw') {
+          try {
+            final response = await QuickRideBackend.invoke(
+              'ride-booking',
+              body: _request('quote', categoryId: id, rideMode: 'shared_auto', passengerCount: 1),
+            );
+            final data = Map<String, dynamic>.from(response.data as Map);
+            final quote = Map<String, dynamic>.from(data['quote'] as Map);
+            if (quote['shared_auto'] is Map) {
+              results.add({
+                'category_id': id,
+                'category_name': 'Shared Auto',
+                'category_code': code,
+                'ride_mode': 'shared_auto',
+                'passenger_count': 1,
+                'quote': quote,
+              });
+            }
+          } catch (_) {
+            // Shared Auto is intentionally omitted unless enabled and quotable in this pincode.
           }
-        });
+        }
       }
+      if (!mounted) return;
+      setState(() {
+        _serviceQuotes = results;
+        _quote = null;
+        _booking = null;
+        _sharedAuto = null;
+        _pickupOtp = null;
+        if (results.isEmpty) {
+          _error = 'No ride services are currently available for this route and pincode.';
+        } else {
+          _error = null;
+        }
+      });
+    });
+  }
+
+  void _selectServiceOption(Map<String, dynamic> option) {
+    setState(() {
+      _categoryId = (option['category_id'] as num).toInt();
+      _rideMode = option['ride_mode'].toString();
+      _passengerCount = 1;
+      _quote = Map<String, dynamic>.from(option['quote'] as Map);
+      _sharedAutoCapacity = ((_quote!['shared_auto'] as Map?)?['max_passengers'] as num?)?.toInt() ?? 3;
+      _booking = null;
+      _sharedAuto = null;
+      _pickupOtp = null;
     });
   }
 
