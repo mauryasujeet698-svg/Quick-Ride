@@ -69,6 +69,18 @@ def main() -> int:
     if application is None:
         raise SystemExit("Android application element not found")
     application.set(f"{{{ANDROID_NS}}}label", app_labels.get(role, "Quick Ride"))
+    firebase_fid_meta = application.find(
+        "meta-data[@android:name='firebase_messaging_installation_id_enabled']"
+    )
+    if firebase_fid_meta is None:
+        ET.SubElement(
+            application,
+            "meta-data",
+            {
+                f"{{{ANDROID_NS}}}name": "firebase_messaging_installation_id_enabled",
+                f"{{{ANDROID_NS}}}value": "true",
+            },
+        )
 
     # Android 11+ discovery for voice-search recognition services.
     if role == "customer" and root.find("queries") is None:

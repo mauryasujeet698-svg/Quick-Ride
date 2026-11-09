@@ -39,6 +39,7 @@ class _DriverRideNavigationScreenState
   double? _durationRemaining;
   String? _instruction;
   bool _loading = true;
+  int _mapRecenterSignal = 0;
   bool _routeRequestInFlight = false;
   bool _arrived = false;
   bool _finishing = false;
@@ -285,6 +286,7 @@ class _DriverRideNavigationScreenState
   }
 
   void _centerMap() {
+    setState(() => _mapRecenterSignal++);
     final center = _currentPosition ?? _targetPosition;
     final map = _mapboxMap;
     if (center != null && map != null) {
@@ -383,6 +385,7 @@ class _DriverRideNavigationScreenState
                             routePoints: _routePoints,
                             followCurrentPosition: true,
                             navigationCamera: true,
+                            recenterSignal: _mapRecenterSignal,
                             onMapCreated: (map) => _mapboxMap = map,
                           ),
                         ),

@@ -329,6 +329,7 @@ class QuickRideMapView extends StatefulWidget {
     this.onTap,
     this.followCurrentPosition = false,
     this.navigationCamera = false,
+    this.recenterSignal = 0,
   });
 
   final LatLng? initialCenter;
@@ -342,6 +343,7 @@ class QuickRideMapView extends StatefulWidget {
   final ValueChanged<LatLng>? onTap;
   final bool followCurrentPosition;
   final bool navigationCamera;
+  final int recenterSignal;
 
   @override
   State<QuickRideMapView> createState() => _QuickRideMapViewState();
@@ -368,7 +370,11 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
             !listEquals(oldWidget.routePoints, widget.routePoints))) {
       unawaited(_refreshAnnotations());
     }
-    if (widget.followCurrentPosition &&
+    if (widget.recenterSignal != oldWidget.recenterSignal) {
+      _userMovedCamera = false;
+      final point = widget.currentPosition ?? widget.initialCenter;
+      if (point != null) unawaited(_moveCamera(point, animated: true));
+    } else if (widget.followCurrentPosition &&
         !_userMovedCamera &&
         widget.currentPosition != null &&
         oldWidget.currentPosition != widget.currentPosition) {

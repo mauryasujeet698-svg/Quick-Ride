@@ -26,6 +26,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   final _otp = TextEditingController();
   bool _busy = false;
   bool _online = false;
+  LatLng? _currentPosition;
+  int _mapRecenterSignal = 0;
   bool _syncingAvailability = false;
   String? _availabilitySyncKey;
   Map<String, dynamic>? _earnings;
@@ -46,6 +48,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_detectCurrentPosition());
     if (QuickRideBackend.isInitialized) {
       _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
         if (!mounted) return;
@@ -594,10 +597,90 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     }
   }
 
+  Future<void> _detectCurrentPosition() async {
+    try {
+      final position = await QuickRideMaps.currentPosition();
+      if (!mounted) return;
+      setState(() {
+        _currentPosition = LatLng(position.latitude, position.longitude);
+      });
+    } catch (error) {
+      if (mounted) setState(() {
+        _message = 'Location unavailable. Enable GPS and grant location permission to go online.';
+      });
+    }
+  }
+
+  void _recenterMap() {
+    setState(() => _mapRecenterSignal++);
+  }
+
+  Widget _captainMap({double height = 270}) => SizedBox(
+        height: height,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            children: [
+              QuickRideMapView(
+                key: const ValueKey('quick-ride-captain-map'),
+                initialCenter: _currentPosition ?? const LatLng(20.5937, 78.9629),
+                initialZoom: _currentPosition == null ? 4.5 : 15.5,
+                currentPosition: _currentPosition,
+                followCurrentPosition: true,
+                navigationCamera: true,
+                recenterSignal: _mapRecenterSignal,
+              ),
+              Positioned(
+                right: 12,
+                bottom: 12,
+                child: FloatingActionButton.small(
+                  heroTag: 'captain-map-recenter',
+                  onPressed: _currentPosition == null
+                      ? _detectCurrentPosition
+                      : _recenterMap,
+                  child: const Icon(Icons.my_location_rounded),
+                ),
+              ),
+              Positioned(
+                left: 12,
+                top: 12,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.circle, size: 9,
+                            color: _online ? Colors.green : Colors.grey),
+                        const SizedBox(width: 7),
+                        Text(_online ? 'You are online' : 'You are offline',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                            )),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
   void _startLocationUpdates() {
     if (_locationSubscription != null) return;
     _locationSubscription = QuickRideMaps.watchDriverPosition().listen(
       (position) async {
+        if (mounted) {
+          setState(() {
+            _currentPosition = LatLng(position.latitude, position.longitude);
+          });
+        }
         final now = DateTime.now();
         if (now.difference(_lastLocationSent) < const Duration(seconds: 8)) return;
         _lastLocationSent = now;
@@ -650,7 +733,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Quick-Ride Driver'),
+        title: const Text('Quick Ride Captain'),
         actions: [
           IconButton(
             tooltip: 'Sign in',
@@ -677,6 +760,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             'Explore the driver app before connecting your live driver account.',
             style: Theme.of(context).textTheme.bodyLarge,
           ),
+          const SizedBox(height: 14),
+          _captainMap(height: 300),
           const SizedBox(height: 14),
           Card(
             color: colors.secondaryContainer,
@@ -732,7 +817,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           _previewTile(
             Icons.navigation_outlined,
             'Trip navigation',
-            'OpenStreetMap route, live GPS, ETA and spoken directions',
+            'Mapbox route, live GPS, ETA and spoken directions',
           ),
           _previewTile(
             Icons.pin_outlined,
@@ -796,7 +881,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Quick-Ride Driver'),
+        title: const Text('Quick Ride Captain'),
         actions: [
           IconButton(onPressed: QuickRideAuth.signOut, icon: const Icon(Icons.logout)),
         ],
@@ -817,6 +902,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              _captainMap(height: 290),
+              const SizedBox(height: 12),
               _availabilityCard(),
               const SizedBox(height: 12),
               _earningsCard(),

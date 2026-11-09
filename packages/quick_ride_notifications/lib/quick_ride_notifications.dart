@@ -97,8 +97,8 @@ class QuickRideNotifications {
           }
         },
       );
-      // Keep FCM registration-token refresh: the server's FCM HTTP v1 sender
-      // targets registration tokens, not Firebase Installation IDs.
+      // firebase_messaging 17 registers a Firebase Installation ID (FID).
+      // The server sends this through FCM HTTP v1's message.fid target.
       // ignore: deprecated_member_use
       _tokenSubscription ??= _messaging!.onRegistered.listen((installationId) {
         _currentInstallationId = installationId;
@@ -149,10 +149,8 @@ class QuickRideNotifications {
           settings.authorizationStatus != AuthorizationStatus.provisional) {
         return;
       }
-      // ignore: deprecated_member_use
-      // Firebase Messaging 17 registers an installation ID (FID), not
-      // the legacy FCM registration token. The active onRegistered listener
-      // persists the FID for use with the FCM HTTP v1 send endpoint.
+      // Firebase Messaging 17 registers the FID. The send-push Edge Function
+      // persists and uses this FID with the FCM HTTP v1 message.fid target.
       await messaging.register();
     } catch (error) {
       debugPrint('Quick-Ride could not register this device for push: $error');
