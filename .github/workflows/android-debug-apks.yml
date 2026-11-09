@@ -1,5 +1,7 @@
 name: Build Quick-Ride Android QA APKs
 on:
+  push:
+    branches: [main, feature/mapbox-three-app-redesign]
   pull_request:
     branches: [main]
   workflow_dispatch:
