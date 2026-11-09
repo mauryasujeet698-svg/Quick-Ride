@@ -28,7 +28,7 @@ create table if not exists public.shared_auto_trips (
   status text not null default 'matching'
     check (status in ('matching','assigned','in_progress','completed','cancelled')),
   seat_capacity smallint not null default 3 check (seat_capacity between 1 and 3),
-  reserved_seats smallint not null check (reserved_seats between 1 and 3),
+  reserved_seats smallint not null check (reserved_seats between 0 and 3),
   route_distance_m integer check (route_distance_m is null or route_distance_m >= 0),
   route_duration_s integer check (route_duration_s is null or route_duration_s >= 0),
   created_at timestamptz not null default now(),
@@ -91,7 +91,7 @@ using (
   driver_id = (select auth.uid())
   or exists (
     select 1 from public.shared_auto_trip_bookings b
-    where b.shared_auto_trip_id = id and b.customer_id = (select auth.uid())
+    where b.shared_auto_trip_id = public.shared_auto_trips.id and b.customer_id = (select auth.uid())
   )
 );
 
@@ -141,8 +141,9 @@ declare
   v_trip public.shared_auto_trips%rowtype;
   v_stop jsonb;
   v_stop_count integer := 0;
+  v_booking_count integer := 0;
 begin
-  if p_passenger_count not between 1 and 3 then
+  if p_passenger_count is null or p_passenger_count not between 1 and 3 then
     raise exception 'Shared Auto supports one to three passengers per booking' using errcode='22023';
   end if;
 
@@ -185,6 +186,9 @@ begin
   insert into public.shared_auto_trip_bookings(
     shared_auto_trip_id,ride_id,customer_id,passenger_count
   ) values (v_trip.id,v_ride.id,v_ride.customer_id,p_passenger_count);
+
+  select count(*) into v_booking_count from public.shared_auto_trip_bookings
+  where shared_auto_trip_id=v_trip.id and status='confirmed';
 
   update public.rides set ride_mode='shared_auto',passenger_count=p_passenger_count,
     shared_auto_trip_id=v_trip.id where id=v_ride.id;
@@ -252,7 +256,7 @@ declare
   v_stop jsonb;
   v_stop_count integer := 0;
 begin
-  if p_passenger_count not between 1 and 3
+  if p_passenger_count is null or p_passenger_count not between 1 and 3
      or p_route_distance_m is null or p_route_distance_m <= 0
      or p_route_duration_s is null or p_route_duration_s <= 0
      or p_detour_percent is null or p_detour_percent < 0
@@ -326,12 +330,18 @@ begin
     );
     v_stop_count := v_stop_count + 1;
   end loop;
-  if v_stop_count <> (v_reserved + p_passenger_count) * 2 then
-    -- A customer booking may contain two or three seats; stops are still one
-    -- pickup and one dropoff per booking, not one stop per passenger.
-    if v_stop_count < 4 or v_stop_count > 6 then
-      raise exception 'Shared Auto route must contain one pickup and dropoff per booking' using errcode='22023';
-    end if;
+  if v_stop_count <> v_booking_count * 2 then
+    raise exception 'Shared Auto route must contain one pickup and dropoff per booking' using errcode='22023';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(p_route_plan) x
+    where not exists (
+      select 1 from public.shared_auto_trip_bookings b
+      where b.shared_auto_trip_id=v_trip.id and b.status='confirmed'
+        and b.ride_id=(x->>'ride_id')::uuid
+    )
+  ) then
+    raise exception 'Shared Auto route contains a booking outside this trip' using errcode='22023';
   end if;
 
   update public.shared_auto_trips set
