@@ -385,6 +385,7 @@ class QuickRideMapView extends StatefulWidget {
     this.navigationCamera = false,
     this.recenterSignal = 0,
     this.fitRouteBottomInset = 300,
+    this.userAgentPackageName = 'com.quickride.customer',
   });
 
   final LatLng? initialCenter;
@@ -400,6 +401,7 @@ class QuickRideMapView extends StatefulWidget {
   final bool navigationCamera;
   final int recenterSignal;
   final double fitRouteBottomInset;
+  final String userAgentPackageName;
 
   @override
   State<QuickRideMapView> createState() => _QuickRideMapViewState();
@@ -474,21 +476,27 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
         widget.initialCenter ??
         const LatLng(20.5937, 78.9629);
     final markers = <fm.Marker>[];
-    if (widget.currentPosition != null && widget.showUserLocation) {
+    if (widget.currentPosition != null) {
       markers.add(fm.Marker(
         point: widget.currentPosition!,
-        width: 34,
-        height: 34,
+        width: 38,
+        height: 38,
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF2563EB),
+            color: widget.showUserLocation
+                ? const Color(0xFF2563EB)
+                : const Color(0xFF0F766E),
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 4),
             boxShadow: const [
               BoxShadow(color: Color(0x44000000), blurRadius: 8),
             ],
           ),
-          child: const Icon(Icons.navigation_rounded, color: Colors.white, size: 17),
+          child: Icon(
+            widget.showUserLocation ? Icons.navigation_rounded : Icons.electric_rickshaw,
+            color: Colors.white,
+            size: 18,
+          ),
         ),
       ));
     }
@@ -539,7 +547,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
       children: [
         fm.TileLayer(
           urlTemplate: QuickRideMaps.tileUrl,
-          userAgentPackageName: 'com.quickride.customer',
+          userAgentPackageName: widget.userAgentPackageName,
           maxNativeZoom: 19,
         ),
         if (widget.routePoints.length >= 2)
