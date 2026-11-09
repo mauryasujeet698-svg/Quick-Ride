@@ -75,26 +75,26 @@ jobs:
               cd "apps/${app}_app"
               mkdir -p build/symbols
               FIREBASE_APP_ID="$firebase_app_id" python3 - <<'PY'
-import json
-import os
-from pathlib import Path
+          import json
+          import os
+          from pathlib import Path
 
-defines = {
-    "SUPABASE_URL": os.environ["SUPABASE_URL"].strip(),
-    "SUPABASE_PUBLISHABLE_KEY": os.environ["SUPABASE_PUBLISHABLE_KEY"].strip(),
-    "MAPBOX_ACCESS_TOKEN": os.environ["MAPBOX_ACCESS_TOKEN"].strip(),
-    "FIREBASE_API_KEY": os.environ["FIREBASE_API_KEY"].strip(),
-    "FIREBASE_PROJECT_ID": os.environ["FIREBASE_PROJECT_ID"].strip(),
-    "FIREBASE_MESSAGING_SENDER_ID": os.environ["FIREBASE_MESSAGING_SENDER_ID"].strip(),
-    "FIREBASE_APP_ID": os.environ["FIREBASE_APP_ID"].strip(),
-}
-if any(not value for value in defines.values()):
-    raise SystemExit("One or more required build defines are empty")
-Path("build/quick_ride.defines.json").write_text(
-    json.dumps(defines, separators=(",", ":")),
-    encoding="utf-8",
-)
-PY
+          defines = {
+              "SUPABASE_URL": os.environ["SUPABASE_URL"].strip(),
+              "SUPABASE_PUBLISHABLE_KEY": os.environ["SUPABASE_PUBLISHABLE_KEY"].strip(),
+              "MAPBOX_ACCESS_TOKEN": os.environ["MAPBOX_ACCESS_TOKEN"].strip(),
+              "FIREBASE_API_KEY": os.environ["FIREBASE_API_KEY"].strip(),
+              "FIREBASE_PROJECT_ID": os.environ["FIREBASE_PROJECT_ID"].strip(),
+              "FIREBASE_MESSAGING_SENDER_ID": os.environ["FIREBASE_MESSAGING_SENDER_ID"].strip(),
+              "FIREBASE_APP_ID": os.environ["FIREBASE_APP_ID"].strip(),
+          }
+          if any(not value for value in defines.values()):
+              raise SystemExit("One or more required build defines are empty")
+          Path("build/quick_ride.defines.json").write_text(
+              json.dumps(defines, separators=(",", ":")),
+              encoding="utf-8",
+          )
+          PY
               flutter build apk --release --split-per-abi \
                 --obfuscate --split-debug-info="build/symbols/${app}" \
                 --dart-define-from-file=build/quick_ride.defines.json
