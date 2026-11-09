@@ -484,7 +484,16 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                         _rideMode == option['ride_mode'];
                     final distance = (quote['distance_m'] as num?)?.toDouble() ?? 0;
                     final duration = (quote['duration_s'] as num?)?.toInt() ?? 0;
+                    final availability = quote['availability'] is Map
+                        ? Map<String, dynamic>.from(quote['availability'] as Map)
+                        : null;
+                    final nearbyCount = (availability?['available_count'] as num?)?.toInt();
                     final shared = option['ride_mode'] == 'shared_auto';
+                    final availabilityLabel = nearbyCount == null
+                        ? 'Driver availability being checked'
+                        : nearbyCount == 0
+                            ? 'No drivers online in this pickup area'
+                            : '$nearbyCount driver(s) online in this pickup area';
                     return Card(
                       color: isSelected
                           ? Theme.of(context).colorScheme.primaryContainer
@@ -503,7 +512,15 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                         title: Text(option['category_name'].toString()),
                         subtitle: Text(
                           '${(distance / 1000).toStringAsFixed(1)} km · ${(duration / 60).ceil()} min'
-                          '${shared ? ' · 1 passenger' : ''}',
+                          '${shared ? ' · 1 passenger' : ''}\n'
+                          '$availabilityLabel',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: nearbyCount == 0
+                                ? Theme.of(context).colorScheme.error
+                                : Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         trailing: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -514,12 +531,22 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             TextButton(
-                              onPressed: _busy ? null : () => _selectServiceOption(option),
-                              child: Text(isSelected ? 'Selected' : 'Choose'),
+                              onPressed: _busy || nearbyCount == 0
+                                  ? null
+                                  : () => _selectServiceOption(option),
+                              child: Text(
+                                nearbyCount == 0
+                                    ? 'Unavailable'
+                                    : isSelected
+                                        ? 'Selected'
+                                        : 'Choose',
+                              ),
                             ),
                           ],
                         ),
-                        onTap: _busy ? null : () => _selectServiceOption(option),
+                        onTap: _busy || nearbyCount == 0
+                            ? null
+                            : () => _selectServiceOption(option),
                       ),
                     );
                   }),
