@@ -12,7 +12,6 @@ dependencies:
   supabase_flutter: ^2.18.3
   url_launcher: ^6.3.3
   share_plus: ^13.3.1
-  speech_to_text: ^7.5.0
   quick_ride_notifications:
     path: ../../packages/quick_ride_notifications
   quick_ride_auth:

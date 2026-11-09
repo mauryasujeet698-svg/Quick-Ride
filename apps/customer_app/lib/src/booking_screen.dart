@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
+
 
 class RidePoint {
   const RidePoint({
@@ -24,16 +26,16 @@ class RidePoint {
 }
 
 class CustomerBookingScreen extends StatefulWidget {
-  const CustomerBookingScreen({super.key});
+  const CustomerBookingScreen({super.key, this.initialPickup, this.initialDestination});
+  final RidePoint? initialPickup;
+  final RidePoint? initialDestination;
   @override
   State<CustomerBookingScreen> createState() => _CustomerBookingScreenState();
 }
 
 class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   final _pin = TextEditingController();
-  final MapController _mapController = MapController();
-  bool _mapReady = false;
-  LatLng? _pendingMapCenter;
+  mbx.MapboxMap? _mapboxMap;
   RidePoint? _pickup;
   RidePoint? _destination;
   List<Map<String, dynamic>> _categories = [];
@@ -49,8 +51,11 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   @override
   void initState() {
     super.initState();
+    _pickup = widget.initialPickup;
+    _destination = widget.initialDestination;
+    _selectPickup = _pickup == null;
     _loadCategories();
-    _tryCurrentLocation();
+    if (_pickup == null) _tryCurrentLocation();
   }
 
   @override
@@ -131,10 +136,15 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       });
       if (moveCamera) {
         final center = LatLng(latitude, longitude);
-        if (_mapReady) {
-          _mapController.move(center, 15);
-        } else {
-          _pendingMapCenter = center;
+        final map = _mapboxMap;
+        if (map != null) {
+          unawaited(map.flyTo(
+            mbx.CameraOptions(
+              center: mbx.Point(coordinates: mbx.Position(longitude, latitude)),
+              zoom: 15,
+            ),
+            const mbx.MapAnimationOptions(duration: 650),
+          ));
         }
       }
     } catch (error) {
@@ -260,69 +270,28 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             flex: 6,
             child: Stack(
               children: [
-                FlutterMap(
-                  key: const ValueKey('quick-ride-booking-map'),
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: const LatLng(20.5937, 78.9629),
-                    initialZoom: 4.5,
-                    onMapReady: () {
-                      _mapReady = true;
-                      final pending = _pendingMapCenter;
-                      if (pending != null) {
-                        _mapController.move(pending, 15);
-                        _pendingMapCenter = null;
-                      }
-                    },
-                    onTap: (_, point) => _setPoint(
-                      longitude: point.longitude,
-                      latitude: point.latitude,
-                      pickup: _selectPickup,
-                    ),
+                QuickRideMapView(
+                  key: const ValueKey('quick-ride-booking-mapbox-map'),
+                  initialCenter: _pickup == null
+                      ? const LatLng(20.5937, 78.9629)
+                      : LatLng(_pickup!.latitude, _pickup!.longitude),
+                  initialZoom: _pickup == null ? 4.5 : 15,
+                  currentPosition: _pickup == null
+                      ? null
+                      : LatLng(_pickup!.latitude, _pickup!.longitude),
+                  pickup: _pickup == null
+                      ? null
+                      : LatLng(_pickup!.latitude, _pickup!.longitude),
+                  destination: _destination == null
+                      ? null
+                      : LatLng(_destination!.latitude, _destination!.longitude),
+                  routePoints: _quoteRoutePoints,
+                  onMapCreated: (map) => _mapboxMap = map,
+                  onTap: (point) => _setPoint(
+                    longitude: point.longitude,
+                    latitude: point.latitude,
+                    pickup: _selectPickup,
                   ),
-                  children: [
-                    QuickRideMaps.openStreetMapLayer(appPackageName: 'com.quickride.customer'),
-                    if (_quoteRoutePoints.length >= 2)
-                      PolylineLayer(
-                        polylines: [
-                          Polyline(
-                            points: _quoteRoutePoints,
-                            strokeWidth: 6,
-                            color: Colors.blue,
-                          ),
-                        ],
-                      ),
-                    MarkerLayer(
-                      markers: [
-                        if (_pickup != null)
-                          Marker(
-                            point: LatLng(_pickup!.latitude, _pickup!.longitude),
-                            width: 38,
-                            height: 42,
-                            child: const Icon(
-                              Icons.location_on,
-                              color: Colors.green,
-                              size: 38,
-                            ),
-                          ),
-                        if (_destination != null)
-                          Marker(
-                            point: LatLng(
-                              _destination!.latitude,
-                              _destination!.longitude,
-                            ),
-                            width: 38,
-                            height: 42,
-                            child: const Icon(
-                              Icons.location_on,
-                              color: Colors.red,
-                              size: 38,
-                            ),
-                          ),
-                      ],
-                    ),
-                    QuickRideMaps.attributionControl(),
-                  ],
                 ),
                 const Positioned(
                   top: 12,

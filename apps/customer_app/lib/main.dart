@@ -65,7 +65,30 @@ class QuickRideCustomerApp extends StatelessWidget {
   static final router = GoRouter(
     routes: [
       GoRoute(path: '/', builder: (_, __) => const CustomerHomeScreen()),
-      GoRoute(path: '/book', builder: (_, __) => const CustomerBookingScreen()),
+      GoRoute(
+        path: '/book',
+        builder: (_, state) {
+          final extra = state.extra;
+          if (extra is! Map) return const CustomerBookingScreen();
+          RidePoint? parsePoint(dynamic value) {
+            if (value is! Map) return null;
+            final data = Map<String, dynamic>.from(value);
+            final longitude = data['longitude'];
+            final latitude = data['latitude'];
+            final address = data['address'];
+            if (longitude is! num || latitude is! num || address is! String) return null;
+            return RidePoint(
+              longitude: longitude.toDouble(),
+              latitude: latitude.toDouble(),
+              address: address,
+            );
+          }
+          return CustomerBookingScreen(
+            initialPickup: parsePoint(extra['pickup']),
+            initialDestination: parsePoint(extra['destination']),
+          );
+        },
+      ),
       GoRoute(
         path: '/ride/:rideId',
         builder: (_, state) => CustomerRideTrackingScreen(

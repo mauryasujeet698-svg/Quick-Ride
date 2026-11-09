@@ -20,7 +20,6 @@ jobs:
       FIREBASE_CUSTOMER_APP_ID: ${{ secrets.FIREBASE_CUSTOMER_APP_ID }}
       FIREBASE_DRIVER_APP_ID: ${{ secrets.FIREBASE_DRIVER_APP_ID }}
       FIREBASE_ADMIN_APP_ID: ${{ secrets.FIREBASE_ADMIN_APP_ID }}
-      MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN || secrets.MAPBOX_API_KEY || secrets.MAPBOX_API || secrets.MAPBOX }}
       MAX_APK_BYTES: 25000000
     steps:
       - uses: actions/checkout@v4
@@ -63,10 +62,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          if [[ -z "$MAPBOX_ACCESS_TOKEN" || "$MAPBOX_ACCESS_TOKEN" != pk.* ]]; then
-            echo "::error::Set a public Mapbox token (pk.*) as MAPBOX_ACCESS_TOKEN, MAPBOX_API_KEY or MAPBOX_API in repository Actions secrets."
-            exit 1
-          fi
           for app in customer driver admin; do
             case "$app" in
               customer) firebase_app_id="$FIREBASE_CUSTOMER_APP_ID" ;;
