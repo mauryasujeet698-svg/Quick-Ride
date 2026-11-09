@@ -589,7 +589,7 @@ returns jsonb
 language sql
 security definer
 set search_path = ''
-as $
+as $$
   select coalesce(jsonb_agg(candidate.payload order by candidate.created_at), '[]'::jsonb)
   from (
     select t.created_at,
@@ -626,7 +626,7 @@ as $
     order by t.created_at
     limit 25
   ) candidate;
-$;
+$$;
 
 revoke all on function public.list_shared_auto_trip_candidates(bigint,bigint)
   from public,anon,authenticated;
