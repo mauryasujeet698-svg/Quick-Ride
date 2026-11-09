@@ -9,7 +9,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
 
 class CustomerRideTrackingScreen extends StatefulWidget {
   const CustomerRideTrackingScreen({super.key, required this.rideId});
@@ -21,7 +20,7 @@ class CustomerRideTrackingScreen extends StatefulWidget {
 }
 
 class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen> {
-  mbx.MapboxMap? _mapboxMap;
+  QuickRideMapController? _mapController;
   List<LatLng> _routePoints = [];
   RealtimeChannel? _rideChangesChannel;
   RealtimeChannel? _driverLocationChannel;
@@ -244,19 +243,11 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
       driverLocation,
     ));
 
-    final map = _mapboxMap;
+    final map = _mapController;
     if (!_cameraInitialized && map != null) {
       final center = driverLocation ?? pickup ?? destination;
       if (center != null) {
-        await map.flyTo(
-          mbx.CameraOptions(
-            center: mbx.Point(
-              coordinates: mbx.Position(center.longitude, center.latitude),
-            ),
-            zoom: 14,
-          ),
-          mbx.MapAnimationOptions(duration: 650),
-        );
+        map.moveTo(center, zoom: 14);
         _cameraInitialized = true;
       }
     }
@@ -516,15 +507,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     if (point == null) return;
     final map = _mapboxMap;
     if (map != null) {
-      await map.flyTo(
-        mbx.CameraOptions(
-          center: mbx.Point(
-            coordinates: mbx.Position(point.longitude, point.latitude),
-          ),
-          zoom: 15,
-        ),
-        mbx.MapAnimationOptions(duration: 650),
-      );
+      map.moveTo(point, zoom: 15);
     }
   }
 
@@ -580,7 +563,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
                             followCurrentPosition: _active,
                             fitRouteBottomInset: 70,
                             onMapCreated: (map) {
-                              _mapboxMap = map;
+                              _mapController = map;
                               unawaited(_syncMap());
                             },
                           ),
