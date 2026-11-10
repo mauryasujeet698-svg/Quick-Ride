@@ -1,6 +1,6 @@
 # Quick-Ride Android build configuration
 
-The Android workflow builds Customer, Driver and Admin APKs for `armeabi-v7a` and `arm64-v8a`. Every APK is checked against a strict 25,000,000-byte maximum. A build is rejected if any APK exceeds that limit.
+The Android workflow builds native Flutter Customer, Driver and Admin release APKs for `armeabi-v7a` and `arm64-v8a`. Customer and Driver use Mapbox's official native Maps SDK for Flutter; map rendering no longer uses a WebView or remotely loaded Mapbox GL JS. Every APK is checked against a strict 25,000,000-byte maximum. A build is rejected if any APK exceeds that limit.
 
 ## GitHub Actions configuration
 
@@ -8,8 +8,8 @@ Configure these repository Actions secrets and variables before building:
 
 | Name | Type | Purpose |
 | --- | --- | --- |
-| `MAPBOX_ACCESS_TOKEN` | Secret | Public Mapbox runtime token beginning with `pk.`; used by maps, Search Box and Directions |
-| `MAPBOX_DOWNLOADS_TOKEN` | Secret | Secret Mapbox token with Downloads:Read scope; used only as Gradle Maven credentials to download the Android SDK |
+| `MAPBOX_ACCESS_TOKEN` | Secret or variable | Public Mapbox runtime token beginning with `pk.`; validated against Styles, Search Box and Directions before the build |
+| `MAPBOX_DOWNLOADS_TOKEN` | Secret | Secret Mapbox token with Downloads:Read scope; exposed to Gradle only as `SDK_REGISTRY_TOKEN` to download the native Android SDK |
 | `GOOGLE_WEB_CLIENT_ID` | Secret or variable | Google OAuth Web application client ID used by native Google sign-in |
 | `SUPABASE_PUBLISHABLE_KEY` | Secret | Supabase publishable/anon client key; never use a service-role key here |
 | `SUPABASE_URL` | Variable | Supabase project URL |
@@ -20,7 +20,7 @@ Configure these repository Actions secrets and variables before building:
 | `FIREBASE_DRIVER_APP_ID` | Secret | Firebase Android app ID for Driver/Captain |
 | `FIREBASE_ADMIN_APP_ID` | Secret | Firebase Android app ID for Admin |
 
-The Mapbox downloads token is never passed to Dart or packaged in an APK. The runtime token must be a public `pk.*` token; do not embed a secret `sk.*` token in the app.
+The Mapbox downloads token is never passed to Dart or packaged in an APK. The runtime token must be a public `pk.*` token with access to Streets styles, Search Box and Directions. The build probes all three services before compiling. Never use a secret `sk.*` token as the runtime token. Map rendering uses the native Mapbox Android SDK, not a WebView.
 
 ## Google sign-in
 

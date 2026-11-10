@@ -1,4 +1,4 @@
-name: Build Quick-Ride Android QA APKs
+name: Build Quick-Ride Native Android Release APKs
 on:
   pull_request:
     branches: [main]
@@ -19,9 +19,10 @@ jobs:
       FIREBASE_CUSTOMER_APP_ID: ${{ secrets.FIREBASE_CUSTOMER_APP_ID }}
       FIREBASE_DRIVER_APP_ID: ${{ secrets.FIREBASE_DRIVER_APP_ID }}
       FIREBASE_ADMIN_APP_ID: ${{ secrets.FIREBASE_ADMIN_APP_ID }}
-      MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN || secrets.MAPBOX_PUBLIC_ACCESS_TOKEN || secrets.MAPBOX_PUBLIC_TOKEN || secrets.MAPBOX_PUBLIC_API_KEY || secrets.MAPBOX_API_KEY || secrets.MAPBOX_API_TOKEN || secrets.MAPBOX_PUBLIC_KEY || secrets.MAPBOX_PK_TOKEN || secrets.MAPBOX_TOKEN || secrets.MAPBOX_DOWNLOADS_TOKEN || secrets.MAPBOX_KEY || secrets.MAPBOX_MAPS_TOKEN || vars.MAPBOX_ACCESS_TOKEN || vars.MAPBOX_PUBLIC_ACCESS_TOKEN || vars.MAPBOX_PUBLIC_TOKEN || vars.MAPBOX_PUBLIC_API_KEY || vars.MAPBOX_API_KEY || vars.MAPBOX_API_TOKEN || vars.MAPBOX_PUBLIC_KEY || vars.MAPBOX_PK_TOKEN || vars.MAPBOX_TOKEN || '' }}
+      MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN || vars.MAPBOX_ACCESS_TOKEN || '' }}
+      SDK_REGISTRY_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN || '' }}
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_CLIENT_ID || vars.GOOGLE_WEB_CLIENT_ID || vars.GOOGLE_CLIENT_ID || '' }}
-      MAPBOX_TOKEN_SOURCE: ${{ secrets.MAPBOX_ACCESS_TOKEN != '' && 'secrets.MAPBOX_ACCESS_TOKEN' || secrets.MAPBOX_PUBLIC_ACCESS_TOKEN != '' && 'secrets.MAPBOX_PUBLIC_ACCESS_TOKEN' || secrets.MAPBOX_PUBLIC_TOKEN != '' && 'secrets.MAPBOX_PUBLIC_TOKEN' || secrets.MAPBOX_PUBLIC_API_KEY != '' && 'secrets.MAPBOX_PUBLIC_API_KEY' || secrets.MAPBOX_API_KEY != '' && 'secrets.MAPBOX_API_KEY' || secrets.MAPBOX_API_TOKEN != '' && 'secrets.MAPBOX_API_TOKEN' || secrets.MAPBOX_PUBLIC_KEY != '' && 'secrets.MAPBOX_PUBLIC_KEY' || secrets.MAPBOX_PK_TOKEN != '' && 'secrets.MAPBOX_PK_TOKEN' || secrets.MAPBOX_TOKEN != '' && 'secrets.MAPBOX_TOKEN' || vars.MAPBOX_ACCESS_TOKEN != '' && 'vars.MAPBOX_ACCESS_TOKEN' || vars.MAPBOX_PUBLIC_ACCESS_TOKEN != '' && 'vars.MAPBOX_PUBLIC_ACCESS_TOKEN' || vars.MAPBOX_PUBLIC_TOKEN != '' && 'vars.MAPBOX_PUBLIC_TOKEN' || vars.MAPBOX_PUBLIC_API_KEY != '' && 'vars.MAPBOX_PUBLIC_API_KEY' || vars.MAPBOX_API_KEY != '' && 'vars.MAPBOX_API_KEY' || vars.MAPBOX_API_TOKEN != '' && 'vars.MAPBOX_API_TOKEN' || vars.MAPBOX_PUBLIC_KEY != '' && 'vars.MAPBOX_PUBLIC_KEY' || vars.MAPBOX_PK_TOKEN != '' && 'vars.MAPBOX_PK_TOKEN' || vars.MAPBOX_TOKEN != '' && 'vars.MAPBOX_TOKEN' || secrets.MAPBOX_DOWNLOADS_TOKEN != '' && 'secrets.MAPBOX_DOWNLOADS_TOKEN' || secrets.MAPBOX_KEY != '' && 'secrets.MAPBOX_KEY' || secrets.MAPBOX_MAPS_TOKEN != '' && 'secrets.MAPBOX_MAPS_TOKEN' || 'none' }}
+      MAPBOX_TOKEN_SOURCE: ${{ secrets.MAPBOX_ACCESS_TOKEN != '' && 'secrets.MAPBOX_ACCESS_TOKEN' || vars.MAPBOX_ACCESS_TOKEN != '' && 'vars.MAPBOX_ACCESS_TOKEN' || 'none' }}
       MAX_APK_BYTES: 25000000
     steps:
       - uses: actions/checkout@v4
@@ -159,7 +160,7 @@ jobs:
               path.write_text(text)
               print(f"Pinned flutter_tts Android buildscript AGP to 8.11.1: {path}")
           PY
-      - name: Verify Mapbox token availability
+      - name: Verify Mapbox token and native services
         shell: bash
         run: |
           set -euo pipefail
@@ -173,6 +174,22 @@ jobs:
             exit 1
           fi
           echo "A public Mapbox token is available to the Android build (source: $MAPBOX_TOKEN_SOURCE)."
+          style_code="$(curl --silent --show-error --output /tmp/mapbox-style.json --write-out '%{http_code}' "https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_ACCESS_TOKEN}")"
+          if [[ "$style_code" != "200" ]]; then
+            echo "::error::Mapbox Streets style preflight failed (HTTP $style_code). Check token validity and styles:read scope."
+            exit 1
+          fi
+          search_code="$(curl --silent --show-error --output /tmp/mapbox-search.json --write-out '%{http_code}' --get "https://api.mapbox.com/search/searchbox/v1/suggest" --data-urlencode "q=Lucknow" --data-urlencode "limit=1" --data-urlencode "session_token=00000000-0000-4000-8000-000000000001" --data-urlencode "access_token=${MAPBOX_ACCESS_TOKEN}")"
+          if [[ "$search_code" != "200" ]]; then
+            echo "::error::Mapbox Search Box preflight failed (HTTP $search_code). Check Search Box access for this token."
+            exit 1
+          fi
+          route_code="$(curl --silent --show-error --output /tmp/mapbox-route.json --write-out '%{http_code}' "https://api.mapbox.com/directions/v5/mapbox/driving/80.9462,26.8467;80.9500,26.8500?overview=false&access_token=${MAPBOX_ACCESS_TOKEN}")"
+          if [[ "$route_code" != "200" ]]; then
+            echo "::error::Mapbox Directions preflight failed (HTTP $route_code). Check directions:read scope."
+            exit 1
+          fi
+          echo "Mapbox Styles, Search Box and Directions preflight checks passed."
 
       - name: Build optimized ABI-specific APKs
         shell: bash

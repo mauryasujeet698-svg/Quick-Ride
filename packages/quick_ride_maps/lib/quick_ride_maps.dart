@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mb;
 
 export 'package:latlong2/latlong.dart';
 
@@ -27,13 +27,15 @@ class QuickRideMaps {
   static Widget Function(BuildContext context, QuickRideMapView view)?
       mapWidgetOverride;
 
-  static bool get isConfigured => accessToken.startsWith('pk.');
+  static String get _normalizedAccessToken => accessToken.trim();
+
+  static bool get isConfigured => _normalizedAccessToken.startsWith('pk.');
 
   static void configure() {
-    if (_configured) return;
-    if (accessToken.trim().isNotEmpty) {
-      _configured = true;
-    }
+    if (_configured || !isConfigured) return;
+    // Set the token through Mapbox's native SDK before any MapWidget is created.
+    mb.MapboxOptions.setAccessToken(_normalizedAccessToken);
+    _configured = true;
   }
 
   static void _requireToken() {
@@ -334,16 +336,21 @@ class QuickRideMaps {
   }
 }
 
-/// A small facade that keeps feature screens independent of Mapbox SDK types.
+/// Native Mapbox map controller shared by customer and driver screens.
 class QuickRideMapController {
-  QuickRideMapController._(this._web);
+  QuickRideMapController._(this._map);
 
-  final WebViewController _web;
+  final mb.MapboxMap _map;
 
   void moveTo(LatLng point, {double? zoom}) {
-    unawaited(_web.runJavaScript(
-      'window.quickRideMoveTo && window.quickRideMoveTo('
-      '${point.longitude}, ${point.latitude}, ${zoom ?? 'null'});',
+    unawaited(_map.flyTo(
+      mb.CameraOptions(
+        center: mb.Point(
+          coordinates: mb.Position(point.longitude, point.latitude),
+        ),
+        zoom: zoom,
+      ),
+      mb.MapAnimationOptions(duration: 350),
     ));
   }
 
@@ -352,23 +359,30 @@ class QuickRideMapController {
     EdgeInsets padding = const EdgeInsets.fromLTRB(36, 175, 36, 250),
   }) {
     if (points.length < 2) return;
-    final coordinates = points
-        .map((point) => [point.longitude, point.latitude])
-        .toList(growable: false);
-    unawaited(_web.runJavaScript(
-      'window.quickRideFitRoute && window.quickRideFitRoute('
-      '${jsonEncode(coordinates)}, ${jsonEncode({
-        'top': padding.top,
-        'left': padding.left,
-        'right': padding.right,
-        'bottom': padding.bottom,
-      })});',
-    ));
+    unawaited(() async {
+      final camera = await _map.cameraForCoordinates(
+        points
+            .map((point) => mb.Point(
+                  coordinates: mb.Position(point.longitude, point.latitude),
+                ))
+            .toList(growable: false),
+        mb.MbxEdgeInsets(
+          top: padding.top,
+          left: padding.left,
+          bottom: padding.bottom,
+          right: padding.right,
+        ),
+        null,
+        null,
+      );
+      await _map.flyTo(camera, mb.MapAnimationOptions(duration: 450));
+    }());
   }
 
   void rotate(double degrees) {
-    unawaited(_web.runJavaScript(
-      'window.quickRideRotate && window.quickRideRotate($degrees);',
+    unawaited(_map.flyTo(
+      mb.CameraOptions(bearing: degrees),
+      mb.MapAnimationOptions(duration: 300),
     ));
   }
 }
@@ -467,6 +481,8 @@ class QuickRideMapView extends StatefulWidget {
   final bool navigationCamera;
   final int recenterSignal;
   final double fitRouteBottomInset;
+
+  /// Retained for source compatibility with existing map call sites.
   final String userAgentPackageName;
 
   @override
@@ -474,10 +490,14 @@ class QuickRideMapView extends StatefulWidget {
 }
 
 class _QuickRideMapViewState extends State<QuickRideMapView> {
-  late final WebViewController _webController;
-  QuickRideMapController? _mapController;
-  bool _webViewReady = false;
+  mb.MapboxMap? _map;
+  mb.CircleAnnotationManager? _markerManager;
+  mb.PolylineAnnotationManager? _routeManager;
+  QuickRideMapController? _controller;
   bool _mapReady = false;
+  bool _styleLoaded = false;
+  bool _syncing = false;
+  bool _syncAgain = false;
   String? _mapError;
 
   LatLng get _initial =>
@@ -486,181 +506,208 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
   @override
   void initState() {
     super.initState();
-    if (QuickRideMaps.isConfigured) {
-      unawaited(_initializeWebView());
-    }
+    QuickRideMaps.configure();
   }
 
-  Future<void> _initializeWebView() async {
-    final controller = WebViewController();
-    _webController = controller;
-    await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
-    await controller.setBackgroundColor(Colors.white);
-    await controller.addJavaScriptChannel(
-      'QuickRideBridge',
-      onMessageReceived: _onJavaScriptMessage,
-    );
-    await controller.setNavigationDelegate(
-      NavigationDelegate(
-        onPageFinished: (_) async {
-          if (!mounted) return;
-          final token = jsonEncode(QuickRideMaps.accessToken.trim());
-          final longitude = _initial.longitude;
-          final latitude = _initial.latitude;
-          await controller.runJavaScript(
-            'window.quickRideInitialize && window.quickRideInitialize('
-            '$token, $longitude, $latitude, ${widget.initialZoom});',
-          );
-        },
-        onWebResourceError: (error) {
-          if (!mounted || error.isForMainFrame != true) return;
-          setState(() => _mapError = error.description);
-        },
-      ),
-    );
-    await controller.loadFlutterAsset(
-      'packages/quick_ride_maps/assets/quick_ride_map.html',
-    );
-    if (mounted) {
-      setState(() => _webViewReady = true);
-    }
-  }
+  Future<void> _onMapCreated(mb.MapboxMap map) async {
+    _map = map;
+    _controller = QuickRideMapController._(map);
 
-  void _onJavaScriptMessage(JavaScriptMessage message) {
-    if (message.message == 'ready') {
-      if (!mounted) return;
-      setState(() {
-        _mapReady = true;
-        _mapError = null;
-      });
-      _mapController ??= QuickRideMapController._(_webController);
-      widget.onMapCreated?.call(_mapController!);
-      unawaited(_syncMap());
-      if (widget.routePoints.length >= 2 && !widget.navigationCamera) {
-        _mapController!.fitRoute(
-          widget.routePoints,
-          padding: EdgeInsets.fromLTRB(36, 175, 36, widget.fitRouteBottomInset),
-        );
-      }
-      return;
-    }
-    if (message.message.startsWith('error:')) {
-      if (!mounted) return;
-      setState(() => _mapError = message.message.substring(6).trim());
-      return;
-    }
+    map.addInteraction(mb.TapInteraction.onMap((context) {
+      final coordinate = context.point.coordinates;
+      widget.onTap?.call(LatLng(coordinate.lat, coordinate.lng));
+    }));
+
     try {
-      final payload = jsonDecode(message.message);
-      if (payload is Map && payload['type'] == 'tap') {
-        final latitude = payload['latitude'];
-        final longitude = payload['longitude'];
-        if (latitude is num && longitude is num) {
-          widget.onTap?.call(LatLng(latitude.toDouble(), longitude.toDouble()));
-        }
+      _markerManager = await map.annotations.createCircleAnnotationManager();
+      _routeManager = await map.annotations.createPolylineAnnotationManager();
+      if (!mounted) return;
+      setState(() => _mapReady = true);
+      widget.onMapCreated?.call(_controller!);
+      if (_styleLoaded) {
+        await _syncMap();
       }
-    } catch (_) {
-      // Ignore unrelated or malformed messages from the map document.
+    } catch (error) {
+      _setMapError(error);
     }
+  }
+
+  void _onStyleLoaded(mb.StyleLoadedEventData event) {
+    _styleLoaded = true;
+    if (!mounted) return;
+    setState(() => _mapError = null);
+    unawaited(_syncMap());
+  }
+
+  void _onMapLoadError(dynamic event) {
+    if (!mounted) return;
+    setState(() {
+      _mapError =
+          'Mapbox could not load map resources. Check the public access token, token permissions and internet connection.';
+    });
+  }
+
+  void _setMapError(Object error) {
+    if (!mounted) return;
+    setState(() {
+      _mapError =
+          'Mapbox could not initialize. Check the public access token and network connection.';
+    });
+    debugPrint('Quick Ride native Mapbox initialization failed: $error');
+  }
+
+  Future<void> _syncMap() async {
+    if (!_mapReady || !_styleLoaded) return;
+    if (_syncing) {
+      _syncAgain = true;
+      return;
+    }
+    _syncing = true;
+    do {
+      _syncAgain = false;
+      try {
+        final markers = _markerManager;
+        final route = _routeManager;
+        if (markers == null || route == null) {
+          throw StateError('Native Mapbox annotation managers are not ready.');
+        }
+
+        await markers.deleteAll();
+        final markerOptions = <mb.CircleAnnotationOptions>[];
+        void addMarker(LatLng? point, Color color, double radius) {
+          if (point == null) return;
+          markerOptions.add(mb.CircleAnnotationOptions(
+            geometry: mb.Point(
+              coordinates: mb.Position(point.longitude, point.latitude),
+            ),
+            circleRadius: radius,
+            circleColor: color.toARGB32(),
+            circleStrokeColor: Colors.white.toARGB32(),
+            circleStrokeWidth: 2,
+          ));
+        }
+
+        if (widget.showUserLocation) {
+          addMarker(widget.currentPosition, const Color(0xFF2463EB), 8);
+        }
+        addMarker(widget.pickup, const Color(0xFF159B65), 8);
+        addMarker(widget.destination, const Color(0xFFD94747), 8);
+        if (markerOptions.isNotEmpty) {
+          await markers.createMulti(markerOptions);
+        }
+
+        await route.deleteAll();
+        if (widget.routePoints.length >= 2) {
+          await route.create(mb.PolylineAnnotationOptions(
+            geometry: mb.LineString(
+              coordinates: widget.routePoints
+                  .map((point) => mb.Position(point.longitude, point.latitude))
+                  .toList(growable: false),
+            ),
+            lineColor: const Color(0xFF2167D5).toARGB32(),
+            lineWidth: 5,
+          ));
+        }
+      } catch (error) {
+        _setMapError(error);
+      }
+    } while (_syncAgain && mounted);
+    _syncing = false;
   }
 
   @override
   void didUpdateWidget(covariant QuickRideMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_mapReady) return;
 
-    if (!listEquals(oldWidget.routePoints, widget.routePoints) ||
+    final mapDataChanged =
+        !listEquals(oldWidget.routePoints, widget.routePoints) ||
         oldWidget.currentPosition != widget.currentPosition ||
         oldWidget.pickup != widget.pickup ||
         oldWidget.destination != widget.destination ||
-        oldWidget.showUserLocation != widget.showUserLocation) {
+        oldWidget.showUserLocation != widget.showUserLocation;
+
+    if (mapDataChanged) {
       unawaited(_syncMap());
     }
 
-    if (widget.recenterSignal != oldWidget.recenterSignal ||
+    final shouldRecenter =
+        widget.recenterSignal != oldWidget.recenterSignal ||
         (widget.followCurrentPosition &&
             oldWidget.currentPosition != widget.currentPosition) ||
-        widget.navigationCamera != oldWidget.navigationCamera) {
+        widget.navigationCamera != oldWidget.navigationCamera;
+    if (shouldRecenter) {
       final point = widget.currentPosition ?? widget.initialCenter;
       if (point != null) {
-        _mapController?.moveTo(
-          point,
-          zoom: widget.navigationCamera ? 17.0 : 15.5,
-        );
+        _controller?.moveTo(point, zoom: widget.navigationCamera ? 17 : 15.5);
       }
     }
 
     if (!widget.navigationCamera &&
         !listEquals(oldWidget.routePoints, widget.routePoints) &&
         widget.routePoints.length >= 2) {
-      _mapController?.fitRoute(
+      _controller?.fitRoute(
         widget.routePoints,
         padding: EdgeInsets.fromLTRB(36, 175, 36, widget.fitRouteBottomInset),
       );
     }
   }
 
-  Map<String, double>? _pointMap(LatLng? point) {
-    if (point == null) return null;
-    return {
-      'longitude': point.longitude,
-      'latitude': point.latitude,
-    };
-  }
-
-  Future<void> _syncMap() async {
-    if (!_mapReady) return;
-    final payload = <String, Object?>{
-      'currentPosition': _pointMap(widget.currentPosition),
-      'showUserLocation': widget.showUserLocation,
-      'pickup': _pointMap(widget.pickup),
-      'destination': _pointMap(widget.destination),
-      'route': widget.routePoints
-          .map((point) => [point.longitude, point.latitude])
-          .toList(growable: false),
-      'navigationCamera': widget.navigationCamera,
-      'followCurrentPosition': widget.followCurrentPosition,
-    };
-    await _webController.runJavaScript(
-      'window.quickRideUpdate && window.quickRideUpdate(${jsonEncode(payload)});',
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final override = QuickRideMaps.mapWidgetOverride;
-    if (override != null) return override(context, widget);
     if (!QuickRideMaps.isConfigured) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
-            'Mapbox is not configured. Please try again after the app is connected to its map service.',
+            'Map service is not configured. Please contact support.',
             textAlign: TextAlign.center,
           ),
         ),
       );
     }
-    if (_mapError != null && !_mapReady) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Text(
-            'The Mapbox map could not load. Check your internet connection and try again.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
-    if (!_webViewReady) {
-      return const Center(child: CircularProgressIndicator());
-    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        WebViewWidget(controller: _webController),
-        if (!_mapReady)
+        mb.MapWidget(
+          key: const ValueKey('quickRideNativeMap'),
+          styleUri: mb.MapboxStyles.MAPBOX_STREETS,
+          viewport: mb.CameraViewportState(
+            center: mb.Point(
+              coordinates: mb.Position(_initial.longitude, _initial.latitude),
+            ),
+            zoom: widget.initialZoom,
+          ),
+          onMapCreated: _onMapCreated,
+          onStyleLoadedListener: _onStyleLoaded,
+          onMapLoadErrorListener: _onMapLoadError,
+          textureView: true,
+        ),
+        if (!_mapReady && _mapError == null)
           const IgnorePointer(
             child: Center(child: CircularProgressIndicator()),
+          ),
+        if (_mapError != null)
+          Positioned(
+            left: 12,
+            right: 12,
+            top: 12,
+            child: Material(
+              elevation: 2,
+              color: Theme.of(context).colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Text(
+                  _mapError!,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            ),
           ),
       ],
     );
