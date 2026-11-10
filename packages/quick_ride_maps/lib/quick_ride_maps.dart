@@ -490,7 +490,6 @@ class QuickRideMapView extends StatefulWidget {
 }
 
 class _QuickRideMapViewState extends State<QuickRideMapView> {
-  mb.MapboxMap? _map;
   mb.CircleAnnotationManager? _markerManager;
   mb.PolylineAnnotationManager? _routeManager;
   QuickRideMapController? _controller;
@@ -510,12 +509,11 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
   }
 
   Future<void> _onMapCreated(mb.MapboxMap map) async {
-    _map = map;
     _controller = QuickRideMapController._(map);
 
     map.addInteraction(mb.TapInteraction.onMap((context) {
       final coordinate = context.point.coordinates;
-      widget.onTap?.call(LatLng(coordinate.lat, coordinate.lng));
+      widget.onTap?.call(LatLng(coordinate.lat.toDouble(), coordinate.lng.toDouble()));
     }));
 
     try {
