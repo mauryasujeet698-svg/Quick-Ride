@@ -32,6 +32,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   String period = 'day';
   String? selectedAreaId;
   int? selectedCategoryId;
+  int? selectedPincodeId;
   List<Map<String, dynamic>> vehicleCategories = [];
   List<Map<String, dynamic>> fareConfigs = [];
   Map<String, dynamic>? directory;
@@ -119,6 +120,20 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final areas = directory?['service_areas'] as List<dynamic>? ?? [];
     if (selectedAreaId == null && areas.isNotEmpty) {
       selectedAreaId = areas.first['id'].toString();
+    }
+    final selectedAreaRows = areas
+        .where((item) => item['id'].toString() == selectedAreaId)
+        .toList();
+    final pincodeRows = selectedAreaRows.isEmpty
+        ? <dynamic>[]
+        : (selectedAreaRows.first['service_area_pincodes'] as List<dynamic>? ?? []);
+    final selectedPincodeStillExists = pincodeRows.any(
+      (item) => (item['id'] as num).toInt() == selectedPincodeId,
+    );
+    if (!selectedPincodeStillExists) {
+      selectedPincodeId = pincodeRows.isEmpty
+          ? null
+          : (pincodeRows.first['id'] as num).toInt();
     }
     final activeCategories = vehicleCategories.where((item) => item['is_active'] == true);
     if (selectedCategoryId == null || !activeCategories.any((item) => item['id'] == selectedCategoryId)) {
@@ -278,6 +293,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       }
       await call('create_fare_config', {
         'serviceAreaId': int.parse(selectedAreaId!),
+        if (selectedPincodeId != null) 'pincodeId': selectedPincodeId,
         'vehicleCategoryId': selectedCategoryId,
         'baseFare': _fareValue(baseFare, 'base fare'),
         'perKmRate': _fareValue(perKmRate, 'per-kilometre rate'),
@@ -447,6 +463,21 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       maxExtraMinutes.dispose();
       fareSharePercent.dispose();
     }
+  }
+
+  Future<void> setPincodeVehicleEnabled(
+    int pincodeId,
+    int categoryId,
+    bool enabled,
+  ) async {
+    await run(() async {
+      await call('set_pincode_vehicle_enabled', {
+        'pincodeId': pincodeId,
+        'categoryId': categoryId,
+        'isEnabled': enabled,
+      });
+      await loadWithoutBusy();
+    });
   }
 
   Future<void> setPincodeActive(int id, bool active) async {
@@ -691,7 +722,30 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   child: Text(area['name'].toString() + ' · ' + area['city'].toString()),
                 );
               }).toList(),
-              onChanged: busy ? null : (value) => setState(() => selectedAreaId = value),
+              onChanged: busy ? null : (value) => setState(() {
+                selectedAreaId = value;
+                selectedPincodeId = null;
+              }),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              initialValue: selectedPincodeId,
+              decoration: const InputDecoration(
+                labelText: 'Pincode (recommended)',
+                helperText: 'A pincode-specific fare takes priority over the area fallback.',
+              ),
+              items: areas
+                  .where((item) => item['id'].toString() == selectedAreaId)
+                  .expand((item) => (item['service_area_pincodes'] as List<dynamic>? ?? []))
+                  .map((item) {
+                final pincode = Map<String, dynamic>.from(item as Map);
+                return DropdownMenuItem<int>(
+                  value: (pincode['id'] as num).toInt(),
+                  child: Text(pincode['pincode'].toString() +
+                      (pincode['is_active'] == true ? ' · Active' : ' · Inactive')),
+                );
+              }).toList(),
+              onChanged: busy ? null : (value) => setState(() => selectedPincodeId = value),
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<int>(
@@ -893,6 +947,46 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             title: Text(pincode['pincode'].toString()),
                             subtitle: Text(modelName + ' · ' + radiusLabel),
                             onChanged: busy ? null : (value) => setPincodeActive(pincode['id'] as int, value),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Vehicle types in this pincode',
+                                    style: Theme.of(context).textTheme.titleSmall),
+                                const SizedBox(height: 4),
+                                ...vehicleCategories
+                                    .where((category) => category['is_active'] == true)
+                                    .map((category) {
+                                  final categoryId = (category['id'] as num).toInt();
+                                  final mappingRows = pincode['service_area_pincode_vehicles'] as List<dynamic>? ?? [];
+                                  Map<String, dynamic>? mapping;
+                                  for (final row in mappingRows) {
+                                    final data = Map<String, dynamic>.from(row as Map);
+                                    if ((data['vehicle_category_id'] as num).toInt() == categoryId) {
+                                      mapping = data;
+                                      break;
+                                    }
+                                  }
+                                  final enabled = mapping?['is_enabled'] == true;
+                                  return SwitchListTile(
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(category['name'].toString()),
+                                    subtitle: Text(enabled ? 'Shown to customers' : 'Hidden from customers'),
+                                    value: enabled,
+                                    onChanged: busy
+                                        ? null
+                                        : (value) => setPincodeVehicleEnabled(
+                                              (pincode['id'] as num).toInt(),
+                                              categoryId,
+                                              value,
+                                            ),
+                                  );
+                                }),
+                              ],
+                            ),
                           ),
                           Align(
                             alignment: Alignment.centerLeft,
