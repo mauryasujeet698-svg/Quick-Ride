@@ -6,6 +6,7 @@ import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_notifications/quick_ride_notifications.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../customer_preferences.dart';
 import 'customer_navigation_bar.dart';
