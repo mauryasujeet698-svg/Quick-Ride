@@ -388,8 +388,10 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       _categoryId = (option['category_id'] as num).toInt();
       _rideMode = option['ride_mode'].toString();
       _passengerCount = 1;
-      _quote = Map<String, dynamic>.from(option['quote'] as Map);
-      _sharedAutoCapacity = ((_quote!['shared_auto'] as Map?)?['max_passengers'] as num?)?.toInt() ?? 3;
+      _quote = option['quote'] is Map
+          ? Map<String, dynamic>.from(option['quote'] as Map)
+          : null;
+      _sharedAutoCapacity = ((_quote?['shared_auto'] as Map?)?['max_passengers'] as num?)?.toInt() ?? 3;
       _booking = null;
       _sharedAuto = null;
       _pickupOtp = null;
@@ -409,7 +411,16 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       }
       return;
     }
-    if (_quote == null) return;
+    if (_quote == null) {
+      setState(() => _error = 'Search again to get a fare before booking.');
+      return;
+    }
+    final availability = _quote!['availability'] as Map<String, dynamic>?;
+    final availableCount = (availability?['available_count'] as num?)?.toInt() ?? 0;
+    if (availableCount <= 0) {
+      setState(() => _error = 'No vehicle found for this ride type right now. Search again or choose another vehicle.');
+      return;
+    }
     await _run(() async {
       final key = DateTime.now().microsecondsSinceEpoch.toString() +
           '-' + Random.secure().nextInt(1 << 32).toString();
