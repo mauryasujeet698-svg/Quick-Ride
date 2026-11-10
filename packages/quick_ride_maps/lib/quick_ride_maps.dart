@@ -359,6 +359,68 @@ class QuickRideMapController {
   }
 }
 
+class QuickRideSearchResult {
+  const QuickRideSearchResult({
+    required this.mapboxId,
+    required this.point,
+    required this.name,
+    required this.address,
+    required this.resultType,
+    this.sessionToken,
+    this.postalCode,
+  });
+
+  final String mapboxId;
+  final String? sessionToken;
+  final LatLng point;
+  final String name;
+  final String address;
+  final String resultType;
+  final String? postalCode;
+}
+
+class QuickRidePlace {
+  const QuickRidePlace({
+    required this.point,
+    required this.name,
+    required this.address,
+    this.postalCode,
+  });
+
+  final LatLng point;
+  final String name;
+  final String address;
+  final String? postalCode;
+}
+
+class QuickRideRoute {
+  const QuickRideRoute({
+    required this.points,
+    required this.distanceMeters,
+    required this.durationSeconds,
+    this.steps = const [],
+  });
+
+  final List<LatLng> points;
+  final double distanceMeters;
+  final double durationSeconds;
+  final List<QuickRideRouteStep> steps;
+}
+
+class QuickRideRouteStep {
+  const QuickRideRouteStep({
+    required this.instruction,
+    required this.location,
+    required this.distanceMeters,
+    required this.durationSeconds,
+  });
+
+  final String instruction;
+  final LatLng? location;
+  final double distanceMeters;
+  final double durationSeconds;
+}
+
 class QuickRideMapView extends StatefulWidget {
   const QuickRideMapView({
     super.key,
