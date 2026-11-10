@@ -26,7 +26,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   QuickRidePlace? _pickup;
   QuickRidePlace? _destination;
   List<QuickRideSearchResult> _suggestions = const [];
-  List<Map<String, dynamic>> _vehicleCategories = const [];
   QuickRideRoute? _route;
   String? _error;
   bool _loadingLocation = true;
@@ -42,7 +41,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
         if (mounted) setState(() {});
       });
-      unawaited(_loadVehicleCategories());
     }
     // The first launch requests foreground location. If declined, users can
     // still set pickup and destination by searching or tapping the map.
@@ -56,19 +54,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     _searchController.dispose();
     unawaited(_speech.cancel());
     super.dispose();
-  }
-
-  Future<void> _loadVehicleCategories() async {
-    try {
-      final rows = await QuickRideBackend.client
-          .from('vehicle_categories')
-          .select('id,code,name,description')
-          .eq('is_active', true)
-          .order('sort_order');
-      if (mounted) setState(() => _vehicleCategories = rows);
-    } catch (_) {
-      // The booking flow will surface the live backend error when needed.
-    }
   }
 
   Future<void> _detectCurrentLocation() async {
