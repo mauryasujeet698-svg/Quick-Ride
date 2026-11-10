@@ -264,7 +264,7 @@ jobs:
             for apk in $(find dist -type f -name '*.apk' | sort); do
               echo
               echo "===== $apk ====="
-              unzip -l "$apk" | awk 'NF == 4 && $4 !~ /^Name$/ { print $1 "\\t" $4 }' | sort -nr | head -25
+              unzip -l "$apk" | awk 'NF == 4 && $4 !~ /^Name$/ { print $1 "\\t" $4 }' | sort -nr | awk 'NR <= 25'
             done
           } > dist/APK_CONTENT_BREAKDOWN.txt
           (cd dist && find . -type f -name '*.apk' -print0 | sort -z | xargs -0 sha256sum) > dist/SHA256SUMS.txt
