@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
           for app in customer driver admin; do
             temp_dir="$(mktemp -d)"
-            flutter create --empty --project-name "$app" --org in.quickride --platforms android "$temp_dir"
+            flutter create --empty --project-name "$app" --org com.quickride --platforms android "$temp_dir"
             cp -R "$temp_dir/android" "apps/${app}_app/android"
             python3 - "apps/${app}_app/android/gradle.properties" <<'PY'
           from pathlib import Path
@@ -49,7 +49,7 @@ jobs:
           path.write_text(text)
           PY
             manifest="apps/${app}_app/android/app/src/main/AndroidManifest.xml"
-            python3 scripts/configure_android_manifest.py "$manifest" "in.quickride.${app}"
+            python3 scripts/configure_android_manifest.py "$manifest" "com.quickride.${app}"
             python3 - "apps/${app}_app/android/settings.gradle.kts" <<'PY'
           from pathlib import Path
           import sys
