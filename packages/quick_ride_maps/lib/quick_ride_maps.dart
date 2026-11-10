@@ -224,21 +224,35 @@ class QuickRideMaps {
         .get(uri, headers: const {'Accept': 'application/geo+json'})
         .timeout(const Duration(seconds: 12));
     if (response.statusCode != 200) {
-      throw StateError('Mapbox address lookup failed (${response.statusCode}).');
+      throw StateError('Mapbox address lookup failed (' + response.statusCode.toString() + ').');
     }
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final features = payload['features'] as List<dynamic>? ?? const [];
     if (features.isEmpty || features.first is! Map) {
-      return 'Selected location (${point.latitude.toStringAsFixed(5)}, '
-          '${point.longitude.toStringAsFixed(5)})';
+      return 'Selected location (' +
+          point.latitude.toStringAsFixed(5) + ', ' +
+          point.longitude.toStringAsFixed(5) + ')';
     }
     final properties =
         Map<String, dynamic>.from((features.first as Map)['properties'] as Map? ?? const {});
-    return (properties['full_address'] ??
+    final context = Map<String, dynamic>.from(
+      properties['context'] as Map? ?? const {},
+    );
+    final postcodeContext = context['postcode'];
+    final postcode = postcodeContext is Map
+        ? (postcodeContext['name'] ?? postcodeContext['text'])?.toString()
+        : null;
+    final address = (properties['full_address'] ??
             properties['place_formatted'] ??
             properties['name'] ??
             'Selected location')
         .toString();
+    if (postcode != null &&
+        RegExp(r'^[1-9][0-9][0-9][0-9][0-9][0-9]$').hasMatch(postcode) &&
+        !address.contains(postcode)) {
+      return address + ', ' + postcode;
+    }
+    return address;
   }
 
   static Future<QuickRideRoute> drivingRoute({
