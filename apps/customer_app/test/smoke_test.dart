@@ -10,9 +10,10 @@ void main() {
 
     expect(find.text('Quick Ride'), findsOneWidget);
     expect(find.text('PICKUP'), findsOneWidget);
+    expect(find.text('DESTINATION'), findsOneWidget);
     expect(find.text('Where would you like to go?').first, findsOneWidget);
-    expect(find.text('Set pickup'), findsOneWidget);
-    expect(find.text('Set destination'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byTooltip('Search by voice'), findsOneWidget);
     expect(find.text('Choose ride'), findsOneWidget);
   });
 }
