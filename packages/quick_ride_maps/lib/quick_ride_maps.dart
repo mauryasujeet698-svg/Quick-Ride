@@ -506,10 +506,12 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
         )));
       }
     }
+    final map = _map;
     if (!widget.navigationCamera &&
+        map != null &&
         !listEquals(oldWidget.routePoints, widget.routePoints) &&
         widget.routePoints.length >= 2) {
-      QuickRideMapController._(_map!).fitRoute(
+      QuickRideMapController._(map).fitRoute(
         widget.routePoints,
         padding: EdgeInsets.fromLTRB(36, 175, 36, widget.fitRouteBottomInset),
       );
