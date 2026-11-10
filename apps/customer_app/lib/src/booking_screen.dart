@@ -259,33 +259,46 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
 
   Future<void> _getQuote() async {
     if (QuickRideAuth.currentUser == null) {
-      setState(() => _error = 'Sign in with Google to compare ride options.');
+      setState(() => _error = 'Sign in with Google to check fares and nearby drivers.');
       try {
         await QuickRideAuth.signInWithGoogle(
           redirectTo: 'in.quickride.customer://login-callback',
         );
       } catch (error) {
-        if (mounted) setState(() => _error = 'Google sign-in failed: ' + error.toString());
+        final details = error.toString().toLowerCase();
+        final message = details.contains('canceled') || details.contains('cancelled')
+            ? 'Google sign-in was cancelled. You can try again when ready.'
+            : 'Google sign-in failed: ' + error.toString();
+        if (mounted) setState(() => _error = message);
+        return;
       }
-      return;
+      if (QuickRideAuth.currentUser == null) {
+        if (mounted) setState(() => _error = 'Google sign-in did not complete. Please try again.');
+        return;
+      }
     }
     if (_pickup == null || _destination == null) {
       setState(() => _error = 'Select both pickup and destination.');
       return;
     }
-    final inferredPincode = _pickup!.pincode;
-    if (!RegExp(r'^[1-9][0-9]{5}$').hasMatch(_pin.text.trim()) &&
+    final inferredPincode = _pickup!.pincode ??
+        RegExp(r'(?<![0-9])[1-9][0-9][0-9][0-9][0-9][0-9](?![0-9])')
+            .firstMatch(_pickup!.address)
+            ?.group(0);
+    if (!RegExp(r'^[1-9][0-9][0-9][0-9][0-9][0-9]$').hasMatch(_pin.text.trim()) &&
         inferredPincode != null) {
       _pin.text = inferredPincode;
     }
-    if (!RegExp(r'^[1-9][0-9]{5}$').hasMatch(_pin.text.trim())) {
+    if (!RegExp(r'^[1-9][0-9][0-9][0-9][0-9][0-9]$').hasMatch(_pin.text.trim())) {
       setState(() => _error =
-          'We could not read the pickup pincode. Enter the six-digit pickup service pincode to check availability.');
+          'We could not read the pickup pincode. Choose a pickup inside a configured service area.');
       return;
     }
     if (_categories.isEmpty) {
-      setState(() => _error =
-          'No active vehicle categories are configured for Quick Ride.');
+      await _loadCategories();
+    }
+    if (_categories.isEmpty) {
+      setState(() => _error = 'No vehicle categories are enabled for this pickup area.');
       return;
     }
 
@@ -310,32 +323,48 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             'ride_mode': 'private',
             'passenger_count': 1,
             'quote': quote,
+            'quote_status': 'quoted',
           });
+          if (code == 'auto' || code == 'autorickshaw') {
+            try {
+              final sharedResponse = await QuickRideBackend.invoke(
+                'ride-booking',
+                body: _request(
+                  'quote',
+                  categoryId: id,
+                  rideMode: 'shared_auto',
+                  passengerCount: _passengerCount,
+                ),
+              );
+              final sharedData = Map<String, dynamic>.from(sharedResponse.data as Map);
+              final sharedQuote = Map<String, dynamic>.from(sharedData['quote'] as Map);
+              if (sharedQuote['shared_auto'] is Map) {
+                results.add({
+                  'category_id': id,
+                  'category_name': 'Shared Auto',
+                  'category_code': code,
+                  'ride_mode': 'shared_auto',
+                  'passenger_count': 1,
+                  'quote': sharedQuote,
+                  'quote_status': 'quoted',
+                });
+              }
+            } catch (_) {
+              // Shared Auto is an optional mode; private Auto stays visible.
+            }
+          }
         } catch (error) {
           failures.add(name + ': ' + error.toString());
-        }
-
-        if (code == 'auto' || code == 'autorickshaw') {
-          try {
-            final response = await QuickRideBackend.invoke(
-              'ride-booking',
-              body: _request('quote', categoryId: id, rideMode: 'shared_auto', passengerCount: _passengerCount),
-            );
-            final data = Map<String, dynamic>.from(response.data as Map);
-            final quote = Map<String, dynamic>.from(data['quote'] as Map);
-            if (quote['shared_auto'] is Map) {
-              results.add({
-                'category_id': id,
-                'category_name': 'Shared Auto',
-                'category_code': code,
-                'ride_mode': 'shared_auto',
-                'passenger_count': 1,
-                'quote': quote,
-              });
-            }
-          } catch (error) {
-            failures.add('Shared Auto: ' + error.toString());
-          }
+          results.add({
+            'category_id': id,
+            'category_name': name,
+            'category_code': code,
+            'ride_mode': 'private',
+            'passenger_count': 1,
+            'quote': null,
+            'quote_status': 'fare_unavailable',
+            'error': error.toString(),
+          });
         }
       }
       if (!mounted) return;
@@ -345,13 +374,11 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _booking = null;
         _sharedAuto = null;
         _pickupOtp = null;
-        if (results.isEmpty) {
-          _error = failures.isEmpty
-              ? 'No ride services are configured for this pickup area.'
-              : 'No ride service returned a fare. Check the pickup pincode, service-area coverage and fare configuration. ' + failures.first;
-        } else {
-          _error = null;
-        }
+        _error = results.every((item) => item['quote'] == null)
+            ? (failures.isEmpty
+                ? 'Vehicle types are listed, but fares are not configured yet.'
+                : 'Vehicle types are listed, but fares could not be loaded. ' + failures.first)
+            : null;
       });
     });
   }
