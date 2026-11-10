@@ -234,11 +234,438 @@ class QuickRideMaps {
     }
     final properties =
         Map<String, dynamic>.from((features.first as Map)['properties'] as Map? ?? const {});
-    return (properties['full_address'] ??
+    final context = Map<String, dynamic>.from(
+      properties['context'] as Map? ?? const {},
+    );
+    final postcodeContext = context['postcode'];
+    final postcode = postcodeContext is Map
+        ? (postcodeContext['name'] ?? postcodeContext['text'])?.toString()
+        : null;
+    final address = (properties['full_address'] ??
             properties['place_formatted'] ??
             properties['name'] ??
             'Selected location')
         .toString();
+    if (postcode != null &&
+        RegExp(r'^[1-9][0-9]{5}
+  }
+
+  static Future<QuickRideRoute> drivingRoute({
+    required LatLng origin,
+    required LatLng destination,
+    bool includeSteps = false,
+  }) async {
+    _requireToken();
+    final coordinates =
+        '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
+    final uri = Uri.https(
+      'api.mapbox.com',
+      '/directions/v5/mapbox/driving/$coordinates',
+      {
+        'alternatives': 'false',
+        'overview': 'full',
+        'geometries': 'geojson',
+        'steps': includeSteps ? 'true' : 'false',
+        'language': 'en',
+        'access_token': accessToken,
+      },
+    );
+    final response = await _http.get(uri).timeout(const Duration(seconds: 18));
+    if (response.statusCode != 200) {
+      throw StateError('Mapbox route service failed (${response.statusCode}).');
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    if (payload['code'] != 'Ok') {
+      throw StateError((payload['message'] ?? 'No drivable route found.').toString());
+    }
+    final routes = payload['routes'] as List<dynamic>? ?? const [];
+    if (routes.isEmpty || routes.first is! Map) {
+      throw StateError('Mapbox returned no drivable route.');
+    }
+    final route = Map<String, dynamic>.from(routes.first as Map);
+    final geometry = Map<String, dynamic>.from(route['geometry'] as Map);
+    final rawCoordinates = geometry['coordinates'] as List<dynamic>? ?? const [];
+    final points = rawCoordinates
+        .whereType<List<dynamic>>()
+        .where((pair) => pair.length >= 2 && pair[0] is num && pair[1] is num)
+        .map((pair) => LatLng(
+              (pair[1] as num).toDouble(),
+              (pair[0] as num).toDouble(),
+            ))
+        .toList(growable: false);
+    if (points.length < 2) {
+      throw StateError('Mapbox returned an incomplete route.');
+    }
+
+    final steps = <QuickRideRouteStep>[];
+    if (includeSteps) {
+      final legs = route['legs'] as List<dynamic>? ?? const [];
+      for (final rawLeg in legs) {
+        if (rawLeg is! Map) continue;
+        final rawSteps = rawLeg['steps'] as List<dynamic>? ?? const [];
+        for (final raw in rawSteps) {
+          if (raw is! Map) continue;
+          final item = Map<String, dynamic>.from(raw);
+          final maneuver = Map<String, dynamic>.from(item['maneuver'] as Map? ?? const {});
+          final location = maneuver['location'] as List<dynamic>? ?? const [];
+          steps.add(QuickRideRouteStep(
+            instruction: (maneuver['instruction'] ?? 'Continue along the route').toString(),
+            location: location.length >= 2 && location[0] is num && location[1] is num
+                ? LatLng((location[1] as num).toDouble(), (location[0] as num).toDouble())
+                : null,
+            distanceMeters: (item['distance'] as num?)?.toDouble() ?? 0,
+            durationSeconds: (item['duration'] as num?)?.toDouble() ?? 0,
+          ));
+        }
+      }
+    }
+
+    return QuickRideRoute(
+      points: points,
+      distanceMeters: (route['distance'] as num).toDouble(),
+      durationSeconds: (route['duration'] as num).toDouble(),
+      steps: steps,
+    );
+  }
+}
+
+/// A small facade that keeps feature screens independent of Mapbox SDK types.
+class QuickRideMapController {
+  QuickRideMapController._(this._web);
+
+  final WebViewController _web;
+
+  void moveTo(LatLng point, {double? zoom}) {
+    unawaited(_web.runJavaScript(
+      'window.quickRideMoveTo && window.quickRideMoveTo('
+      '${point.longitude}, ${point.latitude}, ${zoom ?? 'null'});',
+    ));
+  }
+
+  void fitRoute(
+    List<LatLng> points, {
+    EdgeInsets padding = const EdgeInsets.fromLTRB(36, 175, 36, 250),
+  }) {
+    if (points.length < 2) return;
+    final coordinates = points
+        .map((point) => [point.longitude, point.latitude])
+        .toList(growable: false);
+    unawaited(_web.runJavaScript(
+      'window.quickRideFitRoute && window.quickRideFitRoute('
+      '${jsonEncode(coordinates)}, ${jsonEncode({
+        'top': padding.top,
+        'left': padding.left,
+        'right': padding.right,
+        'bottom': padding.bottom,
+      })});',
+    ));
+  }
+
+  void rotate(double degrees) {
+    unawaited(_web.runJavaScript(
+      'window.quickRideRotate && window.quickRideRotate($degrees);',
+    ));
+  }
+}
+
+class QuickRideSearchResult {
+  const QuickRideSearchResult({
+    required this.mapboxId,
+    required this.point,
+    required this.name,
+    required this.address,
+    required this.resultType,
+    this.sessionToken,
+    this.postalCode,
+  });
+
+  final String mapboxId;
+  final String? sessionToken;
+  final LatLng point;
+  final String name;
+  final String address;
+  final String resultType;
+  final String? postalCode;
+}
+
+class QuickRidePlace {
+  const QuickRidePlace({
+    required this.point,
+    required this.name,
+    required this.address,
+    this.postalCode,
+  });
+
+  final LatLng point;
+  final String name;
+  final String address;
+  final String? postalCode;
+}
+
+class QuickRideRoute {
+  const QuickRideRoute({
+    required this.points,
+    required this.distanceMeters,
+    required this.durationSeconds,
+    this.steps = const [],
+  });
+
+  final List<LatLng> points;
+  final double distanceMeters;
+  final double durationSeconds;
+  final List<QuickRideRouteStep> steps;
+}
+
+class QuickRideRouteStep {
+  const QuickRideRouteStep({
+    required this.instruction,
+    required this.location,
+    required this.distanceMeters,
+    required this.durationSeconds,
+  });
+
+  final String instruction;
+  final LatLng? location;
+  final double distanceMeters;
+  final double durationSeconds;
+}
+
+class QuickRideMapView extends StatefulWidget {
+  const QuickRideMapView({
+    super.key,
+    this.initialCenter,
+    this.initialZoom = 13,
+    this.showUserLocation = true,
+    this.currentPosition,
+    this.pickup,
+    this.destination,
+    this.routePoints = const [],
+    this.onMapCreated,
+    this.onTap,
+    this.followCurrentPosition = false,
+    this.navigationCamera = false,
+    this.recenterSignal = 0,
+    this.fitRouteBottomInset = 300,
+    this.userAgentPackageName = 'com.quickride.customer',
+  });
+
+  final LatLng? initialCenter;
+  final double initialZoom;
+  final bool showUserLocation;
+  final LatLng? currentPosition;
+  final LatLng? pickup;
+  final LatLng? destination;
+  final List<LatLng> routePoints;
+  final ValueChanged<QuickRideMapController>? onMapCreated;
+  final ValueChanged<LatLng>? onTap;
+  final bool followCurrentPosition;
+  final bool navigationCamera;
+  final int recenterSignal;
+  final double fitRouteBottomInset;
+  final String userAgentPackageName;
+
+  @override
+  State<QuickRideMapView> createState() => _QuickRideMapViewState();
+}
+
+class _QuickRideMapViewState extends State<QuickRideMapView> {
+  late final WebViewController _webController;
+  QuickRideMapController? _mapController;
+  bool _webViewReady = false;
+  bool _mapReady = false;
+  String? _mapError;
+
+  LatLng get _initial =>
+      widget.currentPosition ?? widget.initialCenter ?? const LatLng(25.4358, 81.8463);
+
+  @override
+  void initState() {
+    super.initState();
+    if (QuickRideMaps.isConfigured) {
+      unawaited(_initializeWebView());
+    }
+  }
+
+  Future<void> _initializeWebView() async {
+    final controller = WebViewController();
+    _webController = controller;
+    await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    await controller.setBackgroundColor(Colors.white);
+    await controller.addJavaScriptChannel(
+      'QuickRideBridge',
+      onMessageReceived: _onJavaScriptMessage,
+    );
+    await controller.setNavigationDelegate(
+      NavigationDelegate(
+        onPageFinished: (_) async {
+          if (!mounted) return;
+          final token = jsonEncode(QuickRideMaps.accessToken.trim());
+          final longitude = _initial.longitude;
+          final latitude = _initial.latitude;
+          await controller.runJavaScript(
+            'window.quickRideInitialize && window.quickRideInitialize('
+            '$token, $longitude, $latitude, ${widget.initialZoom});',
+          );
+        },
+        onWebResourceError: (error) {
+          if (!mounted || error.isForMainFrame != true) return;
+          setState(() => _mapError = error.description);
+        },
+      ),
+    );
+    await controller.loadFlutterAsset(
+      'packages/quick_ride_maps/assets/quick_ride_map.html',
+    );
+    if (mounted) {
+      setState(() => _webViewReady = true);
+    }
+  }
+
+  void _onJavaScriptMessage(JavaScriptMessage message) {
+    if (message.message == 'ready') {
+      if (!mounted) return;
+      setState(() {
+        _mapReady = true;
+        _mapError = null;
+      });
+      _mapController ??= QuickRideMapController._(_webController);
+      widget.onMapCreated?.call(_mapController!);
+      unawaited(_syncMap());
+      if (widget.routePoints.length >= 2 && !widget.navigationCamera) {
+        _mapController!.fitRoute(
+          widget.routePoints,
+          padding: EdgeInsets.fromLTRB(36, 175, 36, widget.fitRouteBottomInset),
+        );
+      }
+      return;
+    }
+    if (message.message.startsWith('error:')) {
+      if (!mounted) return;
+      setState(() => _mapError = message.message.substring(6).trim());
+      return;
+    }
+    try {
+      final payload = jsonDecode(message.message);
+      if (payload is Map && payload['type'] == 'tap') {
+        final latitude = payload['latitude'];
+        final longitude = payload['longitude'];
+        if (latitude is num && longitude is num) {
+          widget.onTap?.call(LatLng(latitude.toDouble(), longitude.toDouble()));
+        }
+      }
+    } catch (_) {
+      // Ignore unrelated or malformed messages from the map document.
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant QuickRideMapView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_mapReady) return;
+
+    if (!listEquals(oldWidget.routePoints, widget.routePoints) ||
+        oldWidget.currentPosition != widget.currentPosition ||
+        oldWidget.pickup != widget.pickup ||
+        oldWidget.destination != widget.destination ||
+        oldWidget.showUserLocation != widget.showUserLocation) {
+      unawaited(_syncMap());
+    }
+
+    if (widget.recenterSignal != oldWidget.recenterSignal ||
+        (widget.followCurrentPosition &&
+            oldWidget.currentPosition != widget.currentPosition) ||
+        widget.navigationCamera != oldWidget.navigationCamera) {
+      final point = widget.currentPosition ?? widget.initialCenter;
+      if (point != null) {
+        _mapController?.moveTo(
+          point,
+          zoom: widget.navigationCamera ? 17.0 : 15.5,
+        );
+      }
+    }
+
+    if (!widget.navigationCamera &&
+        !listEquals(oldWidget.routePoints, widget.routePoints) &&
+        widget.routePoints.length >= 2) {
+      _mapController?.fitRoute(
+        widget.routePoints,
+        padding: EdgeInsets.fromLTRB(36, 175, 36, widget.fitRouteBottomInset),
+      );
+    }
+  }
+
+  Map<String, double>? _pointMap(LatLng? point) {
+    if (point == null) return null;
+    return {
+      'longitude': point.longitude,
+      'latitude': point.latitude,
+    };
+  }
+
+  Future<void> _syncMap() async {
+    if (!_mapReady) return;
+    final payload = <String, Object?>{
+      'currentPosition': _pointMap(widget.currentPosition),
+      'showUserLocation': widget.showUserLocation,
+      'pickup': _pointMap(widget.pickup),
+      'destination': _pointMap(widget.destination),
+      'route': widget.routePoints
+          .map((point) => [point.longitude, point.latitude])
+          .toList(growable: false),
+      'navigationCamera': widget.navigationCamera,
+      'followCurrentPosition': widget.followCurrentPosition,
+    };
+    await _webController.runJavaScript(
+      'window.quickRideUpdate && window.quickRideUpdate(${jsonEncode(payload)});',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final override = QuickRideMaps.mapWidgetOverride;
+    if (override != null) return override(context, widget);
+    if (!QuickRideMaps.isConfigured) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Mapbox is not configured. Please try again after the app is connected to its map service.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    if (_mapError != null && !_mapReady) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'The Mapbox map could not load. Check your internet connection and try again.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    if (!_webViewReady) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        WebViewWidget(controller: _webController),
+        if (!_mapReady)
+          const IgnorePointer(
+            child: Center(child: CircularProgressIndicator()),
+          ),
+      ],
+    );
+  }
+}
+).hasMatch(postcode) &&
+        !RegExp(r'(?<![0-9])' + postcode + r'(?![0-9])').hasMatch(address)) {
+      return '$address, $postcode';
+    }
+    return address;
   }
 
   static Future<QuickRideRoute> drivingRoute({
