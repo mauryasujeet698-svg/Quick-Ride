@@ -127,11 +127,11 @@ jobs:
           text = path.read_text()
           text, count = re.subn(
               r'distributionUrl=.*gradle-[0-9.]+-(?:all|bin)\.zip',
-              'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-all.zip',
+              'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14-all.zip',
               text
           )
           if count != 1:
-              raise SystemExit(f"Could not pin Gradle 8.13 in {path}")
+              raise SystemExit(f"Could not pin Gradle 8.14 in {path}")
           path.write_text(text)
           PY
           done
