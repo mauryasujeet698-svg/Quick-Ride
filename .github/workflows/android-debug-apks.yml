@@ -21,7 +21,6 @@ jobs:
       FIREBASE_ADMIN_APP_ID: ${{ secrets.FIREBASE_ADMIN_APP_ID }}
       MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN || secrets.MAPBOX_API_KEY || secrets.MAPBOX_PUBLIC_TOKEN || secrets.MAPBOX_TOKEN || vars.MAPBOX_ACCESS_TOKEN || vars.MAPBOX_API_KEY || '' }}
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_CLIENT_ID || vars.GOOGLE_WEB_CLIENT_ID || vars.GOOGLE_CLIENT_ID || '' }}
-      MAPBOX_DOWNLOADS_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN || '' }}
       MAX_APK_BYTES: 25000000
     steps:
       - uses: actions/checkout@v4
@@ -65,10 +64,6 @@ jobs:
                   maven("$flutterStorageUrl/download.flutter.io")
                   maven {
                       url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
-                      credentials {
-                          username = "mapbox"
-                          password = System.getenv("MAPBOX_DOWNLOADS_TOKEN") ?: ""
-                      }
                   }
               }
           }
@@ -141,8 +136,6 @@ jobs:
               raise SystemExit("One or more required build defines are empty")
           if not defines["MAPBOX_ACCESS_TOKEN"].startswith("pk."):
               raise SystemExit("MAPBOX_ACCESS_TOKEN must be a public pk.* token; Mapbox maps and search cannot initialize without it.")
-          if not os.environ["MAPBOX_DOWNLOADS_TOKEN"].strip():
-              raise SystemExit("MAPBOX_DOWNLOADS_TOKEN is required to download the Mapbox Android SDK from its Maven repository.")
           if not defines["GOOGLE_WEB_CLIENT_ID"]:
               raise SystemExit("GOOGLE_WEB_CLIENT_ID is required for native Google sign-in.")
           Path("build/quick_ride.defines.json").write_text(
