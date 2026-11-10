@@ -20,7 +20,7 @@ jobs:
       FIREBASE_DRIVER_APP_ID: ${{ secrets.FIREBASE_DRIVER_APP_ID }}
       FIREBASE_ADMIN_APP_ID: ${{ secrets.FIREBASE_ADMIN_APP_ID }}
       MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN || vars.MAPBOX_ACCESS_TOKEN || '' }}
-      SDK_REGISTRY_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN || '' }}
+      OSM_TILE_URL: ${{ vars.OSM_TILE_URL || '' }}
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_CLIENT_ID || vars.GOOGLE_WEB_CLIENT_ID || vars.GOOGLE_CLIENT_ID || '' }}
       MAPBOX_TOKEN_SOURCE: ${{ secrets.MAPBOX_ACCESS_TOKEN != '' && 'secrets.MAPBOX_ACCESS_TOKEN' || vars.MAPBOX_ACCESS_TOKEN != '' && 'vars.MAPBOX_ACCESS_TOKEN' || 'none' }}
       MAX_APK_BYTES: 25000000
@@ -81,27 +81,6 @@ jobs:
           if agp_count != 1 or kotlin_count != 1:
               raise SystemExit(f"Could not pin compatible AGP/Kotlin plugins in {path}: AGP={agp_count}, Kotlin={kotlin_count}")
           path.write_text(text)
-          if "api.mapbox.com/downloads/v2/releases/maven" not in text:
-              block = """dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-              repositories {
-                  google()
-                  mavenCentral()
-                  val flutterStorageUrl = System.getenv("FLUTTER_STORAGE_BASE_URL") ?: "https://storage.googleapis.com"
-                  maven("$flutterStorageUrl/download.flutter.io")
-                  maven {
-                      url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
-                  }
-              }
-          }
-
-          """
-              marker = "plugins {"
-              if marker not in text:
-                  raise SystemExit(f"Could not locate plugins block in {path}")
-              text = text.replace(marker, block + marker, 1)
-              path.write_text(text)
-          PY
           python3 - "apps/${app}_app/android/app/build.gradle.kts" <<'PY'
           from pathlib import Path
           import sys
@@ -160,7 +139,7 @@ jobs:
               path.write_text(text)
               print(f"Pinned flutter_tts Android buildscript AGP to 8.11.1: {path}")
           PY
-      - name: Verify Mapbox token and native services
+      - name: Verify Mapbox Search and Directions services
         shell: bash
         run: |
           set -euo pipefail
@@ -174,11 +153,6 @@ jobs:
             exit 1
           fi
           echo "A public Mapbox token is available to the Android build (source: $MAPBOX_TOKEN_SOURCE)."
-          style_code="$(curl --silent --show-error --output /tmp/mapbox-style.json --write-out '%{http_code}' "https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_ACCESS_TOKEN}")"
-          if [[ "$style_code" != "200" ]]; then
-            echo "::error::Mapbox Streets style preflight failed (HTTP $style_code). Check token validity and styles:read scope."
-            exit 1
-          fi
           search_code="$(curl --silent --show-error --output /tmp/mapbox-search.json --write-out '%{http_code}' --get "https://api.mapbox.com/search/searchbox/v1/suggest" --data-urlencode "q=Lucknow" --data-urlencode "limit=1" --data-urlencode "session_token=00000000-0000-4000-8000-000000000001" --data-urlencode "access_token=${MAPBOX_ACCESS_TOKEN}")"
           if [[ "$search_code" != "200" ]]; then
             echo "::error::Mapbox Search Box preflight failed (HTTP $search_code). Check Search Box access for this token."
@@ -189,7 +163,7 @@ jobs:
             echo "::error::Mapbox Directions preflight failed (HTTP $route_code). Check directions:read scope."
             exit 1
           fi
-          echo "Mapbox Styles, Search Box and Directions preflight checks passed."
+          echo "Mapbox Search Box and Directions preflight checks passed."
 
       - name: Build optimized ABI-specific APKs
         shell: bash
@@ -215,6 +189,7 @@ jobs:
               "SUPABASE_URL": os.environ["SUPABASE_URL"].strip(),
               "SUPABASE_PUBLISHABLE_KEY": os.environ["SUPABASE_PUBLISHABLE_KEY"].strip(),
               "MAPBOX_ACCESS_TOKEN": os.environ["MAPBOX_ACCESS_TOKEN"].strip(),
+              "OSM_TILE_URL": os.environ["OSM_TILE_URL"].strip() or "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
               "GOOGLE_WEB_CLIENT_ID": os.environ["GOOGLE_WEB_CLIENT_ID"].strip(),
               "FIREBASE_API_KEY": os.environ["FIREBASE_API_KEY"].strip(),
               "FIREBASE_PROJECT_ID": os.environ["FIREBASE_PROJECT_ID"].strip(),
@@ -232,7 +207,7 @@ jobs:
           if any(not defines[key] for key in required):
               raise SystemExit("One or more required build defines are empty")
           if not defines["MAPBOX_ACCESS_TOKEN"].startswith("pk."):
-              raise SystemExit("MAPBOX_ACCESS_TOKEN must be a public pk.* token; Mapbox maps and search cannot initialize without it.")
+              raise SystemExit("MAPBOX_ACCESS_TOKEN must be a public pk.* token; Mapbox search, reverse geocoding and directions cannot initialize without it.")
           if not defines["GOOGLE_WEB_CLIENT_ID"]:
               raise SystemExit("GOOGLE_WEB_CLIENT_ID is required for native Google sign-in.")
           Path("build/quick_ride.defines.json").write_text(
