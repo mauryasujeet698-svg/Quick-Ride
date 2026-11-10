@@ -48,16 +48,27 @@ jobs:
               if not line.startswith("android.builtInKotlin=")
               and not line.startswith("android.newDsl=")
           ]
-          lines.extend(["android.builtInKotlin=false", "android.newDsl=false"])
           path.write_text("\n".join(lines) + "\n")
           PY
             manifest="apps/${app}_app/android/app/src/main/AndroidManifest.xml"
             python3 scripts/configure_android_manifest.py "$manifest" "com.quickride.${app}"
             python3 - "apps/${app}_app/android/settings.gradle.kts" <<'PY'
           from pathlib import Path
+          import re
           import sys
           path = Path(sys.argv[1])
           text = path.read_text()
+          text, agp_count = re.subn(
+              r'(id\("com\\.android\\.application"\) version ")[^"]+("[ ]+apply false)',
+              r'\\g<1>8.11.1\\g<2>', text
+          )
+          text, kotlin_count = re.subn(
+              r'(id\("org\\.jetbrains\\.kotlin\\.android"\) version ")[^"]+("[ ]+apply false)',
+              r'\\g<1>2.2.20\\g<2>', text
+          )
+          if agp_count != 1 or kotlin_count != 1:
+              raise SystemExit(f"Could not pin compatible AGP/Kotlin plugins in {path}: AGP={agp_count}, Kotlin={kotlin_count}")
+          path.write_text(text)
           if "api.mapbox.com/downloads/v2/releases/maven" not in text:
               block = """dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
@@ -97,7 +108,46 @@ jobs:
           path.write_text(gradle.replace(marker, optimized, 1))
           (path.parent / "proguard-rules.pro").touch()
           PY
+            python3 - "apps/${app}_app/android/gradle/wrapper/gradle-wrapper.properties" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          text, count = re.subn(
+              r'distributionUrl=.*gradle-[0-9.]+-(?:all|bin)\\.zip',
+              'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-all.zip',
+              text
+          )
+          if count != 1:
+              raise SystemExit(f"Could not pin Gradle 8.13 in {path}")
+          path.write_text(text)
+          PY
           done
+      - name: Align flutter_tts Android plugin with pinned toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+          cache = Path(os.environ["PUB_CACHE"])
+          candidates = list(cache.glob("hosted/pub.dev/flutter_tts-*/android/build.gradle"))
+          if not candidates:
+              raise SystemExit("flutter_tts Android Gradle file was not found in PUB_CACHE")
+          for path in candidates:
+              text = path.read_text()
+              text, count = re.subn(
+                  r"com\\.android\\.tools\\.build:gradle:[0-9.]+",
+                  "com.android.tools.build:gradle:8.11.1",
+                  text
+              )
+              if count == 0:
+                  raise SystemExit(f"Expected flutter_tts AGP dependency not found in {path}")
+              path.write_text(text)
+              print(f"Pinned flutter_tts Android buildscript AGP to 8.11.1: {path}")
+          PY
       - name: Verify Mapbox token availability
         shell: bash
         run: |
