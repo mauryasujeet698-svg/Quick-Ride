@@ -203,11 +203,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       setState(() {
         if (pickup) {
           _pickup = point;
+          if (pincode != null) _pin.text = pincode;
         } else {
           _destination = point;
         }
         _quote = null;
       });
+      if (pickup) unawaited(_loadCategories());
       if (moveCamera) {
         _mapController?.moveTo(
           LatLng(latitude, longitude),
