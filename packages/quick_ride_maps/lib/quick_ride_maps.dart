@@ -652,6 +652,11 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
 
   @override
   Widget build(BuildContext context) {
+    final override = QuickRideMaps.mapWidgetOverride;
+    if (override != null) {
+      return override(context, widget);
+    }
+
     if (!QuickRideMaps.isConfigured) {
       return const Center(
         child: Padding(
