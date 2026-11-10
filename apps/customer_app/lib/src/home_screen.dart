@@ -26,7 +26,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   QuickRidePlace? _pickup;
   QuickRidePlace? _destination;
   List<QuickRideSearchResult> _suggestions = const [];
-  List<Map<String, dynamic>> _vehicleCategories = const [];
   QuickRideRoute? _route;
   String? _error;
   bool _loadingLocation = true;
@@ -42,7 +41,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
         if (mounted) setState(() {});
       });
-      unawaited(_loadVehicleCategories());
     }
     // The first launch requests foreground location. If declined, users can
     // still set pickup and destination by searching or tapping the map.
@@ -56,19 +54,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     _searchController.dispose();
     unawaited(_speech.cancel());
     super.dispose();
-  }
-
-  Future<void> _loadVehicleCategories() async {
-    try {
-      final rows = await QuickRideBackend.client
-          .from('vehicle_categories')
-          .select('id,code,name,description')
-          .eq('is_active', true)
-          .order('sort_order');
-      if (mounted) setState(() => _vehicleCategories = rows);
-    } catch (_) {
-      // The booking flow will surface the live backend error when needed.
-    }
   }
 
   Future<void> _detectCurrentLocation() async {
@@ -137,6 +122,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   }
 
   Future<void> _chooseSuggestion(QuickRideSearchResult suggestion) async {
+    final wasSelectingPickup = _selectingPickup;
     setState(() {
       _searching = true;
       _error = null;
@@ -145,7 +131,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       final place = await QuickRideMaps.retrieveSuggestion(suggestion);
       if (!mounted) return;
       setState(() {
-        if (_selectingPickup) {
+        if (wasSelectingPickup) {
           _pickup = place;
           _selectingPickup = false;
         } else {
@@ -164,6 +150,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       });
       if (mounted) setState(() {});
       await _refreshRoute();
+      if (!wasSelectingPickup && _pickup != null && _destination != null && mounted) {
+        _openBooking();
+      }
     } catch (error) {
       if (mounted) setState(() {
         _searching = false;
@@ -298,323 +287,282 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         ],
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        child: Column(
           children: [
-            Text(
-              'Where would you like to go?',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              'Set your pickup and destination to compare available rides.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-            ),
-            const SizedBox(height: 20),
-            Card(
-              elevation: 1,
-              child: Column(
+            Expanded(
+              flex: 5,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  ListTile(
-                    leading: const Icon(Icons.my_location_rounded,
-                        color: Color(0xFF159B65)),
-                    title: const Text('PICKUP',
-                        style: TextStyle(fontSize: 11, letterSpacing: 1.1)),
-                    subtitle: Text(
-                      pickupLabel,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    trailing: IconButton(
-                      tooltip: 'Use current location',
-                      onPressed: _loadingLocation ? null : _detectCurrentLocation,
-                      icon: const Icon(Icons.gps_fixed_rounded),
-                    ),
-                    selected: _selectingPickup,
-                    onTap: () => setState(() {
-                      _selectingPickup = true;
-                      _searchController.clear();
-                      _suggestions = const [];
-                      _error = null;
-                    }),
+                  QuickRideMapView(
+                    initialCenter: _currentPosition ?? const LatLng(25.4358, 81.8463),
+                    initialZoom: _currentPosition == null ? 5 : 14.5,
+                    currentPosition: _currentPosition,
+                    pickup: _pickup?.point,
+                    destination: _destination?.point,
+                    routePoints: _route?.points ?? const [],
+                    followCurrentPosition: false,
                   ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  ListTile(
-                    leading: const Icon(Icons.flag_outlined,
-                        color: Color(0xFF2463EB)),
-                    title: const Text('DESTINATION',
-                        style: TextStyle(fontSize: 11, letterSpacing: 1.1)),
-                    subtitle: Text(
-                      destinationLabel,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: _destination == null
-                            ? colors.onSurfaceVariant
-                            : colors.onSurface,
+                  Positioned(
+                    top: 14,
+                    left: 16,
+                    child: Material(
+                      elevation: 2,
+                      borderRadius: BorderRadius.circular(22),
+                      color: colors.surface,
+                      child: IconButton(
+                        tooltip: 'Use current location',
+                        onPressed: _loadingLocation ? null : _detectCurrentLocation,
+                        icon: const Icon(Icons.my_location_rounded),
                       ),
                     ),
-                    trailing: const Icon(Icons.edit_location_alt_outlined),
-                    selected: !_selectingPickup,
-                    onTap: () => setState(() {
-                      _selectingPickup = false;
-                      _searchController.clear();
-                      _suggestions = const [];
-                      _error = null;
-                    }),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _searchController,
-                            textInputAction: TextInputAction.search,
-                            onChanged: _onSearchChanged,
-                            onSubmitted: _loadSuggestions,
-                            decoration: InputDecoration(
-                              prefixIcon: const Icon(Icons.search_rounded),
-                              hintText: _selectingPickup
-                                  ? 'Search pickup location'
-                                  : 'Search destination',
-                              isDense: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
+                  if (_loadingRoute)
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                  if (_error != null && _route == null)
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 10,
+                      child: Material(
+                        color: colors.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Text(
+                            _error!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: colors.onErrorContainer),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton.filledTonal(
-                          tooltip: _listening ? 'Stop voice search' : 'Search by voice',
-                          onPressed: _toggleMicrophone,
-                          icon: Icon(
-                            _listening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 6,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
+                children: [
+                  Card(
+                    elevation: 2,
+                    clipBehavior: Clip.antiAlias,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+                      child: Column(
+                        children: [
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(
+                              Icons.my_location_rounded,
+                              color: Color(0xFF159B65),
+                            ),
+                            title: const Text(
+                              'Pickup',
+                              style: TextStyle(fontSize: 11, letterSpacing: 0.8),
+                            ),
+                            subtitle: Text(
+                              pickupLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            trailing: IconButton(
+                              tooltip: 'Change pickup',
+                              onPressed: () => setState(() {
+                                _selectingPickup = true;
+                                _searchController.clear();
+                                _suggestions = const [];
+                                _error = null;
+                              }),
+                              icon: const Icon(Icons.edit_location_alt_outlined),
+                            ),
                           ),
+                          const Divider(height: 1),
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(
+                              Icons.flag_outlined,
+                              color: Color(0xFF2463EB),
+                            ),
+                            title: const Text(
+                              'Destination',
+                              style: TextStyle(fontSize: 11, letterSpacing: 0.8),
+                            ),
+                            subtitle: Text(
+                              destinationLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: _destination == null
+                                    ? colors.onSurfaceVariant
+                                    : colors.onSurface,
+                              ),
+                            ),
+                            trailing: IconButton(
+                              tooltip: 'Change destination',
+                              onPressed: () => setState(() {
+                                _selectingPickup = false;
+                                _searchController.clear();
+                                _suggestions = const [];
+                                _error = null;
+                              }),
+                              icon: const Icon(Icons.edit_outlined),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchController,
+                                  textInputAction: TextInputAction.search,
+                                  onChanged: _onSearchChanged,
+                                  onSubmitted: _loadSuggestions,
+                                  decoration: InputDecoration(
+                                    hintText: _selectingPickup
+                                        ? 'Enter pickup location'
+                                        : 'Enter destination',
+                                    prefixIcon: const Icon(Icons.search_rounded),
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: colors.surfaceContainerHighest,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton.filledTonal(
+                                tooltip: _listening ? 'Stop voice search' : 'Search by voice',
+                                onPressed: _toggleMicrophone,
+                                icon: Icon(
+                                  _listening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_searching) ...[
+                            const SizedBox(height: 8),
+                            const LinearProgressIndicator(minHeight: 2),
+                          ],
+                          if (_suggestions.isNotEmpty)
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 210),
+                              child: ListView.separated(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: _suggestions.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final result = _suggestions[index];
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.place_outlined),
+                                    title: Text(
+                                      result.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      result.address,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    onTap: () => _chooseSuggestion(result),
+                                  );
+                                },
+                              ),
+                            ),
+                          if (_listening)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text('Listening… speak your location'),
+                            ),
+                          if (_pickup != null && _destination != null) ...[
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _openBooking,
+                                icon: const Icon(Icons.search_rounded),
+                                label: const Text('View ride options'),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (QuickRideCustomerPreferences.recentPlaces.value.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Recent places',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: QuickRideCustomerPreferences.clearRecentPlaces,
+                          child: const Text('Clear'),
                         ),
                       ],
                     ),
-                  ),
-                  if (_searching)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: LinearProgressIndicator(minHeight: 2),
-                    ),
-                  if (_suggestions.isNotEmpty)
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 240),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _suggestions.length,
-                        separatorBuilder: (_, __) =>
-                            const Divider(height: 1, indent: 56),
-                        itemBuilder: (context, index) {
-                          final result = _suggestions[index];
-                          return ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.place_outlined),
-                            title: Text(result.name,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            subtitle: Text(result.address,
-                                maxLines: 2, overflow: TextOverflow.ellipsis),
-                            onTap: () => _chooseSuggestion(result),
+                    ...QuickRideCustomerPreferences.recentPlaces.value.map((place) {
+                      final title = place['name']?.toString() ?? 'Recent place';
+                      final address = place['address']?.toString() ?? '';
+                      final latitude = (place['latitude'] as num).toDouble();
+                      final longitude = (place['longitude'] as num).toDouble();
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.history_rounded),
+                        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(address, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        onTap: () {
+                          final selected = QuickRidePlace(
+                            point: LatLng(latitude, longitude),
+                            name: title,
+                            address: address,
+                            postalCode: place['postalCode']?.toString(),
                           );
+                          final wasSelectingPickup = _selectingPickup;
+                          setState(() {
+                            if (wasSelectingPickup) {
+                              _pickup = selected;
+                              _selectingPickup = false;
+                            } else {
+                              _destination = selected;
+                            }
+                          });
+                          unawaited(() async {
+                            await _refreshRoute();
+                            if (!wasSelectingPickup && _pickup != null && _destination != null && mounted) {
+                              _openBooking();
+                            }
+                          }());
                         },
-                      ),
-                    ),
-                  if (_listening)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: Text('Listening… speak your location'),
-                    ),
+                      );
+                    }),
+                  ],
                 ],
               ),
             ),
-            if (QuickRideCustomerPreferences.savedPlaces.value.isNotEmpty) ...[
-              const SizedBox(height: 18),
-              Text(
-                'Saved places',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-              const SizedBox(height: 6),
-              ...QuickRideCustomerPreferences.savedPlaces.value.map((place) {
-                final title = place['name']?.toString() ?? 'Saved place';
-                final address = place['address']?.toString() ?? '';
-                final latitude = (place['latitude'] as num).toDouble();
-                final longitude = (place['longitude'] as num).toDouble();
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.favorite_rounded, color: Color(0xFFE45872)),
-                  title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(address, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  onTap: () {
-                    final selected = QuickRidePlace(
-                      point: LatLng(latitude, longitude),
-                      name: title,
-                      address: address,
-                      postalCode: place['postalCode']?.toString(),
-                    );
-                    setState(() {
-                      if (_selectingPickup) {
-                        _pickup = selected;
-                        _selectingPickup = false;
-                      } else {
-                        _destination = selected;
-                      }
-                    });
-                    unawaited(_refreshRoute());
-                  },
-                );
-              }),
-            ],
-            if (QuickRideCustomerPreferences.recentPlaces.value.isNotEmpty) ...[
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('Recent places',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            )),
-                  ),
-                  TextButton(
-                    onPressed: QuickRideCustomerPreferences.clearRecentPlaces,
-                    child: const Text('Clear'),
-                  ),
-                ],
-              ),
-              ...QuickRideCustomerPreferences.recentPlaces.value.map((place) {
-                final title = place['name']?.toString() ?? 'Recent place';
-                final address = place['address']?.toString() ?? '';
-                final latitude = (place['latitude'] as num).toDouble();
-                final longitude = (place['longitude'] as num).toDouble();
-                final key = '$latitude,$longitude';
-                final isSaved = QuickRideCustomerPreferences.savedPlaces.value.any(
-                  (item) => '${item['latitude']},${item['longitude']}' == key,
-                );
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.history_rounded),
-                  title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(address, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: IconButton(
-                    tooltip: isSaved ? 'Remove favourite' : 'Save place',
-                    onPressed: () async {
-                      if (isSaved) {
-                        await QuickRideCustomerPreferences.removeSavedPlace(place);
-                      } else {
-                        await QuickRideCustomerPreferences.addSavedPlace(place);
-                      }
-                      if (mounted) setState(() {});
-                    },
-                    icon: Icon(
-                      isSaved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      color: isSaved ? const Color(0xFFE45872) : colors.onSurfaceVariant,
-                    ),
-                  ),
-                  onTap: () {
-                    final selected = QuickRidePlace(
-                      point: LatLng(latitude, longitude),
-                      name: title,
-                      address: address,
-                      postalCode: place['postalCode']?.toString(),
-                    );
-                    setState(() {
-                      if (_selectingPickup) {
-                        _pickup = selected;
-                        _selectingPickup = false;
-                      } else {
-                        _destination = selected;
-                      }
-                    });
-                    unawaited(_refreshRoute());
-                  },
-                );
-              }),            ],
-            if (_route != null) ...[
-              const SizedBox(height: 14),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.route_rounded),
-                  title: const Text('Route preview'),
-                  subtitle: Text(
-                    (_route!.distanceMeters / 1000).toStringAsFixed(1) +
-                        ' km · ' +
-                        (_route!.durationSeconds / 60).ceil().toString() +
-                        ' min estimated',
-                  ),
-                  trailing: _loadingRoute
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check_circle_outline_rounded),
-                ),
-              ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colors.errorContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: colors.onErrorContainer),
-                ),
-              ),
-            ],
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: _pickup != null && _destination != null
-                  ? _openBooking
-                  : null,
-              icon: const Icon(Icons.search_rounded),
-              label: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 13),
-                child: Text('Choose ride'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (_vehicleCategories.isNotEmpty) ...[
-              Text(
-                'Services in Quick Ride',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _vehicleCategories
-                    .map((category) => Chip(
-                          avatar: const Icon(Icons.local_taxi_outlined, size: 18),
-                          label: Text(category['name'].toString()),
-                        ))
-                    .toList(growable: false),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Exact options and fares are checked for your pickup area after you choose a destination.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-              ),
-            ],
           ],
         ),
       ),

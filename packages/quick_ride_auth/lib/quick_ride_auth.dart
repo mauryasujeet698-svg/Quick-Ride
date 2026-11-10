@@ -34,50 +34,77 @@ class QuickRideAuth {
         'Google sign-in is not configured. Add the GOOGLE_WEB_CLIENT_ID build secret.',
       );
     }
-    _googleInitialization ??= _googleSignIn.initialize(
-      serverClientId: _googleWebClientId,
-    );
-    await _googleInitialization!;
-
-    if (!_googleSignIn.supportsAuthenticate()) {
-      throw const AuthException(
-        'Native Google sign-in is not supported on this device.',
+    try {
+      _googleInitialization ??= _googleSignIn.initialize(
+        serverClientId: _googleWebClientId,
       );
-    }
+      await _googleInitialization!;
 
-    final googleAccount = await _googleSignIn.authenticate();
-    final idToken = googleAccount.authentication.idToken;
-    if (idToken == null || idToken.isEmpty) {
-      throw const AuthException(
-        'Google did not return an ID token. Check the Android OAuth client configuration.',
+      if (!_googleSignIn.supportsAuthenticate()) {
+        throw const AuthException(
+          'Native Google sign-in is not supported on this device.',
+        );
+      }
+
+      GoogleSignInAccount googleAccount;
+      try {
+        googleAccount = await _googleSignIn.authenticate();
+      } catch (error) {
+        // Credential Manager can retain an account re-authentication state
+        // after an interrupted sign-out. Clear Google's native session and
+        // retry only this known stale-session failure once.
+        final details = error.toString().toLowerCase();
+        if (!details.contains('account reauth failed')) rethrow;
+        try {
+          await _googleSignIn.signOut();
+        } catch (_) {
+          // Continue with a fresh account selection attempt.
+        }
+        googleAccount = await _googleSignIn.authenticate();
+      }
+
+      final idToken = googleAccount.authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw const AuthException(
+          'Google did not return an ID token. Check the Android OAuth client configuration.',
+        );
+      }
+
+      final authorization = await googleAccount.authorizationClient
+              .authorizationForScopes(const ['email']) ??
+          await googleAccount.authorizationClient
+              .authorizeScopes(const ['email']);
+      final accessToken = authorization.accessToken;
+      if (accessToken.isEmpty) {
+        throw const AuthException(
+          'Google did not grant the access token required to finish sign-in.',
+        );
+      }
+
+      return await QuickRideBackend.client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: accessToken,
       );
+    } catch (_) {
+      _googleInitialization = null;
+      rethrow;
     }
-
-    final authorization = await googleAccount.authorizationClient
-            .authorizationForScopes(const ['email']) ??
-        await googleAccount.authorizationClient
-            .authorizeScopes(const ['email']);
-    final accessToken = authorization.accessToken;
-    if (accessToken.isEmpty) {
-      throw const AuthException(
-        'Google did not grant the access token required to finish sign-in.',
-      );
-    }
-
-    return QuickRideBackend.client.auth.signInWithIdToken(
-      provider: OAuthProvider.google,
-      idToken: idToken,
-      accessToken: accessToken,
-    );
   }
 
   static Future<void> signOut() async {
-    await QuickRideNotifications.unregisterCurrentDevice();
-    await QuickRideBackend.client.auth.signOut();
+    // Clear the native Google/Credential Manager session first. Otherwise a
+    // later authenticate() can be treated as a broken account re-auth attempt.
     try {
       await _googleSignIn.signOut();
     } catch (_) {
-      // Supabase session is already closed; native account cleanup is best-effort.
+      // Local Supabase sign-out must still complete if Google cleanup fails.
     }
+    try {
+      await QuickRideNotifications.unregisterCurrentDevice();
+    } catch (_) {
+      // A push-token cleanup failure must not leave the user signed in.
+    }
+    await QuickRideBackend.client.auth.signOut();
   }
 }

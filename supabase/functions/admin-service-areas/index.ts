@@ -172,10 +172,50 @@ Deno.serve(async (req: Request) => {
     if (action === "list") {
       const { data, error } = await admin
         .from("service_areas")
-        .select("id,name,city,state,country_code,timezone,is_active,service_area_pincodes(id,pincode,label,is_active,service_area_commercial_configs(id,business_model,subscription_amount,subscription_period,commission_percent,currency,valid_from,valid_until,is_active),service_area_dispatch_configs(id,initial_radius_m,max_radius_m,radius_step_m,offer_batch_size,offer_ttl_seconds,location_max_age_seconds,chain_pickup_distance_m,chain_offer_ttl_seconds),shared_auto_configs(pincode_id,is_enabled,seat_capacity,max_detour_percent,max_extra_minutes,fare_share_percent_per_seat))")
+        .select("id,name,city,state,country_code,timezone,is_active,service_area_pincodes(id,pincode,label,is_active,service_area_commercial_configs(id,business_model,subscription_amount,subscription_period,commission_percent,currency,valid_from,valid_until,is_active),service_area_dispatch_configs(id,initial_radius_m,max_radius_m,radius_step_m,offer_batch_size,offer_ttl_seconds,location_max_age_seconds,chain_pickup_distance_m,chain_offer_ttl_seconds),shared_auto_configs(pincode_id,is_enabled,seat_capacity,max_detour_percent,max_extra_minutes,fare_share_percent_per_seat),service_area_pincode_vehicles(id,vehicle_category_id,is_enabled,vehicle_categories(id,code,name,sort_order)))")
         .order("city", { ascending: true });
       if (error) return fail(500, "Unable to load service areas");
       return response(200, { service_areas: data ?? [] });
+    }
+
+    if (action === "set_pincode_vehicle_enabled") {
+      const pincodeId = Number(body.pincodeId);
+      const categoryId = Number(body.categoryId);
+      const isEnabled = body.isEnabled;
+      if (!Number.isSafeInteger(pincodeId) || !Number.isSafeInteger(categoryId) ||
+          typeof isEnabled !== "boolean") {
+        return fail(400, "A valid pincodeId, categoryId and isEnabled value are required");
+      }
+      const [{ data: pincode, error: pincodeError }, { data: category, error: categoryError }] = await Promise.all([
+        admin.from("service_area_pincodes")
+          .select("id,pincode,service_area_id").eq("id", pincodeId).maybeSingle(),
+        admin.from("vehicle_categories")
+          .select("id,code,name,is_active").eq("id", categoryId).maybeSingle(),
+      ]);
+      if (pincodeError || !pincode) return fail(404, "Service pincode not found");
+      if (categoryError || !category) return fail(404, "Vehicle category not found");
+      if (isEnabled && category.is_active !== true) {
+        return fail(409, "Enable the master vehicle category before enabling it in a pincode");
+      }
+      const { data: before, error: beforeError } = await admin.from("service_area_pincode_vehicles")
+        .select("*").eq("pincode_id", pincodeId).eq("vehicle_category_id", categoryId).maybeSingle();
+      if (beforeError) return fail(500, "Unable to read the current pincode vehicle setting");
+      const { data, error } = await admin.from("service_area_pincode_vehicles")
+        .upsert({
+          pincode_id: pincodeId,
+          vehicle_category_id: categoryId,
+          is_enabled: isEnabled,
+        }, { onConflict: "pincode_id,vehicle_category_id" })
+        .select("id,pincode_id,vehicle_category_id,is_enabled").single();
+      if (error) return fail(400, "Unable to save pincode vehicle setting");
+      await audit(
+        "pincode_vehicle.activation_changed",
+        "service_area_pincode_vehicles",
+        String(data.id),
+        before,
+        data,
+      );
+      return response(200, { pincode_vehicle: data });
     }
 
     if (action === "list_vehicle_categories") {
@@ -222,7 +262,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === "list_fare_configs") {
       const { data, error } = await admin.from("fare_configs")
-        .select("id,service_area_id,vehicle_category_id,currency,base_fare,per_km_rate,per_minute_rate,minimum_fare,booking_fee,multiplier,valid_from,valid_until,is_active,service_areas(id,name,city,state),vehicle_categories(id,code,name)")
+        .select("id,service_area_id,pincode_id,vehicle_category_id,currency,base_fare,per_km_rate,per_minute_rate,minimum_fare,booking_fee,multiplier,valid_from,valid_until,is_active,service_areas(id,name,city,state),service_area_pincodes(id,pincode,label),vehicle_categories(id,code,name)")
         .order("valid_from", { ascending: false });
       if (error) return fail(500, "Unable to load fare configurations");
       return response(200, { fare_configs: data ?? [] });
@@ -231,9 +271,13 @@ Deno.serve(async (req: Request) => {
     if (action === "create_fare_config") {
       const serviceAreaId = Number(body.serviceAreaId);
       const categoryId = Number(body.vehicleCategoryId);
+      const pincodeId = body.pincodeId == null || body.pincodeId === ""
+        ? null
+        : Number(body.pincodeId);
       const numericFields = ["baseFare", "perKmRate", "perMinuteRate", "minimumFare", "bookingFee", "multiplier"] as const;
       const values = Object.fromEntries(numericFields.map((key) => [key, Number(body[key])])) as Record<string, number>;
       if (!Number.isSafeInteger(serviceAreaId) || !Number.isSafeInteger(categoryId) ||
+          (pincodeId !== null && !Number.isSafeInteger(pincodeId)) ||
           numericFields.some((key) => typeof body[key] !== "number" || !Number.isFinite(values[key]))) {
         return fail(400, "Select a service area and vehicle category and enter all fare values");
       }
@@ -249,21 +293,48 @@ Deno.serve(async (req: Request) => {
       if (areaError || !area) return fail(404, "Service area not found");
       if (categoryError || !category || category.is_active !== true) return fail(409, "Choose an active vehicle category");
 
+      if (pincodeId !== null) {
+        const { data: pin, error: pinError } = await admin.from("service_area_pincodes")
+          .select("id,pincode,service_area_id").eq("id", pincodeId).maybeSingle();
+        if (pinError || !pin) return fail(404, "Service pincode not found");
+        if (Number(pin.service_area_id) !== serviceAreaId) {
+          return fail(400, "The selected pincode does not belong to the selected service area");
+        }
+        const { data: enabled, error: enabledError } = await admin.from("service_area_pincode_vehicles")
+          .select("id").eq("pincode_id", pincodeId)
+          .eq("vehicle_category_id", categoryId).eq("is_enabled", true).maybeSingle();
+        if (enabledError) return fail(500, "Unable to verify the pincode vehicle setting");
+        if (!enabled) return fail(409, "Enable this vehicle category for the pincode before publishing its fare");
+      }
+
       const validFrom = new Date().toISOString();
-      const { data: existing, error: existingError } = await admin.from("fare_configs")
-        .select("id,valid_from,is_active").eq("service_area_id", serviceAreaId)
-        .eq("vehicle_category_id", categoryId).eq("is_active", true);
+      let existingQuery = admin.from("fare_configs")
+        .select("id,valid_from,is_active")
+        .eq("service_area_id", serviceAreaId)
+        .eq("vehicle_category_id", categoryId)
+        .eq("is_active", true);
+      existingQuery = pincodeId === null
+        ? existingQuery.is("pincode_id", null)
+        : existingQuery.eq("pincode_id", pincodeId);
+      const { data: existing, error: existingError } = await existingQuery;
       if (existingError) return fail(500, "Unable to check the current fare configuration");
       const overlappingFuture = (existing ?? []).some((item) => Date.parse(String(item.valid_from)) >= Date.now());
-      if (overlappingFuture) return fail(409, "A future fare configuration already exists for this service area and vehicle category");
-      const { error: closeError } = await admin.from("fare_configs")
+      if (overlappingFuture) return fail(409, "A future fare configuration already exists for this fare scope");
+      let closeQuery = admin.from("fare_configs")
         .update({ is_active: false, valid_until: validFrom })
-        .eq("service_area_id", serviceAreaId).eq("vehicle_category_id", categoryId)
-        .eq("is_active", true).lt("valid_from", validFrom);
+        .eq("service_area_id", serviceAreaId)
+        .eq("vehicle_category_id", categoryId)
+        .eq("is_active", true)
+        .lt("valid_from", validFrom);
+      closeQuery = pincodeId === null
+        ? closeQuery.is("pincode_id", null)
+        : closeQuery.eq("pincode_id", pincodeId);
+      const { error: closeError } = await closeQuery;
       if (closeError) return fail(500, "Unable to close the previous fare configuration");
 
       const { data, error } = await admin.from("fare_configs").insert({
         service_area_id: serviceAreaId,
+        pincode_id: pincodeId,
         vehicle_category_id: categoryId,
         currency: "INR",
         base_fare: values.baseFare,
@@ -274,7 +345,7 @@ Deno.serve(async (req: Request) => {
         multiplier: values.multiplier,
         valid_from: validFrom,
         is_active: true,
-      }).select("id,service_area_id,vehicle_category_id,currency,base_fare,per_km_rate,per_minute_rate,minimum_fare,booking_fee,multiplier,valid_from,valid_until,is_active").single();
+      }).select("id,service_area_id,pincode_id,vehicle_category_id,currency,base_fare,per_km_rate,per_minute_rate,minimum_fare,booking_fee,multiplier,valid_from,valid_until,is_active").single();
       if (error) return fail(400, error.message);
       await audit("fare_config.created", "fare_configs", String(data.id), existing ?? null, data);
       return response(201, { fare_config: data });
@@ -349,7 +420,7 @@ Deno.serve(async (req: Request) => {
       if (!before) return fail(404, "Pincode not found");
       if (isActive) {
         const { data: pin } = await admin.from("service_area_pincodes")
-          .select("id,boundary,service_areas!inner(is_active)")
+          .select("id,boundary,service_area_id,service_areas!inner(is_active)")
           .eq("id", pincodeId).maybeSingle();
         if (!pin?.boundary) return fail(409, "Set an operations-verified GeoJSON boundary before activating this pincode");
         const area = pin.service_areas as unknown as { is_active?: boolean } | null;
@@ -359,6 +430,18 @@ Deno.serve(async (req: Request) => {
           .select("id").eq("pincode_id", pincodeId).eq("is_active", true).lte("valid_from", now)
           .or(`valid_until.is.null,valid_until.gt.${now}`).limit(1).maybeSingle();
         if (!config) return fail(409, "Configure a current commercial model before activating this pincode");
+        const { data: mappings, error: mappingsError } = await admin.from("service_area_pincode_vehicles")
+          .select("vehicle_category_id").eq("pincode_id", pincodeId).eq("is_enabled", true);
+        if (mappingsError) return fail(500, "Unable to verify enabled vehicle categories");
+        const categoryIds = (mappings ?? []).map((item) => Number(item.vehicle_category_id));
+        if (!categoryIds.length) return fail(409, "Enable at least one vehicle category for this pincode");
+        const { data: fares, error: faresError } = await admin.from("fare_configs")
+          .select("id").eq("service_area_id", Number(pin.service_area_id))
+          .eq("pincode_id", pincodeId).eq("is_active", true)
+          .in("vehicle_category_id", categoryIds).lte("valid_from", now)
+          .or(`valid_until.is.null,valid_until.gt.${now}`).limit(1);
+        if (faresError) return fail(500, "Unable to verify pincode-specific fare rules");
+        if (!fares?.length) return fail(409, "Publish at least one fare for an enabled vehicle category before activating this pincode");
       }
       const { data, error } = await admin.from("service_area_pincodes")
         .update({ is_active: isActive }).eq("id", pincodeId).select("*").single();

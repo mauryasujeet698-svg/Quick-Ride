@@ -63,8 +63,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     _destination = widget.initialDestination;
     _pin.text = widget.initialPickup?.pincode ?? '';
     _selectPickup = _pickup == null;
-    _loadCategories();
-    if (_pickup == null) _tryCurrentLocation();
+    unawaited(_loadCategories());
+    if (_pickup == null) unawaited(_tryCurrentLocation());
   }
 
   @override
@@ -75,19 +75,80 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
 
   Future<void> _loadCategories() async {
     try {
-      final rows = await QuickRideBackend.client
-          .from('vehicle_categories')
-          .select('id,code,name')
+      final pickupPincode = _pin.text.trim().isNotEmpty
+          ? _pin.text.trim()
+          : (_pickup?.pincode ??
+              RegExp(r'(?<![0-9])[1-9][0-9][0-9][0-9][0-9][0-9](?![0-9])')
+                  .firstMatch(_pickup?.address ?? '')
+                  ?.group(0) ??
+              '');
+      if (!RegExp(r'^[1-9][0-9][0-9][0-9][0-9][0-9]$').hasMatch(pickupPincode)) {
+        if (!mounted) return;
+        setState(() {
+          _categories = [];
+          _serviceQuotes = [];
+          _loadingCategories = false;
+          _error = 'We could not read the pickup pincode. Choose a pickup inside a configured service area.';
+        });
+        return;
+      }
+      _pin.text = pickupPincode;
+      final pincode = await QuickRideBackend.client
+          .from('service_area_pincodes')
+          .select('id')
+          .eq('pincode', pickupPincode)
           .eq('is_active', true)
-          .order('id');
+          .maybeSingle();
+      if (pincode == null) {
+        if (!mounted) return;
+        setState(() {
+          _categories = [];
+          _serviceQuotes = [];
+          _loadingCategories = false;
+          _error = 'Quick Ride is not active in pickup pincode ' + pickupPincode + ' yet.';
+        });
+        return;
+      }
+      final mappings = await QuickRideBackend.client
+          .from('service_area_pincode_vehicles')
+          .select('vehicle_categories!inner(id,code,name,description,sort_order)')
+          .eq('pincode_id', (pincode['id'] as num).toInt())
+          .eq('is_enabled', true);
+      final categories = mappings
+          .where((row) => row['vehicle_categories'] is Map)
+          .map((row) => Map<String, dynamic>.from(row['vehicle_categories'] as Map))
+          .toList()
+        ..sort((a, b) => ((a['sort_order'] as num?)?.toInt() ?? 0)
+            .compareTo((b['sort_order'] as num?)?.toInt() ?? 0));
       if (!mounted) return;
       setState(() {
-        _categories = rows;
-        _categoryId = rows.isEmpty ? null : (rows.first['id'] as num).toInt();
+        _categories = categories;
+        _categoryId = categories.isEmpty
+            ? null
+            : (categories.first['id'] as num).toInt();
+        _serviceQuotes = categories.map((category) => <String, dynamic>{
+          'category_id': category['id'],
+          'category_name': category['name'],
+          'category_code': category['code'],
+          'ride_mode': 'private',
+          'quote': null,
+          'quote_status': 'not_checked',
+        }).toList(growable: false);
         _loadingCategories = false;
+        _error = categories.isEmpty
+            ? 'No vehicle categories are enabled for pickup pincode ' + pickupPincode + '.'
+            : null;
       });
+      if (QuickRideAuth.currentUser != null &&
+          _pickup != null &&
+          _destination != null &&
+          categories.isNotEmpty) {
+        unawaited(_getQuote());
+      }
     } catch (error) {
       if (mounted) setState(() {
+        _categories = [];
+        _serviceQuotes = [];
         _loadingCategories = false;
         _error = 'Vehicle options could not be loaded: ' + error.toString();
       });
@@ -142,11 +203,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       setState(() {
         if (pickup) {
           _pickup = point;
+          if (pincode != null) _pin.text = pincode;
         } else {
           _destination = point;
         }
         _quote = null;
       });
+      if (pickup) unawaited(_loadCategories());
       if (moveCamera) {
         _mapController?.moveTo(
           LatLng(latitude, longitude),
@@ -196,33 +259,46 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
 
   Future<void> _getQuote() async {
     if (QuickRideAuth.currentUser == null) {
-      setState(() => _error = 'Sign in with Google to compare ride options.');
+      setState(() => _error = 'Sign in with Google to check fares and nearby drivers.');
       try {
         await QuickRideAuth.signInWithGoogle(
           redirectTo: 'in.quickride.customer://login-callback',
         );
       } catch (error) {
-        if (mounted) setState(() => _error = 'Google sign-in failed: ' + error.toString());
+        final details = error.toString().toLowerCase();
+        final message = details.contains('canceled') || details.contains('cancelled')
+            ? 'Google sign-in was cancelled. You can try again when ready.'
+            : 'Google sign-in failed: ' + error.toString();
+        if (mounted) setState(() => _error = message);
+        return;
       }
-      return;
+      if (QuickRideAuth.currentUser == null) {
+        if (mounted) setState(() => _error = 'Google sign-in did not complete. Please try again.');
+        return;
+      }
     }
     if (_pickup == null || _destination == null) {
       setState(() => _error = 'Select both pickup and destination.');
       return;
     }
-    final inferredPincode = _pickup!.pincode;
-    if (!RegExp(r'^[1-9][0-9]{5}$').hasMatch(_pin.text.trim()) &&
+    final inferredPincode = _pickup!.pincode ??
+        RegExp(r'(?<![0-9])[1-9][0-9][0-9][0-9][0-9][0-9](?![0-9])')
+            .firstMatch(_pickup!.address)
+            ?.group(0);
+    if (!RegExp(r'^[1-9][0-9][0-9][0-9][0-9][0-9]$').hasMatch(_pin.text.trim()) &&
         inferredPincode != null) {
       _pin.text = inferredPincode;
     }
-    if (!RegExp(r'^[1-9][0-9]{5}$').hasMatch(_pin.text.trim())) {
+    if (!RegExp(r'^[1-9][0-9][0-9][0-9][0-9][0-9]$').hasMatch(_pin.text.trim())) {
       setState(() => _error =
-          'We could not read the pickup pincode. Enter the six-digit pickup service pincode to check availability.');
+          'We could not read the pickup pincode. Choose a pickup inside a configured service area.');
       return;
     }
     if (_categories.isEmpty) {
-      setState(() => _error =
-          'No active vehicle categories are configured for Quick Ride.');
+      await _loadCategories();
+    }
+    if (_categories.isEmpty) {
+      setState(() => _error = 'No vehicle categories are enabled for this pickup area.');
       return;
     }
 
@@ -247,32 +323,48 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             'ride_mode': 'private',
             'passenger_count': 1,
             'quote': quote,
+            'quote_status': 'quoted',
           });
+          if (code == 'auto' || code == 'autorickshaw') {
+            try {
+              final sharedResponse = await QuickRideBackend.invoke(
+                'ride-booking',
+                body: _request(
+                  'quote',
+                  categoryId: id,
+                  rideMode: 'shared_auto',
+                  passengerCount: _passengerCount,
+                ),
+              );
+              final sharedData = Map<String, dynamic>.from(sharedResponse.data as Map);
+              final sharedQuote = Map<String, dynamic>.from(sharedData['quote'] as Map);
+              if (sharedQuote['shared_auto'] is Map) {
+                results.add({
+                  'category_id': id,
+                  'category_name': 'Shared Auto',
+                  'category_code': code,
+                  'ride_mode': 'shared_auto',
+                  'passenger_count': 1,
+                  'quote': sharedQuote,
+                  'quote_status': 'quoted',
+                });
+              }
+            } catch (_) {
+              // Shared Auto is an optional mode; private Auto stays visible.
+            }
+          }
         } catch (error) {
           failures.add(name + ': ' + error.toString());
-        }
-
-        if (code == 'auto' || code == 'autorickshaw') {
-          try {
-            final response = await QuickRideBackend.invoke(
-              'ride-booking',
-              body: _request('quote', categoryId: id, rideMode: 'shared_auto', passengerCount: _passengerCount),
-            );
-            final data = Map<String, dynamic>.from(response.data as Map);
-            final quote = Map<String, dynamic>.from(data['quote'] as Map);
-            if (quote['shared_auto'] is Map) {
-              results.add({
-                'category_id': id,
-                'category_name': 'Shared Auto',
-                'category_code': code,
-                'ride_mode': 'shared_auto',
-                'passenger_count': 1,
-                'quote': quote,
-              });
-            }
-          } catch (error) {
-            failures.add('Shared Auto: ' + error.toString());
-          }
+          results.add({
+            'category_id': id,
+            'category_name': name,
+            'category_code': code,
+            'ride_mode': 'private',
+            'passenger_count': 1,
+            'quote': null,
+            'quote_status': 'fare_unavailable',
+            'error': error.toString(),
+          });
         }
       }
       if (!mounted) return;
@@ -282,13 +374,11 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _booking = null;
         _sharedAuto = null;
         _pickupOtp = null;
-        if (results.isEmpty) {
-          _error = failures.isEmpty
-              ? 'No ride services are configured for this pickup area.'
-              : 'No ride service returned a fare. Check the pickup pincode, service-area coverage and fare configuration. ' + failures.first;
-        } else {
-          _error = null;
-        }
+        _error = results.every((item) => item['quote'] == null)
+            ? (failures.isEmpty
+                ? 'Vehicle types are listed, but fares are not configured yet.'
+                : 'Vehicle types are listed, but fares could not be loaded. ' + failures.first)
+            : null;
       });
     });
   }
@@ -298,8 +388,10 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       _categoryId = (option['category_id'] as num).toInt();
       _rideMode = option['ride_mode'].toString();
       _passengerCount = 1;
-      _quote = Map<String, dynamic>.from(option['quote'] as Map);
-      _sharedAutoCapacity = ((_quote!['shared_auto'] as Map?)?['max_passengers'] as num?)?.toInt() ?? 3;
+      _quote = option['quote'] is Map
+          ? Map<String, dynamic>.from(option['quote'] as Map)
+          : null;
+      _sharedAutoCapacity = ((_quote?['shared_auto'] as Map?)?['max_passengers'] as num?)?.toInt() ?? 3;
       _booking = null;
       _sharedAuto = null;
       _pickupOtp = null;
@@ -319,7 +411,16 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       }
       return;
     }
-    if (_quote == null) return;
+    if (_quote == null) {
+      setState(() => _error = 'Search again to get a fare before booking.');
+      return;
+    }
+    final availability = _quote!['availability'] as Map<String, dynamic>?;
+    final availableCount = (availability?['available_count'] as num?)?.toInt() ?? 0;
+    if (availableCount <= 0) {
+      setState(() => _error = 'No vehicle found for this ride type right now. Search again or choose another vehicle.');
+      return;
+    }
     await _run(() async {
       final key = DateTime.now().microsecondsSinceEpoch.toString() +
           '-' + Random.secure().nextInt(1 << 32).toString();
@@ -470,54 +571,87 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                   onPressed: _busy ? null : _getQuote,
                   child: _busy
                       ? const CircularProgressIndicator()
-                      : const Text('Get fare estimate'),
+                      : Text(_serviceQuotes.isEmpty
+                          ? 'Load vehicle options'
+                          : _quote != null
+                              ? 'Search again'
+                              : 'Search for selected vehicle'),
                 ),
                 if (_serviceQuotes.isNotEmpty) ...[
                   const SizedBox(height: 14),
-                  Text('Available rides for your route',
-                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'Choose your vehicle',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'All enabled vehicle types are shown. Driver availability is checked separately.',
+                  ),
                   const SizedBox(height: 8),
                   ..._serviceQuotes.map((option) {
-                    final quote = Map<String, dynamic>.from(option['quote'] as Map);
-                    final isSelected = _quote != null &&
+                    final quoteValue = option['quote'];
+                    final quote = quoteValue is Map
+                        ? Map<String, dynamic>.from(quoteValue)
+                        : null;
+                    final isSelected =
                         _categoryId == (option['category_id'] as num).toInt() &&
                         _rideMode == option['ride_mode'];
-                    final distance = (quote['distance_m'] as num?)?.toDouble() ?? 0;
-                    final duration = (quote['duration_s'] as num?)?.toInt() ?? 0;
-                    final availability = quote['availability'] is Map
-                        ? Map<String, dynamic>.from(quote['availability'] as Map)
+                    final distance = (quote?['distance_m'] as num?)?.toDouble();
+                    final duration = (quote?['duration_s'] as num?)?.toInt();
+                    final availability = quote?['availability'] is Map
+                        ? Map<String, dynamic>.from(quote!['availability'] as Map)
                         : null;
-                    final nearbyCount = (availability?['available_count'] as num?)?.toInt();
+                    final nearbyCount =
+                        (availability?['available_count'] as num?)?.toInt();
                     final shared = option['ride_mode'] == 'shared_auto';
-                    final availabilityLabel = nearbyCount == null
-                        ? 'Driver availability being checked'
+                    final statusLabel = quote == null
+                        ? (QuickRideAuth.currentUser == null
+                            ? 'Sign in to check fare and drivers'
+                            : 'Fare not configured yet')
                         : nearbyCount == 0
-                            ? 'No drivers online in this pickup area'
-                            : '$nearbyCount driver(s) online in this pickup area';
+                            ? 'No vehicle found · Select and search again'
+                            : nearbyCount == null
+                                ? 'Driver availability not confirmed'
+                                : nearbyCount.toString() + ' nearby driver(s)';
+                    final fareLabel = quote == null
+                        ? 'Fare pending'
+                        : '₹' +
+                            (quote['estimated_fare'] as num).toStringAsFixed(0);
+                    final detail = <String>[
+                      if (distance != null && duration != null)
+                        (distance / 1000).toStringAsFixed(1) +
+                            ' km · ' +
+                            (duration / 60).ceil().toString() +
+                            ' min',
+                      if (shared) 'Shared ride',
+                      statusLabel,
+                    ].join('\n');
                     return Card(
                       color: isSelected
                           ? Theme.of(context).colorScheme.primaryContainer
                           : null,
                       child: ListTile(
                         leading: CircleAvatar(
-                          child: Icon(shared
-                              ? Icons.groups_2_outlined
-                              : option['category_code'] == 'bike'
-                                  ? Icons.two_wheeler
-                                  : option['category_code'] == 'auto' ||
-                                          option['category_code'] == 'autorickshaw'
-                                      ? Icons.electric_rickshaw
-                                      : Icons.local_taxi_outlined),
+                          child: Icon(
+                            shared
+                                ? Icons.groups_2_outlined
+                                : option['category_code'] == 'bike'
+                                    ? Icons.two_wheeler
+                                    : option['category_code'] == 'auto' ||
+                                            option['category_code'] == 'autorickshaw'
+                                        ? Icons.electric_rickshaw
+                                        : option['category_code'] == 'suv'
+                                            ? Icons.airport_shuttle_outlined
+                                            : Icons.local_taxi_outlined,
+                          ),
                         ),
                         title: Text(option['category_name'].toString()),
                         subtitle: Text(
-                          '${(distance / 1000).toStringAsFixed(1)} km · ${(duration / 60).ceil()} min'
-                          '${shared ? ' · 1 passenger' : ''}\n'
-                          '$availabilityLabel',
-                          maxLines: 2,
+                          detail,
+                          maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: nearbyCount == 0
+                            color: quote != null && nearbyCount == 0
                                 ? Theme.of(context).colorScheme.error
                                 : Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
@@ -527,29 +661,27 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '₹${(quote['estimated_fare'] as num).toStringAsFixed(0)}',
+                              fareLabel,
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             TextButton(
-                              onPressed: _busy || nearbyCount == 0
+                              onPressed: _busy
                                   ? null
                                   : () => _selectServiceOption(option),
-                              child: Text(
-                                nearbyCount == 0
-                                    ? 'Unavailable'
-                                    : isSelected
-                                        ? 'Selected'
-                                        : 'Choose',
-                              ),
+                              child: Text(isSelected ? 'Selected' : 'Choose'),
                             ),
                           ],
                         ),
-                        onTap: _busy || nearbyCount == 0
-                            ? null
-                            : () => _selectServiceOption(option),
+                        onTap: _busy ? null : () => _selectServiceOption(option),
                       ),
                     );
                   }),
+                  if (QuickRideAuth.currentUser == null)
+                    FilledButton.icon(
+                      onPressed: _busy ? null : _getQuote,
+                      icon: const Icon(Icons.login_rounded),
+                      label: const Text('Sign in to check fares'),
+                    ),
                 ],
                 if (_quote != null) ...[
                   const SizedBox(height: 10),
@@ -607,9 +739,20 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                             '${((_quote!['distance_m'] as num) / 1000).toStringAsFixed(1)} km · ${(((_quote!['duration_s'] as num) / 60).ceil())} min',
                           ),
                           const SizedBox(height: 10),
-                          FilledButton(
-                            onPressed: _busy ? null : _bookRide,
-                            child: const Text('Confirm booking'),
+                          Builder(
+                            builder: (context) {
+                              final available = ((_quote!['availability'] as Map?)?['available_count'] as num?)?.toInt() ?? 0;
+                              return FilledButton(
+                                onPressed: _busy
+                                    ? null
+                                    : available > 0
+                                        ? _bookRide
+                                        : _getQuote,
+                                child: Text(available > 0
+                                    ? 'Confirm booking'
+                                    : 'Search for this vehicle again'),
+                              );
+                            },
                           ),
                         ],
                       ),
