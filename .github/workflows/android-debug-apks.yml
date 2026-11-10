@@ -1,5 +1,7 @@
 name: Build Quick-Ride Android QA APKs
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main, feature/mapbox-three-app-redesign]
   workflow_dispatch:
@@ -43,7 +45,7 @@ jobs:
           text = path.read_text()
           text = text.replace("android.builtInKotlin=false", "android.builtInKotlin=true")
           if "android.builtInKotlin=" not in text:
-              text += "\\nandroid.builtInKotlin=true\\n"
+              text += "\nandroid.builtInKotlin=true\n"
           path.write_text(text)
           PY
             manifest="apps/${app}_app/android/app/src/main/AndroidManifest.xml"
@@ -138,9 +140,11 @@ jobs:
           if any(not defines[key] for key in required):
               raise SystemExit("One or more required build defines are empty")
           if not defines["MAPBOX_ACCESS_TOKEN"].startswith("pk."):
-              print("::warning::MAPBOX_ACCESS_TOKEN is missing or is not a public pk.* token; Mapbox maps and search will not initialize.")
+              raise SystemExit("MAPBOX_ACCESS_TOKEN must be a public pk.* token; Mapbox maps and search cannot initialize without it.")
+          if not os.environ["MAPBOX_DOWNLOADS_TOKEN"].strip():
+              raise SystemExit("MAPBOX_DOWNLOADS_TOKEN is required to download the Mapbox Android SDK from its Maven repository.")
           if not defines["GOOGLE_WEB_CLIENT_ID"]:
-              print("::warning::GOOGLE_WEB_CLIENT_ID is missing; native Google sign-in will show a configuration error.")
+              raise SystemExit("GOOGLE_WEB_CLIENT_ID is required for native Google sign-in.")
           Path("build/quick_ride.defines.json").write_text(
               json.dumps(defines, separators=(",", ":")),
               encoding="utf-8",
@@ -160,7 +164,8 @@ jobs:
               mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n/1000000 }')"
               echo "${output}: ${mib} MB (${bytes} bytes)"
               if [ "$bytes" -gt "$MAX_APK_BYTES" ]; then
-                echo "::warning::${output} is above the 25 MB QA optimization target (${mib} MB); keeping it available for device testing."
+                echo "::error::${output} exceeds the strict 25 MB per-APK limit (${mib} MB)"
+                exit 1
               fi
             done
           done
@@ -169,7 +174,7 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "QA APK size report (25 MB is the optimization target, not a release approval)."
+            echo "QA APK size report (strict maximum: 25,000,000 bytes per APK)."
             echo "Only Android phone ABIs are included: armeabi-v7a and arm64-v8a."
             find dist -type f -name '*.apk' -printf '%p %s bytes\n' | sort
           } > dist/APK_SIZES.txt
