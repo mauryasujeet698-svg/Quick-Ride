@@ -81,6 +81,7 @@ jobs:
           if agp_count != 1 or kotlin_count != 1:
               raise SystemExit(f"Could not pin compatible AGP/Kotlin plugins in {path}: AGP={agp_count}, Kotlin={kotlin_count}")
           path.write_text(text)
+          PY
           python3 - "apps/${app}_app/android/app/build.gradle.kts" <<'PY'
           from pathlib import Path
           import sys
