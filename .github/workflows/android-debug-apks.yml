@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
           for app in customer driver admin; do
             temp_dir="$(mktemp -d)"
-            flutter create --empty --project-name "$app" --org com.quickride --platforms android "$temp_dir"
+            flutter create --empty --project-name "$app" --org in.quickride --platforms android "$temp_dir"
             cp -R "$temp_dir/android" "apps/${app}_app/android"
             python3 - "apps/${app}_app/android/gradle.properties" <<'PY'
           from pathlib import Path
@@ -95,6 +95,21 @@ jobs:
           (path.parent / "proguard-rules.pro").touch()
           PY
           done
+      - name: Verify Mapbox token availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${MAPBOX_ACCESS_TOKEN//[[:space:]]/}" ]]; then
+            echo "::error::No public Mapbox token was resolved. Set an Actions repository secret or variable named MAPBOX_ACCESS_TOKEN (value starts with pk.)."
+            echo "Accepted aliases include MAPBOX_PUBLIC_ACCESS_TOKEN, MAPBOX_PUBLIC_TOKEN, MAPBOX_PUBLIC_API_KEY, MAPBOX_API_KEY, MAPBOX_API_TOKEN, MAPBOX_PUBLIC_KEY, MAPBOX_PK_TOKEN and MAPBOX_TOKEN."
+            exit 1
+          fi
+          if [[ "$MAPBOX_ACCESS_TOKEN" != pk.* ]]; then
+            echo "::error::The resolved Mapbox token is not a public pk.* token."
+            exit 1
+          fi
+          echo "A public Mapbox token is available to the Android build."
+
       - name: Build optimized ABI-specific APKs
         shell: bash
         run: |
