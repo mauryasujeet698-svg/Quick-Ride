@@ -43,10 +43,13 @@ jobs:
           import sys
           path = Path(sys.argv[1])
           text = path.read_text()
-          text = text.replace("android.builtInKotlin=false", "android.builtInKotlin=true")
-          if "android.builtInKotlin=" not in text:
-              text += "\nandroid.builtInKotlin=true\n"
-          path.write_text(text)
+          lines = [
+              line for line in text.splitlines()
+              if not line.startswith("android.builtInKotlin=")
+              and not line.startswith("android.newDsl=")
+          ]
+          lines.extend(["android.builtInKotlin=false", "android.newDsl=false"])
+          path.write_text("\n".join(lines) + "\n")
           PY
             manifest="apps/${app}_app/android/app/src/main/AndroidManifest.xml"
             python3 scripts/configure_android_manifest.py "$manifest" "com.quickride.${app}"
@@ -159,16 +162,24 @@ jobs:
               encoding="utf-8",
           )
           PY
-              flutter build apk --release --split-per-abi \
+              if ! flutter build apk --release --split-per-abi \
                 --target-platform android-arm,android-arm64 \
                 --obfuscate --split-debug-info="build/symbols/${app}" \
-                --dart-define-from-file=build/quick_ride.defines.json
+                --dart-define-from-file=build/quick_ride.defines.json; then
+                echo "::warning::Android build failed for ${app}; continuing to collect other app APKs and diagnostics."
+                touch ../../dist/BUILD_FAILED
+                exit 0
+              fi
             )
             mkdir -p "dist/${app}"
             for abi in armeabi-v7a arm64-v8a; do
               source="apps/${app}_app/build/app/outputs/flutter-apk/app-${abi}-release.apk"
               output="dist/${app}/quick-ride-${app}-${abi}.apk"
-              test -s "$source"
+              if [[ ! -s "$source" ]]; then
+                echo "::warning::Missing ${abi} APK for ${app}; continuing with remaining targets."
+                touch dist/BUILD_FAILED
+                continue
+              fi
               cp "$source" "$output"
               bytes="$(stat -c%s "$output")"
               mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n/1000000 }')"
@@ -208,6 +219,10 @@ jobs:
         if: always()
         shell: bash
         run: |
+          if [[ -f dist/BUILD_FAILED ]]; then
+            echo "::error::One or more app APK builds failed. See the workflow log and uploaded diagnostics."
+            exit 1
+          fi
           if [[ -f dist/SIZE_LIMIT_EXCEEDED ]]; then
             echo "::error::One or more APKs exceed the strict 25 MB limit. See uploaded APK_CONTENT_BREAKDOWN.txt to identify the largest components."
             exit 1
