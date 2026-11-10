@@ -1,6 +1,8 @@
 # Quick-Ride Android build configuration
 
-The Android workflow builds native Flutter Customer, Driver and Admin release APKs for `armeabi-v7a` and `arm64-v8a`. Customer and Driver use Mapbox's official native Maps SDK for Flutter; map rendering no longer uses a WebView or remotely loaded Mapbox GL JS. Every APK is checked against a strict 25,000,000-byte maximum. A build is rejected if any APK exceeds that limit.
+The Android workflow builds optimized Flutter Customer, Driver and Admin release APKs for `armeabi-v7a` and `arm64-v8a`. Every APK is checked against a strict 25,000,000-byte maximum.
+
+Customer and Driver maps are rendered directly by Flutter using `flutter_map` and OpenStreetMap-compatible raster tiles. There is no WebView, native Mapbox Maps SDK or Mapbox Maven download credential. Mapbox remains the REST provider for Search Box, reverse geocoding and driving directions.
 
 ## GitHub Actions configuration
 
@@ -8,8 +10,8 @@ Configure these repository Actions secrets and variables before building:
 
 | Name | Type | Purpose |
 | --- | --- | --- |
-| `MAPBOX_ACCESS_TOKEN` | Secret or variable | Public Mapbox runtime token beginning with `pk.`; validated against Styles, Search Box and Directions before the build |
-| `MAPBOX_DOWNLOADS_TOKEN` | Secret | Secret Mapbox token with Downloads:Read scope; exposed to Gradle only as `SDK_REGISTRY_TOKEN` to download the native Android SDK |
+| `MAPBOX_ACCESS_TOKEN` | Secret or variable | Public Mapbox runtime token beginning with `pk.`; validated against Search Box and Directions before the build |
+| `OSM_TILE_URL` | Variable (optional) | OSM-compatible raster tile URL template. Defaults to the public OSM standard tile endpoint for development/QA only. |
 | `GOOGLE_WEB_CLIENT_ID` | Secret or variable | Google OAuth Web application client ID used by native Google sign-in |
 | `SUPABASE_PUBLISHABLE_KEY` | Secret | Supabase publishable/anon client key; never use a service-role key here |
 | `SUPABASE_URL` | Variable | Supabase project URL |
@@ -20,7 +22,9 @@ Configure these repository Actions secrets and variables before building:
 | `FIREBASE_DRIVER_APP_ID` | Secret | Firebase Android app ID for Driver/Captain |
 | `FIREBASE_ADMIN_APP_ID` | Secret | Firebase Android app ID for Admin |
 
-The Mapbox downloads token is never passed to Dart or packaged in an APK. The runtime token must be a public `pk.*` token with access to Streets styles, Search Box and Directions. The build probes all three services before compiling. Never use a secret `sk.*` token as the runtime token. Map rendering uses the native Mapbox Android SDK, not a WebView.
+The Mapbox public token is used only by REST endpoints for place search, address lookup and route calculation. It is not a native map-rendering credential. Never use a secret `sk.*` token as the runtime token.
+
+The tile URL is configurable at build time with `OSM_TILE_URL`, so a production OSM-compatible provider or self-hosted tile service can be selected without changing Dart source. The public OpenStreetMap standard tile server is a best-effort community resource, has no service-level guarantee and must not be treated as the production tile backend for a commercial ride-hailing workload. Configure a suitable, licensed tile provider with a production support commitment before launch. Follow the provider's request-identification, attribution and caching requirements. The app displays OpenStreetMap contributor attribution.
 
 ## Google sign-in
 
@@ -38,4 +42,6 @@ Apply the repository migrations and deploy the Edge Functions required by ride b
 
 ## Validation and device acceptance
 
-GitHub Actions runs Flutter analysis/tests, Edge Function type checks, shared Auto route-planner tests and the three Android builds. Automated CI does not replace physical-device acceptance testing for Google sign-in, GPS permissions, Mapbox search/navigation, push notifications or driver/customer realtime tracking.
+GitHub Actions runs Flutter analysis/tests, Edge Function type checks, shared Auto route-planner tests and the three Android builds. The build checks the Mapbox Search Box and Directions services before compiling. Automated CI does not replace physical-device acceptance testing for Google sign-in, GPS permissions, OSM tile rendering, place search/navigation, push notifications or driver/customer realtime tracking.
+
+The current CI APK artifacts are unsigned QA/test builds unless a release signing configuration and keystore have been supplied. Do not publish the QA APKs to Play Store as production builds.
