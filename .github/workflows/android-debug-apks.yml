@@ -160,6 +160,7 @@ jobs:
           )
           PY
               flutter build apk --release --split-per-abi \
+                --target-platform android-arm,android-arm64 \
                 --obfuscate --split-debug-info="build/symbols/${app}" \
                 --dart-define-from-file=build/quick_ride.defines.json
             )
@@ -173,24 +174,41 @@ jobs:
               mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n/1000000 }')"
               echo "${output}: ${mib} MB (${bytes} bytes)"
               if [ "$bytes" -gt "$MAX_APK_BYTES" ]; then
-                echo "::error::${output} exceeds the strict 25 MB per-APK limit (${mib} MB)"
-                exit 1
+                echo "::warning::${output} exceeds the strict 25 MB per-APK limit (${mib} MB); keeping it in the QA artifact for size analysis."
+                touch dist/SIZE_LIMIT_EXCEEDED
               fi
             done
           done
-      - name: Write APK size report and checksums
+      - name: Write APK size report, content breakdown and checksums
         shell: bash
         run: |
           set -euo pipefail
           {
             echo "QA APK size report (strict maximum: 25,000,000 bytes per APK)."
             echo "Only Android phone ABIs are included: armeabi-v7a and arm64-v8a."
-            find dist -type f -name '*.apk' -printf '%p %s bytes\n' | sort
+            find dist -type f -name '*.apk' -printf '%p %s bytes\\n' | sort
           } > dist/APK_SIZES.txt
+          {
+            for apk in $(find dist -type f -name '*.apk' | sort); do
+              echo
+              echo "===== $apk ====="
+              unzip -l "$apk" | awk 'NF == 4 && $4 !~ /^Name$/ { print $1 "\\t" $4 }' | sort -nr | head -25
+            done
+          } > dist/APK_CONTENT_BREAKDOWN.txt
           (cd dist && find . -type f -name '*.apk' -print0 | sort -z | xargs -0 sha256sum) > dist/SHA256SUMS.txt
           cat dist/APK_SIZES.txt
+          cat dist/APK_CONTENT_BREAKDOWN.txt
       - uses: actions/upload-artifact@v4
         with:
           name: quick-ride-android-25mb-apks
           path: dist/*
           if-no-files-found: error
+
+      - name: Enforce 25 MB APK limit
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f dist/SIZE_LIMIT_EXCEEDED ]]; then
+            echo "::error::One or more APKs exceed the strict 25 MB limit. See uploaded APK_CONTENT_BREAKDOWN.txt to identify the largest components."
+            exit 1
+          fi
