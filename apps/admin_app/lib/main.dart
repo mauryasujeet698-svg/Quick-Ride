@@ -7,6 +7,7 @@ import 'package:quick_ride_design_system/quick_ride_design_system.dart';
 import 'package:quick_ride_notifications/quick_ride_notifications.dart';
 import 'src/admin_home_screen.dart';
 import 'src/operations_screen.dart';
+import 'src/notification_center_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,12 +49,13 @@ class QuickRideAdminApp extends StatelessWidget {
   static final router = GoRouter(routes: [
     GoRoute(path: '/', builder: (_, __) => const AdminHomeScreen()),
     GoRoute(path: '/operations', builder: (_, __) => const AdminOperationsScreen()),
+    GoRoute(path: '/notifications', builder: (_, __) => const AdminNotificationCenterScreen()),
   ]);
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
         scaffoldMessengerKey: messengerKey,
-        title: 'Quick-Ride Admin',
+        title: 'Admin',
         theme: QuickRideTheme.light(),
         darkTheme: QuickRideTheme.dark(),
         routerConfig: router,

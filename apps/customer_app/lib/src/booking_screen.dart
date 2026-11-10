@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -6,51 +7,64 @@ import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 
+
 class RidePoint {
   const RidePoint({
     required this.longitude,
     required this.latitude,
     required this.address,
+    this.pincode,
   });
   final double longitude;
   final double latitude;
   final String address;
+  final String? pincode;
 
   Map<String, dynamic> toJson() => {
         'longitude': longitude,
         'latitude': latitude,
         'address': address,
+        'pincode': pincode,
       };
 }
 
 class CustomerBookingScreen extends StatefulWidget {
-  const CustomerBookingScreen({super.key});
+  const CustomerBookingScreen({super.key, this.initialPickup, this.initialDestination});
+  final RidePoint? initialPickup;
+  final RidePoint? initialDestination;
   @override
   State<CustomerBookingScreen> createState() => _CustomerBookingScreenState();
 }
 
 class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   final _pin = TextEditingController();
-  final MapController _mapController = MapController();
-  bool _mapReady = false;
-  LatLng? _pendingMapCenter;
+  QuickRideMapController? _mapController;
   RidePoint? _pickup;
   RidePoint? _destination;
   List<Map<String, dynamic>> _categories = [];
   int? _categoryId;
+  String _rideMode = 'private';
+  int _passengerCount = 1;
+  int _sharedAutoCapacity = 3;
   bool _selectPickup = true;
   bool _busy = false;
   bool _loadingCategories = true;
   String? _error;
   Map<String, dynamic>? _quote;
+  List<Map<String, dynamic>> _serviceQuotes = [];
   Map<String, dynamic>? _booking;
+  Map<String, dynamic>? _sharedAuto;
   String? _pickupOtp;
 
   @override
   void initState() {
     super.initState();
+    _pickup = widget.initialPickup;
+    _destination = widget.initialDestination;
+    _pin.text = widget.initialPickup?.pincode ?? '';
+    _selectPickup = _pickup == null;
     _loadCategories();
-    _tryCurrentLocation();
+    if (_pickup == null) _tryCurrentLocation();
   }
 
   @override
@@ -116,10 +130,14 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     try {
       final address = await _reverseGeocode(longitude, latitude);
       if (!mounted) return;
+      final pincode = RegExp(r'(?<![0-9])[1-9][0-9]{5}(?![0-9])')
+          .firstMatch(address)
+          ?.group(0);
       final point = RidePoint(
         longitude: longitude,
         latitude: latitude,
         address: address,
+        pincode: pincode,
       );
       setState(() {
         if (pickup) {
@@ -130,12 +148,10 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _quote = null;
       });
       if (moveCamera) {
-        final center = LatLng(latitude, longitude);
-        if (_mapReady) {
-          _mapController.move(center, 15);
-        } else {
-          _pendingMapCenter = center;
-        }
+        _mapController?.moveTo(
+          LatLng(latitude, longitude),
+          zoom: 15,
+        );
       }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
@@ -161,47 +177,132 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         .toList(growable: false);
   }
 
-  Map<String, dynamic> _request(String action) => {
+  Map<String, dynamic> _request(
+    String action, {
+    int? categoryId,
+    String? rideMode,
+    int? passengerCount,
+  }) => {
         'action': action,
         'pincode': _pin.text.trim(),
-        'vehicleCategoryId': _categoryId,
+        'vehicleCategoryId': categoryId ?? _categoryId,
+        'rideMode': rideMode ?? _rideMode,
+        'passengerCount': (rideMode ?? _rideMode) == 'shared_auto'
+            ? (passengerCount ?? _passengerCount)
+            : 1,
         'pickup': _pickup!.toJson(),
         'destination': _destination!.toJson(),
       };
 
   Future<void> _getQuote() async {
     if (QuickRideAuth.currentUser == null) {
-      setState(() => _error = 'Sign in with Google to request a fare estimate.');
-      await QuickRideAuth.signInWithGoogle(
-        redirectTo: 'in.quickride.customer://login-callback',
-      );
+      setState(() => _error = 'Sign in with Google to compare ride options.');
+      try {
+        await QuickRideAuth.signInWithGoogle(
+          redirectTo: 'in.quickride.customer://login-callback',
+        );
+      } catch (error) {
+        if (mounted) setState(() => _error = 'Google sign-in failed: ' + error.toString());
+      }
       return;
     }
     if (_pickup == null || _destination == null) {
-      setState(() => _error = 'Select both pickup and destination on the map.');
+      setState(() => _error = 'Select both pickup and destination.');
       return;
+    }
+    final inferredPincode = _pickup!.pincode;
+    if (!RegExp(r'^[1-9][0-9]{5}$').hasMatch(_pin.text.trim()) &&
+        inferredPincode != null) {
+      _pin.text = inferredPincode;
     }
     if (!RegExp(r'^[1-9][0-9]{5}$').hasMatch(_pin.text.trim())) {
-      setState(() => _error = 'Enter the pickup service pincode.');
+      setState(() => _error =
+          'We could not read the pickup pincode. Enter the six-digit pickup service pincode to check availability.');
       return;
     }
-    if (_categoryId == null) {
-      setState(() => _error = 'No active vehicle category is configured.');
+    if (_categories.isEmpty) {
+      setState(() => _error =
+          'No active vehicle categories are configured for Quick Ride.');
       return;
     }
+
     await _run(() async {
-      final result = await QuickRideBackend.invoke(
-        'ride-booking',
-        body: _request('quote'),
-      );
-      final data = Map<String, dynamic>.from(result.data as Map);
-      if (mounted) {
-        setState(() {
-          _quote = Map<String, dynamic>.from(data['quote'] as Map);
-          _booking = null;
-          _pickupOtp = null;
-        });
+      final results = <Map<String, dynamic>>[];
+      final failures = <String>[];
+      for (final category in _categories) {
+        final id = (category['id'] as num).toInt();
+        final name = category['name'].toString();
+        final code = category['code'].toString().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        try {
+          final response = await QuickRideBackend.invoke(
+            'ride-booking',
+            body: _request('quote', categoryId: id, rideMode: 'private'),
+          );
+          final data = Map<String, dynamic>.from(response.data as Map);
+          final quote = Map<String, dynamic>.from(data['quote'] as Map);
+          results.add({
+            'category_id': id,
+            'category_name': name,
+            'category_code': code,
+            'ride_mode': 'private',
+            'passenger_count': 1,
+            'quote': quote,
+          });
+        } catch (error) {
+          failures.add(name + ': ' + error.toString());
+        }
+
+        if (code == 'auto' || code == 'autorickshaw') {
+          try {
+            final response = await QuickRideBackend.invoke(
+              'ride-booking',
+              body: _request('quote', categoryId: id, rideMode: 'shared_auto', passengerCount: _passengerCount),
+            );
+            final data = Map<String, dynamic>.from(response.data as Map);
+            final quote = Map<String, dynamic>.from(data['quote'] as Map);
+            if (quote['shared_auto'] is Map) {
+              results.add({
+                'category_id': id,
+                'category_name': 'Shared Auto',
+                'category_code': code,
+                'ride_mode': 'shared_auto',
+                'passenger_count': 1,
+                'quote': quote,
+              });
+            }
+          } catch (error) {
+            failures.add('Shared Auto: ' + error.toString());
+          }
+        }
       }
+      if (!mounted) return;
+      setState(() {
+        _serviceQuotes = results;
+        _quote = null;
+        _booking = null;
+        _sharedAuto = null;
+        _pickupOtp = null;
+        if (results.isEmpty) {
+          _error = failures.isEmpty
+              ? 'No ride services are configured for this pickup area.'
+              : 'No ride service returned a fare. Check the pickup pincode, service-area coverage and fare configuration. ' + failures.first;
+        } else {
+          _error = null;
+        }
+      });
+    });
+  }
+
+  void _selectServiceOption(Map<String, dynamic> option) {
+    setState(() {
+      _categoryId = (option['category_id'] as num).toInt();
+      _rideMode = option['ride_mode'].toString();
+      _passengerCount = 1;
+      _quote = Map<String, dynamic>.from(option['quote'] as Map);
+      _sharedAutoCapacity = ((_quote!['shared_auto'] as Map?)?['max_passengers'] as num?)?.toInt() ?? 3;
+      _booking = null;
+      _sharedAuto = null;
+      _pickupOtp = null;
     });
   }
 
@@ -209,9 +310,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     final user = QuickRideAuth.currentUser;
     if (user == null) {
       setState(() => _error = 'Sign in before confirming your ride.');
-      await QuickRideAuth.signInWithGoogle(
-        redirectTo: 'in.quickride.customer://login-callback',
-      );
+      try {
+        await QuickRideAuth.signInWithGoogle(
+          redirectTo: 'in.quickride.customer://login-callback',
+        );
+      } catch (error) {
+        if (mounted) setState(() => _error = 'Google sign-in failed: ' + error.toString());
+      }
       return;
     }
     if (_quote == null) return;
@@ -225,6 +330,9 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       final data = Map<String, dynamic>.from(response.data as Map);
       if (mounted) setState(() {
         _booking = Map<String, dynamic>.from(data['ride'] as Map);
+        _sharedAuto = data['shared_auto'] is Map
+            ? Map<String, dynamic>.from(data['shared_auto'] as Map)
+            : null;
         _pickupOtp = data['pickup_otp']?.toString();
       });
     });
@@ -260,69 +368,37 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             flex: 6,
             child: Stack(
               children: [
-                FlutterMap(
+                QuickRideMapView(
                   key: const ValueKey('quick-ride-booking-map'),
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: const LatLng(20.5937, 78.9629),
-                    initialZoom: 4.5,
-                    onMapReady: () {
-                      _mapReady = true;
-                      final pending = _pendingMapCenter;
-                      if (pending != null) {
-                        _mapController.move(pending, 15);
-                        _pendingMapCenter = null;
-                      }
-                    },
-                    onTap: (_, point) => _setPoint(
-                      longitude: point.longitude,
-                      latitude: point.latitude,
-                      pickup: _selectPickup,
-                    ),
+                  initialCenter: _pickup == null
+                      ? const LatLng(20.5937, 78.9629)
+                      : LatLng(_pickup!.latitude, _pickup!.longitude),
+                  initialZoom: _pickup == null ? 4.5 : 15,
+                  currentPosition: _pickup == null
+                      ? null
+                      : LatLng(_pickup!.latitude, _pickup!.longitude),
+                  pickup: _pickup == null
+                      ? null
+                      : LatLng(_pickup!.latitude, _pickup!.longitude),
+                  destination: _destination == null
+                      ? null
+                      : LatLng(_destination!.latitude, _destination!.longitude),
+                  routePoints: _quoteRoutePoints,
+                  onMapCreated: (map) {
+                    _mapController = map;
+                    final pickup = _pickup;
+                    if (pickup != null) {
+                      map.moveTo(
+                        LatLng(pickup.latitude, pickup.longitude),
+                        zoom: 15,
+                      );
+                    }
+                  },
+                  onTap: (point) => _setPoint(
+                    longitude: point.longitude,
+                    latitude: point.latitude,
+                    pickup: _selectPickup,
                   ),
-                  children: [
-                    QuickRideMaps.openStreetMapLayer(appPackageName: 'com.quickride.customer'),
-                    if (_quoteRoutePoints.length >= 2)
-                      PolylineLayer(
-                        polylines: [
-                          Polyline(
-                            points: _quoteRoutePoints,
-                            strokeWidth: 6,
-                            color: Colors.blue,
-                          ),
-                        ],
-                      ),
-                    MarkerLayer(
-                      markers: [
-                        if (_pickup != null)
-                          Marker(
-                            point: LatLng(_pickup!.latitude, _pickup!.longitude),
-                            width: 38,
-                            height: 42,
-                            child: const Icon(
-                              Icons.location_on,
-                              color: Colors.green,
-                              size: 38,
-                            ),
-                          ),
-                        if (_destination != null)
-                          Marker(
-                            point: LatLng(
-                              _destination!.latitude,
-                              _destination!.longitude,
-                            ),
-                            width: 38,
-                            height: 42,
-                            child: const Icon(
-                              Icons.location_on,
-                              color: Colors.red,
-                              size: 38,
-                            ),
-                          ),
-                      ],
-                    ),
-                    QuickRideMaps.attributionControl(),
-                  ],
                 ),
                 const Positioned(
                   top: 12,
@@ -358,33 +434,21 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                   controller: _pin,
                   keyboardType: TextInputType.number,
                   maxLength: 6,
+                  onChanged: (_) => setState(() {
+                    _sharedAutoCapacity = 3;
+                    _quote = null;
+                    _sharedAuto = null;
+                    _error = null;
+                  }),
                   decoration: const InputDecoration(
                     labelText: 'Pickup pincode',
                     counterText: '',
                     prefixIcon: Icon(Icons.pin_drop_outlined),
                   ),
                 ),
-                if (_loadingCategories)
-                  const LinearProgressIndicator()
-                else
-                  DropdownButtonFormField<int>(
-                    initialValue: _categoryId,
-                    decoration: const InputDecoration(labelText: 'Vehicle type'),
-                    items: _categories.map((category) {
-                      final id = (category['id'] as num).toInt();
-                      return DropdownMenuItem(
-                        value: id,
-                        child: Text(category['name'].toString() +
-                            ' (' + category['code'].toString() + ')'),
-                      );
-                    }).toList(),
-                    onChanged: _busy ? null : (value) {
-                      setState(() {
-                        _categoryId = value;
-                        _quote = null;
-                      });
-                    },
-                  ),
+                if (_loadingCategories) const LinearProgressIndicator(),
+                if (!_loadingCategories && _categories.isEmpty)
+                  const Text('No vehicle services are configured yet.'),
                 const SizedBox(height: 10),
                 SegmentedButton<bool>(
                   segments: const [
@@ -408,22 +472,139 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                       ? const CircularProgressIndicator()
                       : const Text('Get fare estimate'),
                 ),
-                if (_quote != null) ...[
+                if (_serviceQuotes.isNotEmpty) ...[
                   const SizedBox(height: 14),
+                  Text('Available rides for your route',
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  ..._serviceQuotes.map((option) {
+                    final quote = Map<String, dynamic>.from(option['quote'] as Map);
+                    final isSelected = _quote != null &&
+                        _categoryId == (option['category_id'] as num).toInt() &&
+                        _rideMode == option['ride_mode'];
+                    final distance = (quote['distance_m'] as num?)?.toDouble() ?? 0;
+                    final duration = (quote['duration_s'] as num?)?.toInt() ?? 0;
+                    final availability = quote['availability'] is Map
+                        ? Map<String, dynamic>.from(quote['availability'] as Map)
+                        : null;
+                    final nearbyCount = (availability?['available_count'] as num?)?.toInt();
+                    final shared = option['ride_mode'] == 'shared_auto';
+                    final availabilityLabel = nearbyCount == null
+                        ? 'Driver availability being checked'
+                        : nearbyCount == 0
+                            ? 'No drivers online in this pickup area'
+                            : '$nearbyCount driver(s) online in this pickup area';
+                    return Card(
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : null,
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          child: Icon(shared
+                              ? Icons.groups_2_outlined
+                              : option['category_code'] == 'bike'
+                                  ? Icons.two_wheeler
+                                  : option['category_code'] == 'auto' ||
+                                          option['category_code'] == 'autorickshaw'
+                                      ? Icons.electric_rickshaw
+                                      : Icons.local_taxi_outlined),
+                        ),
+                        title: Text(option['category_name'].toString()),
+                        subtitle: Text(
+                          '${(distance / 1000).toStringAsFixed(1)} km · ${(duration / 60).ceil()} min'
+                          '${shared ? ' · 1 passenger' : ''}\n'
+                          '$availabilityLabel',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: nearbyCount == 0
+                                ? Theme.of(context).colorScheme.error
+                                : Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '₹${(quote['estimated_fare'] as num).toStringAsFixed(0)}',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            TextButton(
+                              onPressed: _busy || nearbyCount == 0
+                                  ? null
+                                  : () => _selectServiceOption(option),
+                              child: Text(
+                                nearbyCount == 0
+                                    ? 'Unavailable'
+                                    : isSelected
+                                        ? 'Selected'
+                                        : 'Choose',
+                              ),
+                            ),
+                          ],
+                        ),
+                        onTap: _busy || nearbyCount == 0
+                            ? null
+                            : () => _selectServiceOption(option),
+                      ),
+                    );
+                  }),
+                ],
+                if (_quote != null) ...[
+                  const SizedBox(height: 10),
+                  if (_rideMode == 'shared_auto') ...[
+                    DropdownButtonFormField<int>(
+                      initialValue: _passengerCount,
+                      decoration: const InputDecoration(
+                        labelText: 'Shared Auto passengers',
+                        helperText: 'Maximum 3 passengers, subject to pincode settings.',
+                      ),
+                      items: [1, 2, 3]
+                          .where((count) => count <= _sharedAutoCapacity)
+                          .map((count) => DropdownMenuItem(
+                                value: count,
+                                child: Text('$count passenger${count == 1 ? '' : 's'}'),
+                              ))
+                          .toList(),
+                      onChanged: _busy ? null : (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _passengerCount = value;
+                          _quote = null;
+                        });
+                        unawaited(_getQuote());
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: _busy ? null : _getQuote,
+                      child: const Text('Refresh Shared Auto fare'),
+                    ),
+                  ],
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Estimated fare', style: Theme.of(context).textTheme.titleMedium),
                           Text(
-                            '₹' + (_quote!['estimated_fare'] as num).toStringAsFixed(2),
+                            _rideMode == 'shared_auto'
+                                ? 'Shared Auto · $_passengerCount passenger(s)'
+                                : 'Selected ride · ${_categories.firstWhere(
+                                    (item) => (item['id'] as num).toInt() == _categoryId,
+                                    orElse: () => {'name': 'Ride'},
+                                  )['name']}',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          if (_rideMode == 'shared_auto')
+                            const Text('Your fare is separate from other passengers’ bookings.'),
+                          Text(
+                            '₹${(_quote!['estimated_fare'] as num).toStringAsFixed(2)}',
                             style: Theme.of(context).textTheme.headlineMedium,
                           ),
                           Text(
-                            ((_quote!['distance_m'] as num) / 1000).toStringAsFixed(1) +
-                                ' km · ' + (((_quote!['duration_s'] as num) / 60).ceil()).toString() + ' min',
+                            '${((_quote!['distance_m'] as num) / 1000).toStringAsFixed(1)} km · ${(((_quote!['duration_s'] as num) / 60).ceil())} min',
                           ),
                           const SizedBox(height: 10),
                           FilledButton(
@@ -442,8 +623,20 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Ride requested', style: Theme.of(context).textTheme.titleLarge),
+                          Text(
+                            _sharedAuto == null ? 'Ride requested' : 'Shared Auto requested',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
                           Text('Ride ID: ' + _booking!['id'].toString()),
+                          if (_sharedAuto != null) ...[
+                            Text('Shared Auto seats reserved: ' +
+                                (_sharedAuto!['reserved_seats'] ?? _passengerCount).toString() +
+                                ' of ' + (_sharedAuto!['seat_capacity'] ?? 3).toString()),
+                            if (_sharedAuto!['joined_existing_trip'] == true)
+                              const Text('You joined an existing compatible Auto trip.'),
+                            if (_sharedAuto!['status'] != null)
+                              Text('Shared trip status: ' + _sharedAuto!['status'].toString().replaceAll('_', ' ')),
+                          ],
                           Text('Status: ' + _booking!['status'].toString()),
                           if (_pickupOtp != null) ...[
                             const SizedBox(height: 8),

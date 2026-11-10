@@ -26,6 +26,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   final _otp = TextEditingController();
   bool _busy = false;
   bool _online = false;
+  LatLng? _currentPosition;
+  int _mapRecenterSignal = 0;
   bool _syncingAvailability = false;
   String? _availabilitySyncKey;
   Map<String, dynamic>? _earnings;
@@ -46,6 +48,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_detectCurrentPosition());
     if (QuickRideBackend.isInitialized) {
       _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
         if (!mounted) return;
@@ -594,10 +597,91 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     }
   }
 
+  Future<void> _detectCurrentPosition() async {
+    try {
+      final position = await QuickRideMaps.currentPosition();
+      if (!mounted) return;
+      setState(() {
+        _currentPosition = LatLng(position.latitude, position.longitude);
+      });
+    } catch (error) {
+      if (mounted) setState(() {
+        _message = 'Location unavailable. Enable GPS and grant location permission to go online.';
+      });
+    }
+  }
+
+  void _recenterMap() {
+    setState(() => _mapRecenterSignal++);
+  }
+
+  Widget _captainMap({double height = 270}) => SizedBox(
+        height: height,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            children: [
+              QuickRideMapView(
+                userAgentPackageName: 'com.quickride.driver',
+                key: const ValueKey('quick-ride-captain-map'),
+                initialCenter: _currentPosition ?? const LatLng(20.5937, 78.9629),
+                initialZoom: _currentPosition == null ? 4.5 : 15.5,
+                currentPosition: _currentPosition,
+                followCurrentPosition: true,
+                navigationCamera: true,
+                recenterSignal: _mapRecenterSignal,
+              ),
+              Positioned(
+                right: 12,
+                bottom: 12,
+                child: FloatingActionButton.small(
+                  heroTag: 'captain-map-recenter',
+                  onPressed: _currentPosition == null
+                      ? _detectCurrentPosition
+                      : _recenterMap,
+                  child: const Icon(Icons.my_location_rounded),
+                ),
+              ),
+              Positioned(
+                left: 12,
+                top: 12,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.circle, size: 9,
+                            color: _online ? Colors.green : Colors.grey),
+                        const SizedBox(width: 7),
+                        Text(_online ? 'You are online' : 'You are offline',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                            )),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
   void _startLocationUpdates() {
     if (_locationSubscription != null) return;
     _locationSubscription = QuickRideMaps.watchDriverPosition().listen(
       (position) async {
+        if (mounted) {
+          setState(() {
+            _currentPosition = LatLng(position.latitude, position.longitude);
+          });
+        }
         final now = DateTime.now();
         if (now.difference(_lastLocationSent) < const Duration(seconds: 8)) return;
         _lastLocationSent = now;
@@ -650,7 +734,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Quick-Ride Driver'),
+        title: const Text('Quick Ride Captain'),
         actions: [
           IconButton(
             tooltip: 'Sign in',
@@ -677,6 +761,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             'Explore the driver app before connecting your live driver account.',
             style: Theme.of(context).textTheme.bodyLarge,
           ),
+          const SizedBox(height: 14),
+          _captainMap(height: 300),
           const SizedBox(height: 14),
           Card(
             color: colors.secondaryContainer,
@@ -732,7 +818,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           _previewTile(
             Icons.navigation_outlined,
             'Trip navigation',
-            'OpenStreetMap route, live GPS, ETA and spoken directions',
+            'Mapbox route, live GPS, ETA and spoken directions',
           ),
           _previewTile(
             Icons.pin_outlined,
@@ -796,7 +882,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Quick-Ride Driver'),
+        title: const Text('Quick Ride Captain'),
         actions: [
           IconButton(onPressed: QuickRideAuth.signOut, icon: const Icon(Icons.logout)),
         ],
@@ -817,6 +903,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              _captainMap(height: 290),
+              const SizedBox(height: 12),
               _availabilityCard(),
               const SizedBox(height: 12),
               _earningsCard(),
@@ -865,7 +953,32 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                     'accepted', 'driver_arriving', 'arrived', 'in_progress',
                   ].contains(row['status'])).toList();
                   if (active.isEmpty) return const Text('No active ride.');
-                  return Column(children: active.map(_activeRideCard).toList());
+                  final sharedTripIds = active
+                      .where((row) => row['shared_auto_trip_id'] != null)
+                      .map((row) => row['shared_auto_trip_id'].toString())
+                      .toSet();
+                  final sharedRideIds = active
+                      .where((row) => row['shared_auto_trip_id'] != null)
+                      .map((row) => row['id'].toString())
+                      .toSet();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (sharedTripIds.isNotEmpty) ...[
+                        Text('Shared Auto trips', style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(height: 8),
+                        ...sharedTripIds.map((tripId) {
+                          final leadRideId = active.firstWhere(
+                            (row) => row['shared_auto_trip_id'].toString() == tripId,
+                          )['id'].toString();
+                          return _sharedAutoTripCard(tripId, leadRideId);
+                        }),
+                      ],
+                      ...active
+                          .where((row) => !sharedRideIds.contains(row['id'].toString()))
+                          .map(_activeRideCard),
+                    ],
+                  );
                 },
               ),
             ],
@@ -1046,6 +1159,215 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             ? 'SOS event recorded. Confirm the emergency call in your phone dialer.'
             : 'Emergency dialer opened. SOS could not be recorded; confirm the call in your phone dialer.';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget _sharedAutoTripCard(String tripId, String fallbackRideId) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _invoke('get_shared_auto_trip', {'rideId': fallbackRideId}),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Shared Auto route unavailable: ${snapshot.error}'),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Card(child: Padding(
+            padding: EdgeInsets.all(16),
+            child: LinearProgressIndicator(),
+          ));
+        }
+        final trip = Map<String, dynamic>.from(
+          snapshot.data!['shared_auto_trip'] as Map? ?? const {},
+        );
+        final bookings = (trip['bookings'] as List<dynamic>? ?? [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+        final stops = (trip['stops'] as List<dynamic>? ?? [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList()
+          ..sort((a, b) => (a['sequence_index'] as num).compareTo(b['sequence_index'] as num));
+        final pendingStops = stops.where((stop) =>
+            !['completed', 'skipped'].contains(stop['status'])).toList();
+        final currentStop = pendingStops.isEmpty ? null : pendingStops.first;
+        final reservedSeats = (trip['reserved_seats'] as num?)?.toInt() ?? 0;
+        final seatCapacity = (trip['seat_capacity'] as num?)?.toInt() ?? 3;
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.groups_2_outlined),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Shared Auto · ${reservedSeats}/${seatCapacity} passengers',
+                          style: Theme.of(context).textTheme.titleMedium),
+                    ),
+                    IconButton(
+                      tooltip: 'Refresh shared route',
+                      onPressed: _busy ? null : () => setState(() {}),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+                Text('Trip status: ${trip['status'] ?? 'unknown'}'),
+                const SizedBox(height: 8),
+                Text('Combined pickup and drop-off route',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 4),
+                if (stops.isEmpty) const Text('No route stops are available yet.'),
+                ...stops.map((stop) {
+                  final stopId = (stop['id'] as num).toInt();
+                  final rideId = stop['ride_id'].toString();
+                  final booking = bookings.firstWhere(
+                    (item) => item['ride_id'].toString() == rideId,
+                    orElse: () => <String, dynamic>{},
+                  );
+                  final passengers = (booking['passenger_count'] as num?)?.toInt() ?? 1;
+                  final isCurrent = currentStop != null && currentStop['id'] == stop['id'];
+                  final isPickup = stop['stop_type'] == 'pickup';
+                  final status = stop['status'].toString();
+                  final rideStatus = booking['ride_status']?.toString() ?? '';
+                  final stopLabel = isPickup ? 'Pickup' : 'Drop-off';
+                  final icon = status == 'completed'
+                      ? Icons.check_circle_outline
+                      : status == 'skipped'
+                          ? Icons.skip_next_outlined
+                          : isPickup
+                              ? Icons.person_pin_circle_outlined
+                              : Icons.flag_outlined;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(icon, color: status == 'completed' ? Colors.green : null),
+                          title: Text('${stop['sequence_index']}. $stopLabel · ${isPickup ? '$passengers passenger(s)' : 'Booking'}'),
+                          subtitle: Text('${stop['address']} · ${status.replaceAll('_', ' ')}'),
+                          trailing: isCurrent
+                              ? IconButton(
+                                  tooltip: 'Navigate to this stop',
+                                  onPressed: () => context.push('/ride/$rideId/navigation'),
+                                  icon: const Icon(Icons.navigation_rounded),
+                                )
+                              : null,
+                        ),
+                        if (isCurrent && status == 'pending' && isPickup && rideStatus == 'accepted')
+                          FilledButton(
+                            onPressed: _busy ? null : () => _run(() async {
+                              await _invoke('arriving', {'rideId': rideId});
+                            }),
+                            child: const Text('On the way to pickup'),
+                          ),
+                        if (isCurrent && status == 'pending' && isPickup && rideStatus == 'driver_arriving')
+                          FilledButton(
+                            onPressed: _busy ? null : () => _run(() async {
+                              await _invoke('arrived', {'rideId': rideId});
+                              await _invoke('set_shared_stop_status', {
+                                'sharedAutoTripId': tripId,
+                                'stopId': stopId,
+                                'status': 'arrived',
+                              });
+                            }),
+                            child: const Text('Arrived at pickup'),
+                          ),
+                        if (isCurrent && status == 'pending' && isPickup && rideStatus == 'arrived')
+                          FilledButton(
+                            onPressed: _busy ? null : () => _run(() async {
+                              await _invoke('set_shared_stop_status', {
+                                'sharedAutoTripId': tripId,
+                                'stopId': stopId,
+                                'status': 'arrived',
+                              });
+                            }),
+                            child: const Text('Confirm pickup location'),
+                          ),
+                        if (isCurrent && status == 'arrived' && isPickup)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              TextField(
+                                controller: _otp,
+                                keyboardType: TextInputType.number,
+                                maxLength: 6,
+                                decoration: const InputDecoration(
+                                  labelText: 'This passenger’s pickup OTP',
+                                  counterText: '',
+                                ),
+                              ),
+                              FilledButton(
+                                onPressed: _busy ? null : () => _run(() async {
+                                  await _invoke('start', {
+                                    'rideId': rideId,
+                                    'pickupOtp': _otp.text.trim(),
+                                  });
+                                  _otp.clear();
+                                  await _invoke('set_shared_stop_status', {
+                                    'sharedAutoTripId': tripId,
+                                    'stopId': stopId,
+                                    'status': 'completed',
+                                  });
+                                }),
+                                child: const Text('Verify OTP & pick up passenger'),
+                              ),
+                            ],
+                          ),
+                        if (isCurrent && status == 'pending' && !isPickup && rideStatus == 'in_progress')
+                          FilledButton(
+                            onPressed: _busy ? null : () => _run(() async {
+                              await _invoke('set_shared_stop_status', {
+                                'sharedAutoTripId': tripId,
+                                'stopId': stopId,
+                                'status': 'arrived',
+                              });
+                            }),
+                            child: const Text('Arrived at drop-off'),
+                          ),
+                        if (isCurrent && status == 'arrived' && !isPickup)
+                          FilledButton(
+                            onPressed: _busy ? null : () => _run(() async {
+                              await _invoke('complete', {'rideId': rideId});
+                              await _invoke('set_shared_stop_status', {
+                                'sharedAutoTripId': tripId,
+                                'stopId': stopId,
+                                'status': 'completed',
+                              });
+                            }),
+                            child: const Text('Complete passenger drop-off'),
+                          ),
+                      ],
+                    ),
+                  );
+                }),
+                if (currentStop == null)
+                  const ListTile(
+                    leading: Icon(Icons.check_circle, color: Colors.green),
+                    title: Text('All shared passengers have completed their trips.'),
+                  ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _openEmergencyDialer(fallbackRideId),
+                  icon: const Icon(Icons.call_rounded),
+                  label: const Text('Emergency · Call 112'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _activeRideCard(Map<String, dynamic> ride) {

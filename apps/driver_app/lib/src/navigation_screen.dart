@@ -6,6 +6,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 
+
 class DriverRideNavigationScreen extends StatefulWidget {
   const DriverRideNavigationScreen({
     super.key,
@@ -21,7 +22,7 @@ class DriverRideNavigationScreen extends StatefulWidget {
 
 class _DriverRideNavigationScreenState
     extends State<DriverRideNavigationScreen> {
-  final MapController _mapController = MapController();
+  QuickRideMapController? _mapController;
   final FlutterTts _tts = FlutterTts();
 
   StreamSubscription<dynamic>? _locationSubscription;
@@ -37,7 +38,7 @@ class _DriverRideNavigationScreenState
   double? _durationRemaining;
   String? _instruction;
   bool _loading = true;
-  bool _mapReady = false;
+  int _mapRecenterSignal = 0;
   bool _routeRequestInFlight = false;
   bool _arrived = false;
   bool _finishing = false;
@@ -189,7 +190,7 @@ class _DriverRideNavigationScreenState
       unawaited(_announceInstruction(_instruction!));
     }
 
-    if (_mapReady) _mapController.move(next, 16);
+
     final last = _lastRouteOrigin;
     final moved = last == null || _distanceMeters(last, next) >= 120;
     final elapsed =
@@ -237,9 +238,7 @@ class _DriverRideNavigationScreenState
       if (_instruction != null) {
         unawaited(_announceInstruction(_instruction!));
       }
-      if (_mapReady && _routePoints.isNotEmpty) {
-        _mapController.move(origin, 16);
-      }
+
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -286,9 +285,10 @@ class _DriverRideNavigationScreenState
   }
 
   void _centerMap() {
+    setState(() => _mapRecenterSignal++);
     final center = _currentPosition ?? _targetPosition;
-    if (center != null && _mapReady) {
-      _mapController.move(center, 16);
+    if (center != null) {
+      _mapController?.moveTo(center, zoom: 17);
     }
   }
 
@@ -365,55 +365,17 @@ class _DriverRideNavigationScreenState
                   : Column(
                       children: [
                         Expanded(
-                          child: FlutterMap(
-                            key: ValueKey('driver-navigation-${widget.rideId}'),
-                            mapController: _mapController,
-                            options: MapOptions(
-                              initialCenter: current,
-                              initialZoom: 16,
-                              onMapReady: () {
-                                _mapReady = true;
-                                _centerMap();
-                              },
-                            ),
-                            children: [
-                              QuickRideMaps.openStreetMapLayer(appPackageName: 'com.quickride.driver'),
-                              if (_routePoints.length >= 2)
-                                PolylineLayer(
-                                  polylines: [
-                                    Polyline(
-                                      points: _routePoints,
-                                      strokeWidth: 7,
-                                      color: Colors.blue,
-                                    ),
-                                  ],
-                                ),
-                              MarkerLayer(
-                                markers: [
-                                  Marker(
-                                    point: current,
-                                    width: 44,
-                                    height: 44,
-                                    child: const Icon(
-                                      Icons.navigation,
-                                      color: Colors.blue,
-                                      size: 36,
-                                    ),
-                                  ),
-                                  Marker(
-                                    point: target,
-                                    width: 42,
-                                    height: 46,
-                                    child: const Icon(
-                                      Icons.location_on,
-                                      color: Colors.red,
-                                      size: 42,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              QuickRideMaps.attributionControl(),
-                            ],
+                          child: QuickRideMapView(
+                            key: ValueKey('driver-navigation-mapbox-${widget.rideId}'),
+                            initialCenter: current,
+                            currentPosition: current,
+                            pickup: _navigatingToDestination ? null : target,
+                            destination: _navigatingToDestination ? target : null,
+                            routePoints: _routePoints,
+                            followCurrentPosition: true,
+                            navigationCamera: true,
+                            recenterSignal: _mapRecenterSignal,
+                            onMapCreated: (map) => _mapController = map,
                           ),
                         ),
                         if (_error != null)

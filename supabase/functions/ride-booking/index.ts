@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { calculateSharedAutoRoute, type SharedAutoLeg, type SharedAutoRoute } from "../_shared/shared-auto-routing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -37,6 +38,45 @@ async function sha256Hex(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+
+
+async function getNearbyDriverAvailability(
+  db: any,
+  pincodeId: number,
+  vehicleCategoryId: number,
+): Promise<{ available_count: number; checked_at: string }> {
+  const cutoff = new Date(Date.now() - 120_000).toISOString();
+  const { data: drivers, error: driverError } = await db
+    .from("driver_profiles")
+    .select("user_id")
+    .eq("verification_status", "approved")
+    .eq("availability_status", "online")
+    .eq("vehicle_category_id", vehicleCategoryId)
+    .eq("active_pincode_id", pincodeId)
+    .limit(250);
+  if (driverError) throw driverError;
+  const driverIds = [...new Set((drivers ?? [])
+    .map((row: { user_id?: string }) => row.user_id)
+    .filter((id: unknown): id is string => typeof id === "string"))];
+  if (!driverIds.length) {
+    return { available_count: 0, checked_at: new Date().toISOString() };
+  }
+
+  const { data: locations, error: locationError } = await db
+    .from("driver_locations")
+    .select("driver_id,recorded_at")
+    .in("driver_id", driverIds)
+    .gte("recorded_at", cutoff)
+    .limit(250);
+  if (locationError) throw locationError;
+  const freshDrivers = new Set((locations ?? [])
+    .map((row: { driver_id?: string }) => row.driver_id)
+    .filter((id: unknown): id is string => typeof id === "string"));
+  return {
+    available_count: freshDrivers.size,
+    checked_at: new Date().toISOString(),
+  };
+}
 
 async function notifyUsers(
   url: string,
@@ -130,7 +170,8 @@ Deno.serve(async (req: Request) => {
     const rideId = String(body.rideId ?? "");
     const reason = typeof body.reason === "string" ? body.reason.slice(0, 250) : "customer_cancelled";
     if (!rideId) return error(400, "RIDE_REQUIRED", "rideId is required");
-    const { data: rideBefore } = await db.from("rides").select("driver_id")
+    const { data: rideBefore } = await db.from("rides")
+      .select("driver_id,shared_auto_trip_id,ride_mode")
       .eq("id", rideId).eq("customer_id", user.id).maybeSingle();
     const { data, error: cancelError } = await db.rpc("customer_cancel_ride", {
       p_customer_id: user.id,
@@ -140,10 +181,64 @@ Deno.serve(async (req: Request) => {
     if (cancelError) return error(409, "CANCELLATION_REJECTED", cancelError.message);
     if (rideBefore?.driver_id) await notifyUsers(
       url, serviceKey, [String(rideBefore.driver_id)], "driver",
-      "Ride cancelled by customer",
-      "The customer cancelled this Quick-Ride request.",
-      { type: "ride_cancelled", ride_id: rideId },
+      rideBefore.shared_auto_trip_id ? "Shared Auto route updated" : "Ride cancelled by customer",
+      rideBefore.shared_auto_trip_id
+        ? "A passenger cancelled. The shared Auto route has been updated; review the remaining stops."
+        : "The customer cancelled this Quick-Ride request.",
+      {
+        type: rideBefore.shared_auto_trip_id ? "shared_auto_route_updated" : "ride_cancelled",
+        ride_id: rideId,
+        ...(rideBefore.shared_auto_trip_id ? { shared_auto_trip_id: String(rideBefore.shared_auto_trip_id) } : {}),
+      },
     );
+
+    if (rideBefore?.shared_auto_trip_id) {
+      const { data: remainingBookings, error: remainingError } = await db.from("shared_auto_trip_bookings")
+        .select("customer_id")
+        .eq("shared_auto_trip_id", rideBefore.shared_auto_trip_id)
+        .eq("status", "confirmed");
+      if (remainingError) {
+        console.warn("Unable to notify remaining Shared Auto passengers", remainingError.message);
+      } else {
+        await notifyUsers(
+          url,
+          serviceKey,
+          (remainingBookings ?? []).map((row: { customer_id: string }) => row.customer_id),
+          "customer",
+          "Shared Auto route updated",
+          "A passenger cancelled. Your booking and confirmed fare remain unchanged; the driver route has been updated.",
+          { type: "shared_auto_route_updated", shared_auto_trip_id: String(rideBefore.shared_auto_trip_id) },
+        );
+      }
+    }
+    if (rideBefore?.shared_auto_trip_id && !rideBefore.driver_id) {
+      const { data: trip } = await db.from("shared_auto_trips")
+        .select("lead_ride_id,driver_id,status")
+        .eq("id", rideBefore.shared_auto_trip_id).maybeSingle();
+      if (trip?.status === "matching" && !trip.driver_id && trip.lead_ride_id &&
+          String(trip.lead_ride_id) !== rideId) {
+        const leadRideId = String(trip.lead_ride_id);
+        const { data: dispatchContext, error: dispatchContextError } = await db.rpc(
+          "get_ride_dispatch_context", { p_ride_id: leadRideId },
+        );
+        if (!dispatchContextError && dispatchContext) {
+          const settings = dispatchContext.dispatch as Record<string, number>;
+          const initial = Number(settings.initial_radius_m ?? 2000);
+          const max = Number(settings.max_radius_m ?? 15000);
+          const step = Number(settings.radius_step_m ?? 2000);
+          let radius = initial;
+          while (radius <= max) {
+            const { data: outcome, error: dispatchError } = await db.rpc("create_ride_offer_batch", {
+              p_ride_id: leadRideId,
+              p_radius_m: radius,
+            });
+            if (dispatchError || outcome?.status !== "no_drivers") break;
+            radius += step;
+          }
+          await notifyOfferedDrivers(db, url, serviceKey, leadRideId);
+        }
+      }
+    }
     return reply(200, { result: data });
   }
 
@@ -256,11 +351,22 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const routingBaseUrl = (Deno.env.get("OSRM_BASE_URL") ?? "https://router.project-osrm.org").replace(/\/$/, "");
+  const mapboxToken = Deno.env.get("MAPBOX_ACCESS_TOKEN") ?? "";
   const pincode = body.pincode;
   const categoryId = Number(body.vehicleCategoryId);
   const pickup = body.pickup;
   const destination = body.destination;
+  const rideMode = body.rideMode === "shared_auto" ? "shared_auto" : "private";
+  const passengerCount = Number(body.passengerCount ?? 1);
+  if (body.rideMode !== undefined && !["private", "shared_auto"].includes(String(body.rideMode))) {
+    return error(400, "INVALID_RIDE_MODE", "Choose a private ride or Shared Auto");
+  }
+  if (!Number.isSafeInteger(passengerCount) || passengerCount < 1 || passengerCount > 3) {
+    return error(400, "INVALID_PASSENGER_COUNT", "Passenger count must be between one and three");
+  }
+  if (rideMode === "private" && passengerCount !== 1) {
+    return error(400, "INVALID_PASSENGER_COUNT", "Passenger count selection is available for Shared Auto only");
+  }
   if (!["quote", "book"].includes(String(action))) return error(400, "INVALID_ACTION", "Action must be quote or book");
   if (typeof pincode !== "string" || !/^[1-9][0-9]{5}$/.test(pincode)) return error(400, "INVALID_PINCODE", "Enter a valid six-digit Indian pincode");
   if (!Number.isSafeInteger(categoryId) || categoryId <= 0) return error(400, "INVALID_VEHICLE_CATEGORY", "Choose an available vehicle category");
@@ -282,10 +388,14 @@ Deno.serve(async (req: Request) => {
     }
 
     const coords = `${pickup.longitude},${pickup.latitude};${destination.longitude},${destination.latitude}`;
-    const routeUrl = new URL(`${routingBaseUrl}/route/v1/driving/${coords}`);
-    routeUrl.searchParams.set("overview", "simplified");
+    if (!mapboxToken.startsWith("pk.") && !mapboxToken.startsWith("sk.")) {
+      return error(503, "MAPBOX_NOT_CONFIGURED", "Mapbox routing is not configured on the ride service. Set the MAPBOX_ACCESS_TOKEN Edge Function secret.");
+    }
+    const routeUrl = new URL(`https://api.mapbox.com/directions/v5/mapbox/driving/${coords}`);
+    routeUrl.searchParams.set("overview", "full");
     routeUrl.searchParams.set("geometries", "geojson");
     routeUrl.searchParams.set("steps", "false");
+    routeUrl.searchParams.set("access_token", mapboxToken);
 
     const routeResponse = await fetch(routeUrl, {
       headers: {
@@ -296,12 +406,13 @@ Deno.serve(async (req: Request) => {
     });
     if (!routeResponse.ok) return error(502, "ROUTE_PROVIDER_ERROR", "The route service could not calculate this trip");
     const routePayload = await routeResponse.json();
-    const route = routePayload?.routes?.[0];
+    const route = routePayload?.code === "Ok" ? routePayload?.routes?.[0] : null;
     if (!route || typeof route.distance !== "number" || typeof route.duration !== "number") {
       return error(422, "NO_ROUTE", "No drivable route was found between these locations");
     }
 
     const fare = context.fare_config as Record<string, number | string>;
+    const category = context.vehicle_category as Record<string, unknown>;
     const distanceM = Math.ceil(route.distance);
     const durationS = Math.ceil(route.duration);
     const distanceKm = distanceM / 1000;
@@ -313,9 +424,30 @@ Deno.serve(async (req: Request) => {
     const multiplier = Number(fare.multiplier);
     const beforeMinimum = (base + distanceCharge + timeCharge + bookingFee) * multiplier;
     const minimum = Number(fare.minimum_fare);
-    const estimatedFare = Math.round(Math.max(minimum, beforeMinimum) * 100) / 100;
+    const privateEstimatedFare = Math.round(Math.max(minimum, beforeMinimum) * 100) / 100;
+    let estimatedFare = privateEstimatedFare;
+    let sharedConfig: Record<string, unknown> | null = null;
+    if (rideMode === "shared_auto") {
+      const normalizedCategory = String(category.code ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (!["auto", "autorickshaw"].includes(normalizedCategory)) {
+        return error(400, "SHARED_AUTO_ONLY", "Shared rides are currently available for Auto only");
+      }
+      const { data: config, error: configError } = await db.from("shared_auto_configs")
+        .select("is_enabled,seat_capacity,max_detour_percent,max_extra_minutes,fare_share_percent_per_seat")
+        .eq("pincode_id", Number(context.pincode_id)).maybeSingle();
+      if (configError) return error(500, "SHARED_AUTO_CONFIG", "Shared Auto settings could not be loaded");
+      if (!config || config.is_enabled !== true) {
+        return error(409, "SHARED_AUTO_UNAVAILABLE", "Shared Auto is not enabled in this service pincode");
+      }
+      if (action === "book" && passengerCount > Number(config.seat_capacity ?? 3)) {
+        return error(409, "SHARED_AUTO_CAPACITY", "This Auto cannot accept that many passengers");
+      }
+      sharedConfig = config as Record<string, unknown>;
+      const perSeatPercent = Number(config.fare_share_percent_per_seat ?? 35);
+      estimatedFare = Math.round(privateEstimatedFare * perSeatPercent / 100 * passengerCount * 100) / 100;
+    }
     const breakdown = {
-      provider: "osrm-openstreetmap",
+      provider: "mapbox-directions",
       distance_m: distanceM,
       duration_s: durationS,
       base_fare: base,
@@ -326,9 +458,26 @@ Deno.serve(async (req: Request) => {
       minimum_fare_applied: beforeMinimum < minimum,
       estimated_fare: estimatedFare,
       currency: String(fare.currency ?? "INR"),
+      ride_mode: rideMode,
+      passenger_count: passengerCount,
+      ...(rideMode === "shared_auto" ? {
+        private_route_fare: privateEstimatedFare,
+        fare_share_percent_per_seat: Number(sharedConfig?.fare_share_percent_per_seat ?? 35),
+        shared_seat_fare: Math.round(privateEstimatedFare * Number(sharedConfig?.fare_share_percent_per_seat ?? 35)) / 100,
+      } : {}),
     };
 
     if (action === "quote") {
+      let availability: { available_count: number; checked_at: string } | null = null;
+      try {
+        availability = await getNearbyDriverAvailability(
+          db,
+          Number(context.pincode_id),
+          categoryId,
+        );
+      } catch (availabilityError) {
+        console.warn("Nearby driver availability could not be loaded", String(availabilityError));
+      }
       return reply(200, {
         quote: {
           pincode,
@@ -336,10 +485,20 @@ Deno.serve(async (req: Request) => {
           distance_m: distanceM,
           duration_s: durationS,
           estimated_fare: estimatedFare,
+          availability,
           currency: breakdown.currency,
           fare_breakdown: breakdown,
           route_geometry: route.geometry,
           commercial_model: (context.commercial_config as Record<string, unknown>).business_model,
+          ride_mode: rideMode,
+          passenger_count: passengerCount,
+          ...(rideMode === "shared_auto" ? {
+            shared_auto: {
+              max_passengers: Math.min(3, Number(sharedConfig?.seat_capacity ?? 3)),
+              fare_per_seat: Math.round(privateEstimatedFare * Number(sharedConfig?.fare_share_percent_per_seat ?? 35)) / 100,
+              fare_share_percent_per_seat: Number(sharedConfig?.fare_share_percent_per_seat ?? 35),
+            },
+          } : {}),
         },
       });
     }
@@ -374,8 +533,139 @@ Deno.serve(async (req: Request) => {
     }
 
     const ride = bookingResult.ride as Record<string, unknown>;
-    let dispatch: Json = { status: "not_started" };
-    if (bookingResult.created === true) {
+    let sharedAuto: Record<string, unknown> | null = null;
+    let sharedAutoJoined = false;
+    if (rideMode === "shared_auto" && bookingResult.created === true) {
+      const { data: candidates, error: candidateError } = await db.rpc("list_shared_auto_trip_candidates", {
+        p_pincode_id: Number(context.pincode_id),
+        p_vehicle_category_id: categoryId,
+      });
+      if (candidateError) {
+        await db.rpc("customer_cancel_ride", {
+          p_customer_id: user.id, p_ride_id: String(ride.id), p_reason: "shared_auto_matching_failed",
+        });
+        return error(503, "SHARED_AUTO_MATCHING_UNAVAILABLE", "Shared Auto matching is temporarily unavailable. Please try again.");
+      }
+
+      const candidateRows = Array.isArray(candidates) ? candidates as Record<string, unknown>[] : [];
+      const maxSeats = Math.min(3, Number(sharedConfig?.seat_capacity ?? 3));
+      for (const candidate of candidateRows) {
+        const existingBookings = Array.isArray(candidate.bookings)
+          ? candidate.bookings as Record<string, unknown>[] : [];
+        const usedSeats = existingBookings.reduce(
+          (total, item) => total + Number(item.passenger_count ?? 0), 0,
+        );
+        if (usedSeats + passengerCount > Math.min(maxSeats, Number(candidate.seat_capacity ?? 3))) continue;
+
+        const existingLegs: SharedAutoLeg[] = existingBookings.map((item) => ({
+          ride_id: String(item.ride_id),
+          passenger_count: Number(item.passenger_count ?? 1),
+          pickup_longitude: Number(item.pickup_longitude),
+          pickup_latitude: Number(item.pickup_latitude),
+          pickup_address: String(item.pickup_address ?? ""),
+          destination_longitude: Number(item.destination_longitude),
+          destination_latitude: Number(item.destination_latitude),
+          destination_address: String(item.destination_address ?? ""),
+          estimated_duration_s: Math.max(1, Number(item.estimated_duration_s ?? 1)),
+        }));
+        const allLegs: SharedAutoLeg[] = [...existingLegs, {
+          ride_id: String(ride.id),
+          passenger_count: passengerCount,
+          pickup_longitude: pickup.longitude,
+          pickup_latitude: pickup.latitude,
+          pickup_address: pickup.address,
+          destination_longitude: destination.longitude,
+          destination_latitude: destination.latitude,
+          destination_address: destination.address,
+          estimated_duration_s: durationS,
+        }];
+        if (allLegs.some((leg) =>
+          !Number.isFinite(leg.pickup_longitude) || !Number.isFinite(leg.pickup_latitude) ||
+          !Number.isFinite(leg.destination_longitude) || !Number.isFinite(leg.destination_latitude) ||
+          !Number.isFinite(leg.estimated_duration_s)
+        )) continue;
+
+        let routePlan: SharedAutoRoute | null = null;
+        try {
+          routePlan = await calculateSharedAutoRoute(
+            allLegs,
+            mapboxToken,
+            Number(sharedConfig?.max_detour_percent ?? 40),
+            Number(sharedConfig?.max_extra_minutes ?? 15),
+          );
+        } catch (routeError) {
+          console.warn("Shared Auto route comparison failed", String(routeError));
+          continue;
+        }
+        if (!routePlan) continue;
+
+        const { data: joinResult, error: joinError } = await db.rpc("join_shared_auto_trip", {
+          p_shared_auto_trip_id: String(candidate.id),
+          p_ride_id: String(ride.id),
+          p_passenger_count: passengerCount,
+          p_route_distance_m: routePlan.distance_m,
+          p_route_duration_s: routePlan.duration_s,
+          p_detour_percent: routePlan.detour_percent,
+          p_extra_minutes: routePlan.extra_minutes,
+          p_route_plan: routePlan.stops,
+        });
+        if (joinError || !joinResult) {
+          console.warn("Shared Auto candidate lost a reservation race", joinError?.message ?? "empty result");
+          continue;
+        }
+        sharedAutoJoined = true;
+        sharedAuto = {
+          ...joinResult,
+          joined_existing_trip: true,
+          detour_percent: routePlan.detour_percent,
+          extra_minutes: routePlan.extra_minutes,
+          route_distance_m: routePlan.distance_m,
+          route_duration_s: routePlan.duration_s,
+        };
+
+        const existingCustomerIds = existingBookings
+          .map((item) => String(item.customer_id ?? ""))
+          .filter((id) => id && id !== user.id);
+        await notifyUsers(
+          url, serviceKey, existingCustomerIds, "customer",
+          "Your Shared Auto booking was updated",
+          "Another passenger joined your Auto. Your booking and confirmed fare remain unchanged.",
+          { type: "shared_auto_route_updated", shared_auto_trip_id: String(candidate.id) },
+        );
+        const tripDriverId = joinResult.driver_id ? String(joinResult.driver_id) : null;
+        if (tripDriverId) {
+          await notifyUsers(
+            url, serviceKey, [tripDriverId], "driver",
+            "Passenger added to your shared Auto",
+            "A compatible passenger booking joined your shared Auto. Review the updated pickup and drop-off list.",
+            { type: "shared_auto_booking_added", shared_auto_trip_id: String(candidate.id), ride_id: String(ride.id) },
+          );
+        }
+        break;
+      }
+
+      if (!sharedAutoJoined) {
+        const { data: createdTrip, error: createTripError } = await db.rpc("create_shared_auto_trip", {
+          p_ride_id: String(ride.id),
+          p_passenger_count: passengerCount,
+          p_route_distance_m: distanceM,
+          p_route_duration_s: durationS,
+          p_route_plan: null,
+        });
+        if (createTripError || !createdTrip) {
+          await db.rpc("customer_cancel_ride", {
+            p_customer_id: user.id, p_ride_id: String(ride.id), p_reason: "shared_auto_setup_failed",
+          });
+          return error(409, "SHARED_AUTO_BOOKING_FAILED", "The Shared Auto booking could not be prepared. Please try again.");
+        }
+        sharedAuto = { ...createdTrip, joined_existing_trip: false, reserved_seats: passengerCount };
+      }
+    }
+
+    let dispatch: Json = sharedAutoJoined
+      ? { status: "joined_shared_auto", shared_auto_trip_id: sharedAuto?.shared_auto_trip_id }
+      : { status: "not_started" };
+    if (bookingResult.created === true && !sharedAutoJoined) {
       const { data: dispatchContext, error: dispatchContextError } = await db.rpc("get_ride_dispatch_context", {
         p_ride_id: ride.id,
       });
@@ -437,6 +727,7 @@ Deno.serve(async (req: Request) => {
       created: bookingResult.created === true,
       pickup_otp: otpForCustomer,
       dispatch,
+      ...(sharedAuto ? { shared_auto: sharedAuto } : {}),
     });
   } catch (cause) {
     console.error("ride-booking failed", cause);

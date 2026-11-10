@@ -4,6 +4,7 @@ environment:
   sdk: ^3.12.0
 resolution: workspace
 dependencies:
+  google_sign_in: ^7.2.0
   supabase_flutter: ^2.18.3
   quick_ride_backend:
     path: ../quick_ride_backend

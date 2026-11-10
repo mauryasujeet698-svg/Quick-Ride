@@ -5,11 +5,13 @@ import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_core/quick_ride_core.dart';
 import 'package:quick_ride_design_system/quick_ride_design_system.dart';
 import 'package:quick_ride_notifications/quick_ride_notifications.dart';
+import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'src/home_screen.dart';
 import 'src/navigation_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  QuickRideMaps.configure();
   final environment = QuickRideEnvironment.fromBuildDefines();
   await QuickRideBackend.initialize(environment);
   await QuickRideNotifications.initialize(appRole: 'driver');
@@ -67,7 +69,7 @@ class QuickRideDriverApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp.router(
         scaffoldMessengerKey: messengerKey,
-        title: 'Quick-Ride Driver',
+        title: 'Quick Ride Captain',
         theme: QuickRideTheme.light(),
         darkTheme: QuickRideTheme.dark(),
         routerConfig: router,

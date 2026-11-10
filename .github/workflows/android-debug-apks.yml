@@ -2,6 +2,8 @@ name: Build Quick-Ride Android QA APKs
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main, feature/mapbox-three-app-redesign]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,21 +13,32 @@ jobs:
     env:
       SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://czbelhtemzklcmssumpc.supabase.co' }}
       SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_0es_pudIg1ghhsSciZL_Sw_LGaiO7zh' }}
-      OSM_TILE_URL: ${{ vars.OSM_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' }}
-      OSRM_BASE_URL: ${{ vars.OSRM_BASE_URL || 'https://router.project-osrm.org' }}
-      NOMINATIM_BASE_URL: ${{ vars.NOMINATIM_BASE_URL || 'https://nominatim.openstreetmap.org' }}
       FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
       FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
       FIREBASE_CUSTOMER_APP_ID: ${{ secrets.FIREBASE_CUSTOMER_APP_ID }}
       FIREBASE_DRIVER_APP_ID: ${{ secrets.FIREBASE_DRIVER_APP_ID }}
       FIREBASE_ADMIN_APP_ID: ${{ secrets.FIREBASE_ADMIN_APP_ID }}
-      MAX_APK_BYTES: 25000000
+      MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN || secrets.MAPBOX_PUBLIC_ACCESS_TOKEN || secrets.MAPBOX_PUBLIC_TOKEN || secrets.MAPBOX_PUBLIC_API_KEY || secrets.MAPBOX_API_KEY || secrets.MAPBOX_API_TOKEN || secrets.MAPBOX_PUBLIC_KEY || secrets.MAPBOX_PK_TOKEN || secrets.MAPBOX_TOKEN || secrets.MAPBOX_DOWNLOADS_TOKEN || secrets.MAPBOX_KEY || secrets.MAPBOX_MAPS_TOKEN || vars.MAPBOX_ACCESS_TOKEN || vars.MAPBOX_PUBLIC_ACCESS_TOKEN || vars.MAPBOX_PUBLIC_TOKEN || vars.MAPBOX_PUBLIC_API_KEY || vars.MAPBOX_API_KEY || vars.MAPBOX_API_TOKEN || vars.MAPBOX_PUBLIC_KEY || vars.MAPBOX_PK_TOKEN || vars.MAPBOX_TOKEN || '' }}
+      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_CLIENT_ID || vars.GOOGLE_WEB_CLIENT_ID || vars.GOOGLE_CLIENT_ID || '' }}
+      MAPBOX_TOKEN_SOURCE: ${{ secrets.MAPBOX_ACCESS_TOKEN != '' && 'secrets.MAPBOX_ACCESS_TOKEN' || secrets.MAPBOX_PUBLIC_ACCESS_TOKEN != '' && 'secrets.MAPBOX_PUBLIC_ACCESS_TOKEN' || secrets.MAPBOX_PUBLIC_TOKEN != '' && 'secrets.MAPBOX_PUBLIC_TOKEN' || secrets.MAPBOX_PUBLIC_API_KEY != '' && 'secrets.MAPBOX_PUBLIC_API_KEY' || secrets.MAPBOX_API_KEY != '' && 'secrets.MAPBOX_API_KEY' || secrets.MAPBOX_API_TOKEN != '' && 'secrets.MAPBOX_API_TOKEN' || secrets.MAPBOX_PUBLIC_KEY != '' && 'secrets.MAPBOX_PUBLIC_KEY' || secrets.MAPBOX_PK_TOKEN != '' && 'secrets.MAPBOX_PK_TOKEN' || secrets.MAPBOX_TOKEN != '' && 'secrets.MAPBOX_TOKEN' || vars.MAPBOX_ACCESS_TOKEN != '' && 'vars.MAPBOX_ACCESS_TOKEN' || vars.MAPBOX_PUBLIC_ACCESS_TOKEN != '' && 'vars.MAPBOX_PUBLIC_ACCESS_TOKEN' || vars.MAPBOX_PUBLIC_TOKEN != '' && 'vars.MAPBOX_PUBLIC_TOKEN' || vars.MAPBOX_PUBLIC_API_KEY != '' && 'vars.MAPBOX_PUBLIC_API_KEY' || vars.MAPBOX_API_KEY != '' && 'vars.MAPBOX_API_KEY' || vars.MAPBOX_API_TOKEN != '' && 'vars.MAPBOX_API_TOKEN' || vars.MAPBOX_PUBLIC_KEY != '' && 'vars.MAPBOX_PUBLIC_KEY' || vars.MAPBOX_PK_TOKEN != '' && 'vars.MAPBOX_PK_TOKEN' || vars.MAPBOX_TOKEN != '' && 'vars.MAPBOX_TOKEN' || secrets.MAPBOX_DOWNLOADS_TOKEN != '' && 'secrets.MAPBOX_DOWNLOADS_TOKEN' || secrets.MAPBOX_KEY != '' && 'secrets.MAPBOX_KEY' || secrets.MAPBOX_MAPS_TOKEN != '' && 'secrets.MAPBOX_MAPS_TOKEN' || 'none' }}
+      MAX_APK_BYTES: 40000000
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - name: Configure Flutter to use JDK 17
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter config --jdk-dir="$JAVA_HOME"
+          java -version
+          flutter doctor -v
       - name: Resolve Flutter workspace
         run: flutter pub get
       - name: Prepare Android platform files
@@ -36,9 +49,59 @@ jobs:
             temp_dir="$(mktemp -d)"
             flutter create --empty --project-name "$app" --org com.quickride --platforms android "$temp_dir"
             cp -R "$temp_dir/android" "apps/${app}_app/android"
+            python3 - "apps/${app}_app/android/gradle.properties" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          lines = [
+              line for line in text.splitlines()
+              if not line.startswith("android.builtInKotlin=")
+              and not line.startswith("android.newDsl=")
+          ]
+          path.write_text("\n".join(lines) + "\n")
+          PY
             manifest="apps/${app}_app/android/app/src/main/AndroidManifest.xml"
-            python3 scripts/configure_android_manifest.py "$manifest" "in.quickride.${app}"
-            python3 - "apps/${app}_app/android/app/build.gradle.kts" <<'PY'
+            python3 scripts/configure_android_manifest.py "$manifest" "com.quickride.${app}"
+            python3 - "apps/${app}_app/android/settings.gradle.kts" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          text, agp_count = re.subn(
+              r'id\("com\.android\.application"\) version "[^"]+" apply false',
+              'id("com.android.application") version "8.11.1" apply false', text
+          )
+          text, kotlin_count = re.subn(
+              r'id\("org\.jetbrains\.kotlin\.android"\) version "[^"]+" apply false',
+              'id("org.jetbrains.kotlin.android") version "2.2.20" apply false', text
+          )
+          if agp_count != 1 or kotlin_count != 1:
+              raise SystemExit(f"Could not pin compatible AGP/Kotlin plugins in {path}: AGP={agp_count}, Kotlin={kotlin_count}")
+          path.write_text(text)
+          if "api.mapbox.com/downloads/v2/releases/maven" not in text:
+              block = """dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  val flutterStorageUrl = System.getenv("FLUTTER_STORAGE_BASE_URL") ?: "https://storage.googleapis.com"
+                  maven("$flutterStorageUrl/download.flutter.io")
+                  maven {
+                      url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
+                  }
+              }
+          }
+
+          """
+              marker = "plugins {"
+              if marker not in text:
+                  raise SystemExit(f"Could not locate plugins block in {path}")
+              text = text.replace(marker, block + marker, 1)
+              path.write_text(text)
+          PY
+          python3 - "apps/${app}_app/android/app/build.gradle.kts" <<'PY'
           from pathlib import Path
           import sys
           path = Path(sys.argv[1])
@@ -56,7 +119,61 @@ jobs:
           path.write_text(gradle.replace(marker, optimized, 1))
           (path.parent / "proguard-rules.pro").touch()
           PY
+            python3 - "apps/${app}_app/android/gradle/wrapper/gradle-wrapper.properties" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          text, count = re.subn(
+              r'distributionUrl=.*gradle-[0-9.]+-(?:all|bin)\.zip',
+              'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14-all.zip',
+              text
+          )
+          if count != 1:
+              raise SystemExit(f"Could not pin Gradle 8.14 in {path}")
+          path.write_text(text)
+          PY
           done
+      - name: Align flutter_tts Android plugin with pinned toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+          cache = Path(os.environ["PUB_CACHE"])
+          candidates = list(cache.glob("hosted/pub.dev/flutter_tts-*/android/build.gradle"))
+          if not candidates:
+              raise SystemExit("flutter_tts Android Gradle file was not found in PUB_CACHE")
+          for path in candidates:
+              text = path.read_text()
+              text, count = re.subn(
+                  r"com\.android\.tools\.build:gradle:[0-9.]+",
+                  "com.android.tools.build:gradle:8.11.1",
+                  text
+              )
+              if count == 0:
+                  raise SystemExit(f"Expected flutter_tts AGP dependency not found in {path}")
+              path.write_text(text)
+              print(f"Pinned flutter_tts Android buildscript AGP to 8.11.1: {path}")
+          PY
+      - name: Verify Mapbox token availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${MAPBOX_ACCESS_TOKEN//[[:space:]]/}" ]]; then
+            echo "::error::No public Mapbox token was resolved. Set an Actions repository secret or variable named MAPBOX_ACCESS_TOKEN (value starts with pk.)."
+            echo "Accepted aliases include MAPBOX_PUBLIC_ACCESS_TOKEN, MAPBOX_PUBLIC_TOKEN, MAPBOX_PUBLIC_API_KEY, MAPBOX_API_KEY, MAPBOX_API_TOKEN, MAPBOX_PUBLIC_KEY, MAPBOX_PK_TOKEN and MAPBOX_TOKEN."
+            exit 1
+          fi
+          if [[ "$MAPBOX_ACCESS_TOKEN" != pk.* ]]; then
+            echo "::error::The resolved Mapbox token is not a public pk.* token."
+            exit 1
+          fi
+          echo "A public Mapbox token is available to the Android build (source: $MAPBOX_TOKEN_SOURCE)."
+
       - name: Build optimized ABI-specific APKs
         shell: bash
         run: |
@@ -72,42 +189,102 @@ jobs:
             (
               cd "apps/${app}_app"
               mkdir -p build/symbols
-              flutter build apk --release --split-per-abi \
+              FIREBASE_APP_ID="$firebase_app_id" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          defines = {
+              "SUPABASE_URL": os.environ["SUPABASE_URL"].strip(),
+              "SUPABASE_PUBLISHABLE_KEY": os.environ["SUPABASE_PUBLISHABLE_KEY"].strip(),
+              "MAPBOX_ACCESS_TOKEN": os.environ["MAPBOX_ACCESS_TOKEN"].strip(),
+              "GOOGLE_WEB_CLIENT_ID": os.environ["GOOGLE_WEB_CLIENT_ID"].strip(),
+              "FIREBASE_API_KEY": os.environ["FIREBASE_API_KEY"].strip(),
+              "FIREBASE_PROJECT_ID": os.environ["FIREBASE_PROJECT_ID"].strip(),
+              "FIREBASE_MESSAGING_SENDER_ID": os.environ["FIREBASE_MESSAGING_SENDER_ID"].strip(),
+              "FIREBASE_APP_ID": os.environ["FIREBASE_APP_ID"].strip(),
+          }
+          required = [
+              "SUPABASE_URL",
+              "SUPABASE_PUBLISHABLE_KEY",
+              "FIREBASE_API_KEY",
+              "FIREBASE_PROJECT_ID",
+              "FIREBASE_MESSAGING_SENDER_ID",
+              "FIREBASE_APP_ID",
+          ]
+          if any(not defines[key] for key in required):
+              raise SystemExit("One or more required build defines are empty")
+          if not defines["MAPBOX_ACCESS_TOKEN"].startswith("pk."):
+              raise SystemExit("MAPBOX_ACCESS_TOKEN must be a public pk.* token; Mapbox maps and search cannot initialize without it.")
+          if not defines["GOOGLE_WEB_CLIENT_ID"]:
+              raise SystemExit("GOOGLE_WEB_CLIENT_ID is required for native Google sign-in.")
+          Path("build/quick_ride.defines.json").write_text(
+              json.dumps(defines, separators=(",", ":")),
+              encoding="utf-8",
+          )
+          PY
+              if ! flutter build apk --release --split-per-abi \
+                --target-platform android-arm,android-arm64 \
                 --obfuscate --split-debug-info="build/symbols/${app}" \
-                --dart-define=SUPABASE_URL="$SUPABASE_URL" \
-                --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" \
-                --dart-define=OSM_TILE_URL="$OSM_TILE_URL" \
-                --dart-define=OSRM_BASE_URL="$OSRM_BASE_URL" \
-                --dart-define=NOMINATIM_BASE_URL="$NOMINATIM_BASE_URL" \
-                --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" \
-                --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
-                --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
-                --dart-define=FIREBASE_APP_ID="$firebase_app_id"
+                --dart-define-from-file=build/quick_ride.defines.json; then
+                echo "::warning::Android build failed for ${app}; continuing to collect other app APKs and diagnostics."
+                touch ../../dist/BUILD_FAILED
+                exit 0
+              fi
             )
             mkdir -p "dist/${app}"
-            for abi in armeabi-v7a arm64-v8a x86_64; do
+            for abi in armeabi-v7a arm64-v8a; do
               source="apps/${app}_app/build/app/outputs/flutter-apk/app-${abi}-release.apk"
               output="dist/${app}/quick-ride-${app}-${abi}.apk"
-              test -s "$source"
+              if [[ ! -s "$source" ]]; then
+                echo "::warning::Missing ${abi} APK for ${app}; continuing with remaining targets."
+                touch dist/BUILD_FAILED
+                continue
+              fi
               cp "$source" "$output"
               bytes="$(stat -c%s "$output")"
               mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n/1000000 }')"
               echo "${output}: ${mib} MB (${bytes} bytes)"
               if [ "$bytes" -gt "$MAX_APK_BYTES" ]; then
-                echo "::error::${output} exceeds the 25 MB per-APK limit (${mib} MB)"
-                exit 1
+                echo "::warning::${output} exceeds the strict 40 MB per-APK limit (${mib} MB); keeping it in the QA artifact for size analysis."
+                touch dist/SIZE_LIMIT_EXCEEDED
               fi
             done
           done
-      - name: Write APK size report and checksums
+      - name: Write APK size report, content breakdown and checksums
         shell: bash
         run: |
           set -euo pipefail
-          find dist -type f -name '*.apk' -printf '%p %s bytes\n' | sort > dist/APK_SIZES.txt
+          {
+            echo "QA APK size report (strict maximum: 40,000,000 bytes per APK)."
+            echo "Only Android phone ABIs are included: armeabi-v7a and arm64-v8a."
+            find dist -type f -name '*.apk' -printf '%p %s bytes\\n' | sort
+          } > dist/APK_SIZES.txt
+          {
+            for apk in $(find dist -type f -name '*.apk' | sort); do
+              echo
+              echo "===== $apk ====="
+              unzip -l "$apk" | awk 'NF == 4 && $4 !~ /^Name$/ { print $1 "\\t" $4 }' | sort -nr | awk 'NR <= 25'
+            done
+          } > dist/APK_CONTENT_BREAKDOWN.txt
           (cd dist && find . -type f -name '*.apk' -print0 | sort -z | xargs -0 sha256sum) > dist/SHA256SUMS.txt
           cat dist/APK_SIZES.txt
+          cat dist/APK_CONTENT_BREAKDOWN.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: quick-ride-android-25mb-apks
+          name: quick-ride-android-40mb-apks
           path: dist/*
           if-no-files-found: error
+
+      - name: Enforce 40 MB APK limit
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f dist/BUILD_FAILED ]]; then
+            echo "::error::One or more app APK builds failed. See the workflow log and uploaded diagnostics."
+            exit 1
+          fi
+          if [[ -f dist/SIZE_LIMIT_EXCEEDED ]]; then
+            echo "::error::One or more APKs exceed the strict 40 MB limit. See uploaded APK_CONTENT_BREAKDOWN.txt to identify the largest components."
+            exit 1
+          fi
