@@ -10,3 +10,6 @@ dependencies:
   http: ^1.4.0
   latlong2: ^0.10.1
   webview_flutter: ^4.14.1
+flutter:
+  assets:
+    - assets/quick_ride_map.html
