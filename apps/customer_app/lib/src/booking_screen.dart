@@ -571,54 +571,87 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                   onPressed: _busy ? null : _getQuote,
                   child: _busy
                       ? const CircularProgressIndicator()
-                      : const Text('Get fare estimate'),
+                      : Text(_serviceQuotes.isEmpty
+                          ? 'Load vehicle options'
+                          : _quote != null
+                              ? 'Search again'
+                              : 'Search for selected vehicle'),
                 ),
                 if (_serviceQuotes.isNotEmpty) ...[
                   const SizedBox(height: 14),
-                  Text('Available rides for your route',
-                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'Choose your vehicle',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'All enabled vehicle types are shown. Driver availability is checked separately.',
+                  ),
                   const SizedBox(height: 8),
                   ..._serviceQuotes.map((option) {
-                    final quote = Map<String, dynamic>.from(option['quote'] as Map);
-                    final isSelected = _quote != null &&
+                    final quoteValue = option['quote'];
+                    final quote = quoteValue is Map
+                        ? Map<String, dynamic>.from(quoteValue)
+                        : null;
+                    final isSelected =
                         _categoryId == (option['category_id'] as num).toInt() &&
                         _rideMode == option['ride_mode'];
-                    final distance = (quote['distance_m'] as num?)?.toDouble() ?? 0;
-                    final duration = (quote['duration_s'] as num?)?.toInt() ?? 0;
-                    final availability = quote['availability'] is Map
-                        ? Map<String, dynamic>.from(quote['availability'] as Map)
+                    final distance = (quote?['distance_m'] as num?)?.toDouble();
+                    final duration = (quote?['duration_s'] as num?)?.toInt();
+                    final availability = quote?['availability'] is Map
+                        ? Map<String, dynamic>.from(quote!['availability'] as Map)
                         : null;
-                    final nearbyCount = (availability?['available_count'] as num?)?.toInt();
+                    final nearbyCount =
+                        (availability?['available_count'] as num?)?.toInt();
                     final shared = option['ride_mode'] == 'shared_auto';
-                    final availabilityLabel = nearbyCount == null
-                        ? 'Driver availability being checked'
+                    final statusLabel = quote == null
+                        ? (QuickRideAuth.currentUser == null
+                            ? 'Sign in to check fare and drivers'
+                            : 'Fare not configured yet')
                         : nearbyCount == 0
-                            ? 'No drivers online in this pickup area'
-                            : '$nearbyCount driver(s) online in this pickup area';
+                            ? 'No vehicle found · Select and search again'
+                            : nearbyCount == null
+                                ? 'Driver availability not confirmed'
+                                : nearbyCount.toString() + ' nearby driver(s)';
+                    final fareLabel = quote == null
+                        ? 'Fare pending'
+                        : '₹' +
+                            (quote['estimated_fare'] as num).toStringAsFixed(0);
+                    final detail = <String>[
+                      if (distance != null && duration != null)
+                        (distance / 1000).toStringAsFixed(1) +
+                            ' km · ' +
+                            (duration / 60).ceil().toString() +
+                            ' min',
+                      if (shared) 'Shared ride',
+                      statusLabel,
+                    ].join('\n');
                     return Card(
                       color: isSelected
                           ? Theme.of(context).colorScheme.primaryContainer
                           : null,
                       child: ListTile(
                         leading: CircleAvatar(
-                          child: Icon(shared
-                              ? Icons.groups_2_outlined
-                              : option['category_code'] == 'bike'
-                                  ? Icons.two_wheeler
-                                  : option['category_code'] == 'auto' ||
-                                          option['category_code'] == 'autorickshaw'
-                                      ? Icons.electric_rickshaw
-                                      : Icons.local_taxi_outlined),
+                          child: Icon(
+                            shared
+                                ? Icons.groups_2_outlined
+                                : option['category_code'] == 'bike'
+                                    ? Icons.two_wheeler
+                                    : option['category_code'] == 'auto' ||
+                                            option['category_code'] == 'autorickshaw'
+                                        ? Icons.electric_rickshaw
+                                        : option['category_code'] == 'suv'
+                                            ? Icons.airport_shuttle_outlined
+                                            : Icons.local_taxi_outlined,
+                          ),
                         ),
                         title: Text(option['category_name'].toString()),
                         subtitle: Text(
-                          '${(distance / 1000).toStringAsFixed(1)} km · ${(duration / 60).ceil()} min'
-                          '${shared ? ' · 1 passenger' : ''}\n'
-                          '$availabilityLabel',
-                          maxLines: 2,
+                          detail,
+                          maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: nearbyCount == 0
+                            color: quote != null && nearbyCount == 0
                                 ? Theme.of(context).colorScheme.error
                                 : Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
@@ -628,29 +661,27 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '₹${(quote['estimated_fare'] as num).toStringAsFixed(0)}',
+                              fareLabel,
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             TextButton(
-                              onPressed: _busy || nearbyCount == 0
+                              onPressed: _busy
                                   ? null
                                   : () => _selectServiceOption(option),
-                              child: Text(
-                                nearbyCount == 0
-                                    ? 'Unavailable'
-                                    : isSelected
-                                        ? 'Selected'
-                                        : 'Choose',
-                              ),
+                              child: Text(isSelected ? 'Selected' : 'Choose'),
                             ),
                           ],
                         ),
-                        onTap: _busy || nearbyCount == 0
-                            ? null
-                            : () => _selectServiceOption(option),
+                        onTap: _busy ? null : () => _selectServiceOption(option),
                       ),
                     );
                   }),
+                  if (QuickRideAuth.currentUser == null)
+                    FilledButton.icon(
+                      onPressed: _busy ? null : _getQuote,
+                      icon: const Icon(Icons.login_rounded),
+                      label: const Text('Sign in to check fares'),
+                    ),
                 ],
                 if (_quote != null) ...[
                   const SizedBox(height: 10),
@@ -708,9 +739,20 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                             '${((_quote!['distance_m'] as num) / 1000).toStringAsFixed(1)} km · ${(((_quote!['duration_s'] as num) / 60).ceil())} min',
                           ),
                           const SizedBox(height: 10),
-                          FilledButton(
-                            onPressed: _busy ? null : _bookRide,
-                            child: const Text('Confirm booking'),
+                          Builder(
+                            builder: (context) {
+                              final available = ((_quote!['availability'] as Map?)?['available_count'] as num?)?.toInt() ?? 0;
+                              return FilledButton(
+                                onPressed: _busy
+                                    ? null
+                                    : available > 0
+                                        ? _bookRide
+                                        : _getQuote,
+                                child: Text(available > 0
+                                    ? 'Confirm booking'
+                                    : 'Search for this vehicle again'),
+                              );
+                            },
                           ),
                         ],
                       ),
