@@ -63,8 +63,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     _destination = widget.initialDestination;
     _pin.text = widget.initialPickup?.pincode ?? '';
     _selectPickup = _pickup == null;
-    _loadCategories();
-    if (_pickup == null) _tryCurrentLocation();
+    unawaited(_loadCategories());
+    if (_pickup == null) unawaited(_tryCurrentLocation());
   }
 
   @override
@@ -75,19 +75,80 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
 
   Future<void> _loadCategories() async {
     try {
-      final rows = await QuickRideBackend.client
-          .from('vehicle_categories')
-          .select('id,code,name')
+      final pickupPincode = _pin.text.trim().isNotEmpty
+          ? _pin.text.trim()
+          : (_pickup?.pincode ??
+              RegExp(r'(?<![0-9])[1-9][0-9][0-9][0-9][0-9][0-9](?![0-9])')
+                  .firstMatch(_pickup?.address ?? '')
+                  ?.group(0) ??
+              '');
+      if (!RegExp(r'^[1-9][0-9][0-9][0-9][0-9][0-9]$').hasMatch(pickupPincode)) {
+        if (!mounted) return;
+        setState(() {
+          _categories = [];
+          _serviceQuotes = [];
+          _loadingCategories = false;
+          _error = 'We could not read the pickup pincode. Choose a pickup inside a configured service area.';
+        });
+        return;
+      }
+      _pin.text = pickupPincode;
+      final pincode = await QuickRideBackend.client
+          .from('service_area_pincodes')
+          .select('id')
+          .eq('pincode', pickupPincode)
           .eq('is_active', true)
-          .order('id');
+          .maybeSingle();
+      if (pincode == null) {
+        if (!mounted) return;
+        setState(() {
+          _categories = [];
+          _serviceQuotes = [];
+          _loadingCategories = false;
+          _error = 'Quick Ride is not active in pickup pincode ' + pickupPincode + ' yet.';
+        });
+        return;
+      }
+      final mappings = await QuickRideBackend.client
+          .from('service_area_pincode_vehicles')
+          .select('vehicle_categories!inner(id,code,name,description,sort_order)')
+          .eq('pincode_id', (pincode['id'] as num).toInt())
+          .eq('is_enabled', true);
+      final categories = mappings
+          .where((row) => row['vehicle_categories'] is Map)
+          .map((row) => Map<String, dynamic>.from(row['vehicle_categories'] as Map))
+          .toList()
+        ..sort((a, b) => ((a['sort_order'] as num?)?.toInt() ?? 0)
+            .compareTo((b['sort_order'] as num?)?.toInt() ?? 0));
       if (!mounted) return;
       setState(() {
-        _categories = rows;
-        _categoryId = rows.isEmpty ? null : (rows.first['id'] as num).toInt();
+        _categories = categories;
+        _categoryId = categories.isEmpty
+            ? null
+            : (categories.first['id'] as num).toInt();
+        _serviceQuotes = categories.map((category) => <String, dynamic>{
+          'category_id': category['id'],
+          'category_name': category['name'],
+          'category_code': category['code'],
+          'ride_mode': 'private',
+          'quote': null,
+          'quote_status': 'not_checked',
+        }).toList(growable: false);
         _loadingCategories = false;
+        _error = categories.isEmpty
+            ? 'No vehicle categories are enabled for pickup pincode ' + pickupPincode + '.'
+            : null;
       });
+      if (QuickRideAuth.currentUser != null &&
+          _pickup != null &&
+          _destination != null &&
+          categories.isNotEmpty) {
+        unawaited(_getQuote());
+      }
     } catch (error) {
       if (mounted) setState(() {
+        _categories = [];
+        _serviceQuotes = [];
         _loadingCategories = false;
         _error = 'Vehicle options could not be loaded: ' + error.toString();
       });
