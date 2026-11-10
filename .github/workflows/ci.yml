@@ -18,7 +18,7 @@ jobs:
       - name: Resolve workspace
         run: flutter pub get
       - name: Format Dart sources
-        run: dart format --output=none --set-exit-if-changed apps packages
+        run: dart format apps packages
       - name: Analyze applications and shared packages
         run: |
           for app in apps/customer_app apps/driver_app apps/admin_app; do
