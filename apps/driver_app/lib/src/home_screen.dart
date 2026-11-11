@@ -879,6 +879,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     }
   }
 
+  Widget _captainPreviewMetric({
+    required String label,
+    required String value,
+    required IconData icon,
+  }) =>
+      Card(
+        child: ListTile(
+          leading: Icon(icon),
+          title: Text(value, style: Theme.of(context).textTheme.titleLarge),
+          subtitle: Text(label),
+        ),
+      );
+
   Widget _previewDashboard() => ListView(
         padding: const EdgeInsets.all(16),
         children: [
