@@ -21,14 +21,18 @@ class QuickRideMaps {
   static final Random _random = Random.secure();
   static String? _activeSearchSessionToken;
   static DateTime? _searchSessionStartedAt;
-  static const String _defaultTileUrl =
-      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-  static const String _configuredTileUrl =
-      String.fromEnvironment('OSM_TILE_URL');
+  // Mapbox raster style tiles keep the native Flutter renderer lightweight
+  // while using Mapbox's actual Streets basemap instead of public OSM tiles.
+  static const String _mapboxStyleId =
+      String.fromEnvironment('MAPBOX_STYLE_ID', defaultValue: 'mapbox/streets-v12');
 
-  static String get tileUrl => _configuredTileUrl.trim().isEmpty
-      ? _defaultTileUrl
-      : _configuredTileUrl.trim();
+  static String get tileUrl {
+    _requireToken();
+    return 'https://api.mapbox.com/styles/v1/' +
+        _mapboxStyleId +
+        '/tiles/256/{z}/{x}/{y}?access_token=' +
+        Uri.encodeComponent(_normalizedAccessToken);
+  }
 
   /// Allows widget tests to replace the native map canvas. Production leaves this null.
   static Widget Function(BuildContext context, QuickRideMapView view)?
@@ -528,7 +532,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
         ),
         child: const Padding(
           padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-          child: Text('© OpenStreetMap contributors',
+          child: Text('© Mapbox © OpenStreetMap contributors',
             style: TextStyle(fontSize: 10, color: Color(0xFF333333))),
         ),
       ))),
