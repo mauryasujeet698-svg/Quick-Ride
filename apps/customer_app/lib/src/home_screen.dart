@@ -534,6 +534,42 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                         leading: const Icon(Icons.history_rounded),
                         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
                         subtitle: Text(address, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        trailing: ValueListenableBuilder<List<Map<String, dynamic>>>(
+                          valueListenable: QuickRideCustomerPreferences.savedPlaces,
+                          builder: (context, savedPlaces, _) {
+                            final isFavourite = savedPlaces.any((saved) =>
+                                saved['is_favorite'] == true &&
+                                (saved['latitude'] as num?)?.toDouble() == latitude &&
+                                (saved['longitude'] as num?)?.toDouble() == longitude);
+                            return IconButton(
+                              tooltip: isFavourite ? 'Remove from favourites' : 'Add to favourites',
+                              icon: Icon(
+                                isFavourite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                color: isFavourite ? const Color(0xFFE45872) : null,
+                              ),
+                              onPressed: () async {
+                                if (isFavourite) {
+                                  await QuickRideCustomerPreferences.removeSavedPlace(place);
+                                } else {
+                                  await QuickRideCustomerPreferences.addSavedPlace({
+                                    ...place,
+                                    'is_favorite': true,
+                                  });
+                                }
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(isFavourite
+                                          ? 'Removed from favourites'
+                                          : 'Added to favourites'),
+                                      duration: const Duration(seconds: 1),
+                                    ),
+                                  );
+                                }
+                              },
+                            );
+                          },
+                        ),
                         onTap: () {
                           final selected = QuickRidePlace(
                             point: LatLng(latitude, longitude),
