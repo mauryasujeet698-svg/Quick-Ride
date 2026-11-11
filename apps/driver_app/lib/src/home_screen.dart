@@ -621,16 +621,42 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           borderRadius: BorderRadius.circular(20),
           child: Stack(
             children: [
-              QuickRideMapView(
-                userAgentPackageName: 'com.quickride.driver',
-                key: const ValueKey('quick-ride-captain-map'),
-                initialCenter: _currentPosition ?? const LatLng(20.5937, 78.9629),
-                initialZoom: _currentPosition == null ? 4.5 : 15.5,
-                currentPosition: _currentPosition,
-                followCurrentPosition: true,
-                navigationCamera: true,
-                recenterSignal: _mapRecenterSignal,
-              ),
+              if (_currentPosition != null)
+                QuickRideMapView(
+                  userAgentPackageName: 'com.quickride.driver',
+                  key: const ValueKey('quick-ride-captain-map'),
+                  initialCenter: _currentPosition,
+                  initialZoom: 15.5,
+                  currentPosition: _currentPosition,
+                  followCurrentPosition: true,
+                  navigationCamera: true,
+                  recenterSignal: _mapRecenterSignal,
+                )
+              else
+                ColoredBox(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.location_searching_rounded, size: 32),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Allow location access to centre your Captain map.',
+                            textAlign: TextAlign.center,
+                          ),
+                          TextButton.icon(
+                            onPressed: _detectCurrentPosition,
+                            icon: const Icon(Icons.my_location_rounded),
+                            label: const Text('Use current location'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 right: 12,
                 bottom: 12,
