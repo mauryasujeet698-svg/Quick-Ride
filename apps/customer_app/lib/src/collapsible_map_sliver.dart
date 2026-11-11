@@ -40,10 +40,14 @@ class _CollapsibleMapHeaderDelegate extends SliverPersistentHeaderDelegate {
   });
 
   final Widget child;
-  @override
   final double minHeight;
-  @override
   final double maxHeight;
+
+  @override
+  double get minExtent => minHeight;
+
+  @override
+  double get maxExtent => maxHeight;
 
   @override
   Widget build(
