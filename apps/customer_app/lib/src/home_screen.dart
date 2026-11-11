@@ -276,6 +276,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               const LatLng(25.45, 81.85),
           initialZoom: 13.5,
           currentPosition: _currentPosition,
+          cameraTarget: _pickup?.point ?? _currentPosition,
           pickup: _pickup?.point,
           destination: _destination?.point,
           routePoints: _route?.points ?? const [],
