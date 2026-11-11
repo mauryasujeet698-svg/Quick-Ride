@@ -2,7 +2,7 @@
 
 The Android workflow builds optimized Flutter Customer, Driver and Admin release APKs for `armeabi-v7a` and `arm64-v8a`. Every APK is checked against a strict 25,000,000-byte maximum.
 
-Customer and Driver maps are rendered directly by Flutter using `flutter_map` and OpenStreetMap-compatible raster tiles. There is no WebView, native Mapbox Maps SDK or Mapbox Maven download credential. Mapbox remains the REST provider for Search Box, reverse geocoding and driving directions.
+Customer and Driver maps are rendered directly by Flutter using `flutter_map` and Mapbox Streets raster tiles. There is no WebView or native Mapbox Maps SDK binary. Mapbox also provides Search Box, reverse geocoding and driving directions.
 
 ## GitHub Actions configuration
 
@@ -11,7 +11,7 @@ Configure these repository Actions secrets and variables before building:
 | Name | Type | Purpose |
 | --- | --- | --- |
 | `MAPBOX_ACCESS_TOKEN` | Secret or variable | Public Mapbox runtime token beginning with `pk.`; validated against Search Box and Directions before the build |
-| `OSM_TILE_URL` | Variable (optional) | OSM-compatible raster tile URL template. Defaults to the public OSM standard tile endpoint for development/QA only. |
+| `MAPBOX_STYLE_ID` | Variable (optional) | Mapbox style ID. Defaults to `mapbox/streets-v12`. |
 | `GOOGLE_WEB_CLIENT_ID` | Secret or variable | Google OAuth Web application client ID used by native Google sign-in |
 | `SUPABASE_PUBLISHABLE_KEY` | Secret | Supabase publishable/anon client key; never use a service-role key here |
 | `SUPABASE_URL` | Variable | Supabase project URL |
@@ -24,7 +24,7 @@ Configure these repository Actions secrets and variables before building:
 
 The Mapbox public token is used only by REST endpoints for place search, address lookup and route calculation. It is not a native map-rendering credential. Never use a secret `sk.*` token as the runtime token.
 
-The tile URL is configurable at build time with `OSM_TILE_URL`, so a production OSM-compatible provider or self-hosted tile service can be selected without changing Dart source. The public OpenStreetMap standard tile server is a best-effort community resource, has no service-level guarantee and must not be treated as the production tile backend for a commercial ride-hailing workload. Configure a suitable, licensed tile provider with a production support commitment before launch. Follow the provider's request-identification, attribution and caching requirements. The app displays OpenStreetMap contributor attribution.
+The map uses Mapbox Streets raster tiles with the public token supplied through `MAPBOX_ACCESS_TOKEN`. The style can be changed with `MAPBOX_STYLE_ID`; the default is `mapbox/streets-v12`. The app displays Mapbox and OpenStreetMap attribution. CI checks that the configured token can access Streets tiles.
 
 ## Google sign-in
 
@@ -42,6 +42,6 @@ Apply the repository migrations and deploy the Edge Functions required by ride b
 
 ## Validation and device acceptance
 
-GitHub Actions runs Flutter analysis/tests, Edge Function type checks, shared Auto route-planner tests and the three Android builds. The build checks the Mapbox Search Box and Directions services before compiling. Automated CI does not replace physical-device acceptance testing for Google sign-in, GPS permissions, OSM tile rendering, place search/navigation, push notifications or driver/customer realtime tracking.
+GitHub Actions runs Flutter analysis/tests, Edge Function type checks, shared Auto route-planner tests and the three Android builds. The build checks the Mapbox Search Box and Directions services before compiling. Automated CI does not replace physical-device acceptance testing for Google sign-in, GPS permissions, Mapbox tile rendering, place search/navigation, push notifications or driver/customer realtime tracking.
 
 The current CI APK artifacts are unsigned QA/test builds unless a release signing configuration and keystore have been supplied. Do not publish the QA APKs to Play Store as production builds.
