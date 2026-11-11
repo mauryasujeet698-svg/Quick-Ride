@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
+import 'package:quick_ride_notifications/quick_ride_notifications.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -806,6 +807,7 @@ class _CustomerSettingsScreenState extends State<CustomerSettingsScreen> {
 
     setState(() => _deleting = true);
     try {
+      await QuickRideNotifications.unregisterCurrentDevice();
       final resultResponse = await QuickRideBackend.invoke('delete-account', body: const {});
       final result = Map<String, dynamic>.from(resultResponse.data as Map);
       await QuickRideAuth.signOut();
