@@ -105,6 +105,10 @@ class QuickRideCustomerApp extends StatelessWidget {
         initialRideId: state.uri.queryParameters['rideId'],
       )),
       GoRoute(path: '/profile', builder: (_, __) => const CustomerProfileScreen()),
+      GoRoute(path: '/settings', builder: (_, __) => const CustomerSettingsScreen()),
+      GoRoute(path: '/privacy-policy', builder: (_, __) => const CustomerInformationScreen(page: 'privacy')),
+      GoRoute(path: '/terms', builder: (_, __) => const CustomerInformationScreen(page: 'terms')),
+      GoRoute(path: '/about', builder: (_, __) => const CustomerInformationScreen(page: 'about')),
     ],
   );
 
