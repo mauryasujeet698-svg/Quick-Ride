@@ -28,6 +28,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   bool _online = false;
   bool _signingIn = false;
   int _previewTabIndex = 0;
+  int _driverTabIndex = 0;
+  final ScrollController _captainScrollController = ScrollController();
+  final GlobalKey _dashboardSectionKey = GlobalKey();
+  final GlobalKey _ridesSectionKey = GlobalKey();
+  final GlobalKey _earningsSectionKey = GlobalKey();
+  final GlobalKey _accountSectionKey = GlobalKey();
   String? _signInError;
   LatLng? _currentPosition;
   int _mapRecenterSignal = 0;
@@ -82,6 +88,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     _model.dispose();
     _color.dispose();
     _otp.dispose();
+    _captainScrollController.dispose();
     _locationSubscription?.cancel();
     _authSubscription?.cancel();
     super.dispose();
@@ -562,6 +569,65 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       if (mounted) setState(() => _message = online ? 'You are online.' : 'You are offline.');
     });
   }
+
+  void _navigateCaptainSection(int index) {
+    setState(() => _driverTabIndex = index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = [
+        _dashboardSectionKey,
+        _ridesSectionKey,
+        _earningsSectionKey,
+        _accountSectionKey,
+      ][index].currentContext;
+      if (target != null && _captainScrollController.hasClients) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+          alignment: 0,
+        );
+      }
+    });
+  }
+
+  Widget _captainAccountSection(Map<String, dynamic> driver) => Card(
+        key: _accountSectionKey,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Captain profile and documents',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.directions_car_outlined),
+                title: Text([
+                  driver['vehicle_make'],
+                  driver['vehicle_model'],
+                ].where((value) => value != null && value.toString().isNotEmpty).join(' ').isEmpty
+                    ? 'Registered vehicle'
+                    : [
+                        driver['vehicle_make'],
+                        driver['vehicle_model'],
+                      ].where((value) => value != null && value.toString().isNotEmpty).join(' ')),
+                subtitle: Text('Registration: ${driver['vehicle_registration'] ?? 'Not available'}'),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.location_on_outlined),
+                title: const Text('Approved operating pincode'),
+                subtitle: Text(_pincode.text.isEmpty ? 'Select an approved pincode in Availability' : _pincode.text),
+              ),
+              const Divider(),
+              _documentsPanel(),
+              const SizedBox(height: 8),
+              const Text('For a trip-specific issue, use the Support option on the active ride.'),
+            ],
+          ),
+        ),
+      );
 
   Future<void> _syncAvailabilityFromProfile(
     Map<String, dynamic> driver,
@@ -1078,20 +1144,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           unawaited(_syncAvailabilityFromProfile(driver));
           unawaited(_loadEarnings());
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _captainMap(height: 290),
+          return Scaffold(
+            body: ListView(
+              controller: _captainScrollController,
+              padding: const EdgeInsets.all(16),
+              children: [
+              KeyedSubtree(key: _dashboardSectionKey, child: _captainMap(height: 290)),
               const SizedBox(height: 12),
               _availabilityCard(),
               const SizedBox(height: 12),
-              _earningsCard(),
+              KeyedSubtree(key: _earningsSectionKey, child: _earningsCard()),
               if (_message != null) ...[
                 const SizedBox(height: 8),
                 Text(_message!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ],
               const SizedBox(height: 20),
-              Text('Ride offers', style: Theme.of(context).textTheme.titleLarge),
+              KeyedSubtree(key: _ridesSectionKey, child: Text('Ride offers', style: Theme.of(context).textTheme.titleLarge)),
               StreamBuilder<List<Map<String, dynamic>>>(
                 stream: offers,
                 builder: (context, offerSnapshot) {
@@ -1159,7 +1227,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   );
                 },
               ),
-            ],
+
+              const SizedBox(height: 20),
+              _captainAccountSection(driver),
+              ],
+            ),
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: _driverTabIndex,
+              onDestinationSelected: _navigateCaptainSection,
+              destinations: const [
+                NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Home'),
+                NavigationDestination(icon: Icon(Icons.route_outlined), selectedIcon: Icon(Icons.route), label: 'Rides'),
+                NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), selectedIcon: Icon(Icons.account_balance_wallet), label: 'Earnings'),
+                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Account'),
+              ],
+            ),
           );
         },
       ),
