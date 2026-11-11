@@ -34,7 +34,6 @@ class QuickRideCustomerBootstrap extends StatefulWidget {
 
 class _QuickRideCustomerBootstrapState extends State<QuickRideCustomerBootstrap> {
   bool _ready = false;
-  String? _startupMessage;
   StreamSubscription<dynamic>? _openedSubscription;
   StreamSubscription<dynamic>? _foregroundSubscription;
 
@@ -64,7 +63,6 @@ class _QuickRideCustomerBootstrapState extends State<QuickRideCustomerBootstrap>
       }
     } catch (error, stack) {
       debugPrint('Quick-Ride Customer startup failed: $error\n$stack');
-      _startupMessage = error.toString();
     } finally {
       if (mounted) setState(() => _ready = true);
     }
