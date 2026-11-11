@@ -40,7 +40,19 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
-    if (_signingIn || !QuickRideBackend.isInitialized) return;
+    if (_signingIn) return;
+    if (!QuickRideBackend.isInitialized) {
+      const message =
+          'Quick Ride could not connect to its sign-in service. Check the Supabase URL and publishable key in the app configuration.';
+      setState(() => _signInError = message);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(message),
+          duration: Duration(seconds: 8),
+        ),
+      );
+      return;
+    }
     setState(() {
       _signingIn = true;
       _signInError = null;
@@ -516,9 +528,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                 if (user == null) ...[
                   const SizedBox(height: 14),
                   FilledButton.icon(
-                    onPressed: QuickRideBackend.isInitialized && !_signingIn
-                        ? _signInWithGoogle
-                        : null,
+                    onPressed: _signingIn ? null : _signInWithGoogle,
                     icon: _signingIn
                         ? const SizedBox(
                             width: 18,
