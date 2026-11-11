@@ -35,6 +35,11 @@ void main() {
     await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
     expect(find.text('More controls'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Sign in to manage Quick-Ride'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Sign in to manage Quick-Ride'), findsOneWidget);
     expect(
       find.text('Supabase URL and anon key are required at build time.'),
