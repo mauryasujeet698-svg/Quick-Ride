@@ -28,13 +28,13 @@ The map uses Mapbox Streets raster tiles with the public token supplied through 
 
 ## Google sign-in
 
-Create a Google OAuth Web application client ID and configure Android OAuth clients for all three application IDs:
+Create one Google OAuth Web application client ID and configure three Android OAuth clients with these exact package IDs:
 
 - `com.quickride.customer`
 - `com.quickride.driver`
 - `com.quickride.admin`
 
-Register Android OAuth clients for the exact package IDs `com.quickride.customer`, `com.quickride.driver` and `com.quickride.admin`, using the SHA-1 certificate fingerprint for the APK being installed. The workflow now exports the QA signing SHA-1 in the build artifact as `ANDROID_CERT_SHA1.txt`; use that value for these QA APKs. The Web client ID is supplied as `GOOGLE_WEB_CLIENT_ID` both to native Google Sign-In (`serverClientId`) and to Supabase Auth → Providers → Google, where the matching Web client secret must also be configured. A different release keystore or Play App Signing certificate has a different SHA-1 and must be registered separately.
+For the QA APKs, copy the SHA-1 fingerprint from the build artifact's `ANDROID_CERT_SHA1.txt` and use it when creating each Android OAuth client. The Web client ID is supplied to native Google Sign-In as `GOOGLE_WEB_CLIENT_ID` (`serverClientId`) and must also be enabled in Supabase Auth → Providers → Google with its matching Web client secret. A production keystore or Play App Signing certificate has a different SHA-1 and needs separate Android OAuth registrations.
 
 ## Supabase
 
