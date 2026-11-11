@@ -294,15 +294,45 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  QuickRideMapView(
-                    initialCenter: _currentPosition ?? const LatLng(25.4358, 81.8463),
-                    initialZoom: _currentPosition == null ? 5 : 14.5,
-                    currentPosition: _currentPosition,
-                    pickup: _pickup?.point,
-                    destination: _destination?.point,
-                    routePoints: _route?.points ?? const [],
-                    followCurrentPosition: false,
-                  ),
+                  if (_currentPosition != null || _pickup != null || _destination != null)
+                    QuickRideMapView(
+                      initialCenter: _currentPosition ?? _pickup?.point ?? _destination!.point,
+                      initialZoom: 15,
+                      currentPosition: _currentPosition,
+                      pickup: _pickup?.point,
+                      destination: _destination?.point,
+                      routePoints: _route?.points ?? const [],
+                      followCurrentPosition: false,
+                    )
+                  else
+                    ColoredBox(
+                      color: colors.surfaceContainerHighest,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.my_location_rounded, size: 38),
+                              const SizedBox(height: 12),
+                              Text(
+                                _loadingLocation
+                                    ? 'Finding your current location…'
+                                    : 'Choose a pickup location to open the map.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 10),
+                              OutlinedButton.icon(
+                                onPressed: _loadingLocation ? null : _detectCurrentLocation,
+                                icon: const Icon(Icons.gps_fixed_rounded),
+                                label: const Text('Use current location'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   Positioned(
                     top: 14,
                     left: 16,
