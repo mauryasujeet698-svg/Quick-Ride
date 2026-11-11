@@ -245,6 +245,24 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
         ),
       );
 
+  Future<void> _showPreviewQueue(String title, String description) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(
+          '$description\n\nThis queue is shown as a read-only preview. No live customer, Captain or safety record is accessed before Admin verification.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _previewScreen() => Scaffold(
         appBar: AppBar(
           title: const Text('Operations preview'),
@@ -286,35 +304,39 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
             Text('Operational queues',
                 style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            const Card(
+            Card(
               child: ListTile(
                 leading: Icon(Icons.verified_user_outlined),
                 title: Text('Driver approvals'),
                 subtitle: Text('KYC and profile review queue'),
+                onTap: () => _showPreviewQueue('Driver approvals', 'Review new Captain applications, verification status and required vehicle documents.'),
                 trailing: Text('Preview'),
               ),
             ),
-            const Card(
+            Card(
               child: ListTile(
                 leading: Icon(Icons.location_on_outlined),
                 title: Text('Pincode applications'),
                 subtitle: Text('Pending service-area requests'),
+                onTap: () => _showPreviewQueue('Pincode applications', 'Review service-pincode requests and approve only eligible operating areas.'),
                 trailing: Text('Preview'),
               ),
             ),
-            const Card(
+            Card(
               child: ListTile(
                 leading: Icon(Icons.support_agent_outlined),
                 title: Text('Support tickets'),
                 subtitle: Text('Customer and driver support queue'),
+                onTap: () => _showPreviewQueue('Support tickets', 'Review ride-linked customer and Captain requests and record authorised resolutions.'),
                 trailing: Text('Preview'),
               ),
             ),
-            const Card(
+            Card(
               child: ListTile(
                 leading: Icon(Icons.sos_outlined),
                 title: Text('Safety events'),
                 subtitle: Text('SOS and safety review queue'),
+                onTap: () => _showPreviewQueue('Safety events', 'Inspect the reported event, associated ride and internal review status.'),
                 trailing: Text('Preview'),
               ),
             ),
