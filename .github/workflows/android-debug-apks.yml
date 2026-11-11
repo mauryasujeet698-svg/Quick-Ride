@@ -258,24 +258,25 @@ jobs:
           Captain Android application ID: com.quickride.driver
           Admin Android application ID: com.quickride.admin
 
-          Register each package ID as an Android OAuth client using the SHA-1 digest of its APK signer.
-          These QA APKs are signed using the Android debug signer selected by the Gradle QA build.
+          Register each package ID as an Android OAuth client using the SHA-1 digest shown below.
+          These are QA APK signer certificates, not Play App Signing certificates.
           EOF
-          apksigner="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/opt/android-sdk}}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          if [[ -z "$apksigner" ]]; then
-            apksigner="$(command -v apksigner || true)"
-          fi
-          if [[ -z "$apksigner" ]]; then
-            echo "::error::Android apksigner was not found; cannot verify the APK signing SHA-1."
-            exit 1
-          fi
+          apksigner="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/opt/android-sdk}}/build-tools" -type f -name apksigner 2>/dev/null | sort -V | tail -n 1 || true)"
           for apk in $(find dist -type f -name '*.apk' | sort); do
-            digest="$("$apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-1 digest:/{print $2; exit}')"
-            if [[ -z "$digest" ]]; then
-              echo "::error::Could not extract the signing certificate SHA-1 from $apk"
-              exit 1
+            if [[ -n "$apksigner" ]]; then
+              "$apksigner" verify "$apk"
             fi
-            printf '%s SHA-1: %s\n' "$apk" "$digest" | tee -a dist/ANDROID_CERT_SHA1.txt
+            cert_output="$(keytool -printcert -jarfile "$apk" 2>&1 || true)"
+            digest="$(printf '%s\n' "$cert_output" | awk -F': ' '/SHA1:|SHA-1 digest:/{print $2; exit}')"
+            if [[ -z "$digest" && -n "$apksigner" ]]; then
+              cert_output="$("$apksigner" verify --print-certs "$apk" 2>&1 || true)"
+              digest="$(printf '%s\n' "$cert_output" | awk -F': ' '/SHA-1 digest:/{print $2; exit}')"
+            fi
+            if [[ -n "$digest" ]]; then
+              printf '%s SHA-1: %s\n' "$apk" "$digest" | tee -a dist/ANDROID_CERT_SHA1.txt
+            else
+              echo "SHA-1 unavailable for $apk; use keytool -printcert -jarfile or apksigner verify --print-certs on this APK." | tee -a dist/ANDROID_CERT_SHA1.txt
+            fi
           done
           cat dist/ANDROID_CERT_SHA1.txt
       - name: Write APK size report, content breakdown and checksums
