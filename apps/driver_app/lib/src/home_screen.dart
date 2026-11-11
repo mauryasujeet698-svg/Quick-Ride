@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
@@ -44,6 +45,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   bool _loadingDocuments = false;
   String? _uploadingDocumentType;
   final Map<String, DateTime?> _documentExpiryDates = {};
+  final Set<String> _seenOfferIds = <String>{};
+  final Map<String, Future<Map<String, dynamic>>> _offerDetailsCache = {};
 
   @override
   void initState() {
@@ -921,6 +924,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                       .where((row) => row['status'] == 'pending' &&
                           DateTime.tryParse(row['expires_at'].toString())?.isAfter(DateTime.now()) == true)
                       .toList();
+                  for (final row in rows) {
+                    final offerId = row['id'].toString();
+                    if (_seenOfferIds.add(offerId)) {
+                      unawaited(SystemSound.play(SystemSoundType.alert));
+                    }
+                  }
                   if (offerSnapshot.hasError) return Text('Offer updates unavailable: ${offerSnapshot.error}');
                   if (!offerSnapshot.hasData) return const LinearProgressIndicator();
                   if (rows.isEmpty) return const Text('No active ride offers.');
@@ -1079,22 +1088,143 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         ),
       );
 
-  Widget _offerCard(Map<String, dynamic> offer) => Card(
-        child: ListTile(
-          title: const Text('New ride request'),
-          subtitle: Text('Offer expires at ' + offer['expires_at'].toString()),
-          trailing: PopupMenuButton<String>(
-            enabled: !_busy,
-            onSelected: (action) => _run(() async {
-              await _invoke(action, {'offerId': offer['id'].toString()});
-            }),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'accept_offer', child: Text('Accept')),
-              PopupMenuItem(value: 'reject_offer', child: Text('Reject')),
-            ],
+  Widget _offerCard(Map<String, dynamic> offer) {
+    final offerId = offer['id'].toString();
+    final future = _offerDetailsCache.putIfAbsent(
+      offerId,
+      () => _invoke('get_offer_details', {'offerId': offerId}),
+    );
+    return FutureBuilder<Map<String, dynamic>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.warning_amber_rounded),
+              title: const Text('New ride request'),
+              subtitle: const Text('Ride details could not be loaded. Open the notification or refresh the dashboard.'),
+              trailing: IconButton(
+                onPressed: () => setState(() => _offerDetailsCache.remove(offerId)),
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: LinearProgressIndicator(),
+            ),
+          );
+        }
+        final ride = Map<String, dynamic>.from(snapshot.data!['ride'] as Map);
+        final expires = DateTime.tryParse(offer['expires_at'].toString());
+        final secondsLeft = expires == null
+            ? 0
+            : expires.difference(DateTime.now()).inSeconds.clamp(0, 3600);
+        final expired = secondsLeft <= 0;
+        final fare = ride['estimated_fare'];
+        final distance = ride['estimated_distance_m'] as num?;
+        final duration = ride['estimated_duration_s'] as num?;
+        final rideId = ride['id'].toString();
+
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.notifications_active_rounded, color: Color(0xFF17885C)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'New ${ride['vehicle_category_name'] ?? 'ride'} request',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                    ),
+                    Text(
+                      expired ? 'Expired' : '${secondsLeft}s left',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: expired ? Theme.of(context).colorScheme.error : const Color(0xFF17885C),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text('Pickup: ${ride['pickup_address'] ?? 'Unavailable'}'),
+                const SizedBox(height: 4),
+                Text('Destination: ${ride['destination_address'] ?? 'Unavailable'}'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 6,
+                  children: [
+                    Text(fare is num ? '₹${fare.toStringAsFixed(0)}' : 'Fare pending',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+                    Text(distance == null ? 'Distance pending' : '${(distance.toDouble() / 1000).toStringAsFixed(1)} km'),
+                    Text(duration == null ? 'Time pending' : '${(duration.toDouble() / 60).ceil()} min'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _busy || expired
+                            ? null
+                            : () => _run(() async {
+                                  await _invoke('accept_offer', {'offerId': offerId});
+                                  if (mounted) context.go('/ride/${Uri.encodeComponent(rideId)}/navigation');
+                                }),
+                        icon: const Icon(Icons.check_circle_outline_rounded),
+                        label: const Text('Accept'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF17885C),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(48),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _busy || expired
+                            ? null
+                            : () => _run(() async {
+                                  await _invoke('reject_offer', {'offerId': offerId});
+                                  if (mounted) setState(() => _offerDetailsCache.remove(offerId));
+                                }),
+                        icon: const Icon(Icons.close_rounded),
+                        label: const Text('Reject'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          foregroundColor: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => context.push('/offer/${Uri.encodeComponent(offerId)}'),
+                    child: const Text('View full offer'),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      );
+        );
+      },
+    );
+  }
 
   Widget _chainOfferCard(Map<String, dynamic> offer) => Card(
         child: ListTile(
