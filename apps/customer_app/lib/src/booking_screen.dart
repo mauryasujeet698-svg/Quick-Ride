@@ -136,14 +136,18 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       if (!mounted) return;
       setState(() {
         _categories = categories;
-        final preferredCategory = categories.where((category) {
+        Map<String, dynamic>? preferredCategory;
+        for (final category in categories) {
           final idMatches = widget.initialVehicleCategoryId != null &&
               (category['id'] as num).toInt() == widget.initialVehicleCategoryId;
           final codeMatches = widget.initialVehicleCategoryCode != null &&
               category['code'].toString().toLowerCase() ==
                   widget.initialVehicleCategoryCode!.toLowerCase();
-          return idMatches || codeMatches;
-        }).firstOrNull;
+          if (idMatches || codeMatches) {
+            preferredCategory = category;
+            break;
+          }
+        }
         _categoryId = preferredCategory == null
             ? (categories.isEmpty ? null : (categories.first['id'] as num).toInt())
             : (preferredCategory['id'] as num).toInt();
