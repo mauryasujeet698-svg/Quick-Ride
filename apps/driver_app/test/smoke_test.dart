@@ -1,19 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'package:quick_ride_driver/src/home_screen.dart';
 
 void main() {
   testWidgets('Captain can explore all read-only tabs before backend setup',
       (tester) async {
-    QuickRideMaps.mapWidgetOverride = (_, __) => const ColoredBox(
-          key: ValueKey('captain-map-test-placeholder'),
-          color: Colors.transparent,
-        );
-    addTearDown(() {
-      QuickRideMaps.mapWidgetOverride = null;
-    });
-
     await tester.pumpWidget(const MaterialApp(home: DriverHomeScreen()));
     await tester.pump();
 
@@ -23,7 +14,7 @@ void main() {
     expect(find.text('Rides'), findsOneWidget);
     expect(find.text('Earnings'), findsOneWidget);
     expect(find.text('Account'), findsOneWidget);
-    expect(find.byKey(const ValueKey('captain-map-test-placeholder')), findsOneWidget);
+    expect(find.textContaining('Allow location access to centre your Captain map.'), findsOneWidget);
 
     await tester.scrollUntilVisible(
       find.text('Trip navigation'),
