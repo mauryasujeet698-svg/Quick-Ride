@@ -39,7 +39,7 @@ class CustomerServicesScreen extends StatelessWidget {
         title: 'Car',
         description: 'Comfortable everyday rides',
         icon: Icons.directions_car_filled_outlined,
-        categoryCode: 'car',
+        categoryCode: 'mini',
         comingSoon: false,
       ),
       (
