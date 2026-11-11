@@ -567,15 +567,17 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
         (widget.followCurrentPosition &&
             oldWidget.currentPosition != widget.currentPosition) ||
         widget.navigationCamera != oldWidget.navigationCamera;
-    final pointsChanged =
-        widget.currentPosition != oldWidget.currentPosition ||
+    final locationTargetsChanged =
         widget.initialCenter != oldWidget.initialCenter ||
         widget.pickup != oldWidget.pickup ||
         widget.destination != oldWidget.destination;
+    final followPositionChanged =
+        widget.followCurrentPosition &&
+        widget.currentPosition != oldWidget.currentPosition;
     final routeChanged = !listEquals(oldWidget.routePoints, widget.routePoints);
 
     if (!_mapReady) return;
-    if (widget.navigationCamera && shouldRecenter) {
+    if (widget.navigationCamera && (shouldRecenter || followPositionChanged)) {
       final point = widget.currentPosition ?? widget.initialCenter ?? widget.pickup ?? widget.destination;
       if (point != null) {
         _controller?.moveTo(point, zoom: 17);
@@ -583,7 +585,10 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
       return;
     }
     if (!widget.navigationCamera &&
-        (pointsChanged || routeChanged || widget.recenterSignal != oldWidget.recenterSignal)) {
+        (locationTargetsChanged ||
+            (widget.followCurrentPosition && followPositionChanged) ||
+            routeChanged ||
+            widget.recenterSignal != oldWidget.recenterSignal)) {
       _fitVisiblePoints();
     }
   }
