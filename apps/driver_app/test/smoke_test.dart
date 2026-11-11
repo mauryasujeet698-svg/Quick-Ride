@@ -44,6 +44,11 @@ void main() {
     await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
     expect(find.text('Captain account'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Sign in to activate Captain features'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Sign in to activate Captain features'), findsOneWidget);
     expect(find.text('Quick-Ride backend is not configured.'), findsNothing);
   });
