@@ -169,7 +169,15 @@ Deno.serve(async (req: Request) => {
               fid: device.token,
               notification: { title, body: messageBody },
               data,
-              android: { priority: "HIGH" },
+              android: {
+                priority: "HIGH",
+                notification: { sound: "default" },
+              },
+              apns: {
+                payload: {
+                  aps: { sound: "default" },
+                },
+              },
             },
           }),
           signal: AbortSignal.timeout(12000),
