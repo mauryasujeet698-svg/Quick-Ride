@@ -385,6 +385,18 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             'quote_status': 'fare_unavailable',
             'error': error.toString(),
           });
+          if (code == 'auto' || code == 'autorickshaw') {
+            results.add({
+              'category_id': id,
+              'category_name': 'Auto Sharing',
+              'category_code': code,
+              'ride_mode': 'shared_auto',
+              'passenger_count': 1,
+              'quote': null,
+              'quote_status': 'unavailable',
+              'error': 'Auto Sharing is currently unavailable in this pickup area.',
+            });
+          }
         }
       }
       if (!mounted) return;
