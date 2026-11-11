@@ -26,6 +26,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   final _otp = TextEditingController();
   bool _busy = false;
   bool _online = false;
+  bool _signingIn = false;
+  int _previewTabIndex = 0;
+  int _driverTabIndex = 0;
+  final ScrollController _captainScrollController = ScrollController();
+  final GlobalKey _dashboardSectionKey = GlobalKey();
+  final GlobalKey _ridesSectionKey = GlobalKey();
+  final GlobalKey _earningsSectionKey = GlobalKey();
+  final GlobalKey _accountSectionKey = GlobalKey();
+  String? _signInError;
   LatLng? _currentPosition;
   int _mapRecenterSignal = 0;
   bool _syncingAvailability = false;
@@ -79,6 +88,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     _model.dispose();
     _color.dispose();
     _otp.dispose();
+    _captainScrollController.dispose();
     _locationSubscription?.cancel();
     _authSubscription?.cancel();
     super.dispose();
@@ -560,6 +570,65 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     });
   }
 
+  void _navigateCaptainSection(int index) {
+    setState(() => _driverTabIndex = index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = [
+        _dashboardSectionKey,
+        _ridesSectionKey,
+        _earningsSectionKey,
+        _accountSectionKey,
+      ][index].currentContext;
+      if (target != null && _captainScrollController.hasClients) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+          alignment: 0,
+        );
+      }
+    });
+  }
+
+  Widget _captainAccountSection(Map<String, dynamic> driver) => Card(
+        key: _accountSectionKey,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Captain profile and documents',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.directions_car_outlined),
+                title: Text([
+                  driver['vehicle_make'],
+                  driver['vehicle_model'],
+                ].where((value) => value != null && value.toString().isNotEmpty).join(' ').isEmpty
+                    ? 'Registered vehicle'
+                    : [
+                        driver['vehicle_make'],
+                        driver['vehicle_model'],
+                      ].where((value) => value != null && value.toString().isNotEmpty).join(' ')),
+                subtitle: Text('Registration: ${driver['vehicle_registration'] ?? 'Not available'}'),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.location_on_outlined),
+                title: const Text('Approved operating pincode'),
+                subtitle: Text(_pincode.text.isEmpty ? 'Select an approved pincode in Availability' : _pincode.text),
+              ),
+              const Divider(),
+              _documentsPanel(),
+              const SizedBox(height: 8),
+              const Text('For a trip-specific issue, use the Support option on the active ride.'),
+            ],
+          ),
+        ),
+      );
+
   Future<void> _syncAvailabilityFromProfile(
     Map<String, dynamic> driver,
   ) async {
@@ -621,16 +690,42 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           borderRadius: BorderRadius.circular(20),
           child: Stack(
             children: [
-              QuickRideMapView(
-                userAgentPackageName: 'com.quickride.driver',
-                key: const ValueKey('quick-ride-captain-map'),
-                initialCenter: _currentPosition ?? const LatLng(20.5937, 78.9629),
-                initialZoom: _currentPosition == null ? 4.5 : 15.5,
-                currentPosition: _currentPosition,
-                followCurrentPosition: true,
-                navigationCamera: true,
-                recenterSignal: _mapRecenterSignal,
-              ),
+              if (_currentPosition != null)
+                QuickRideMapView(
+                  userAgentPackageName: 'com.quickride.driver',
+                  key: const ValueKey('quick-ride-captain-map'),
+                  initialCenter: _currentPosition,
+                  initialZoom: 15.5,
+                  currentPosition: _currentPosition,
+                  followCurrentPosition: true,
+                  navigationCamera: true,
+                  recenterSignal: _mapRecenterSignal,
+                )
+              else
+                ColoredBox(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.location_searching_rounded, size: 32),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Allow location access to centre your Captain map.',
+                            textAlign: TextAlign.center,
+                          ),
+                          TextButton.icon(
+                            onPressed: _detectCurrentPosition,
+                            icon: const Icon(Icons.my_location_rounded),
+                            label: const Text('Use current location'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 right: 12,
                 bottom: 12,
@@ -716,154 +811,316 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     });
   }
 
-  Widget _previewTile(
-    IconData icon,
-    String title,
-    String subtitle,
-  ) =>
-      Card(
-        child: ListTile(
-          leading: CircleAvatar(child: Icon(icon)),
-          title: Text(title),
-          subtitle: Text(subtitle),
-          trailing: const Icon(Icons.chevron_right),
+  Future<void> _showPreviewFeature(String title, String description) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(
+          '$description\n\nThis is a read-only demonstration. Live account data and ride actions are available only after Google sign-in and Captain approval.',
         ),
-      );
-
-  Widget _previewScreen() {
-    final colors = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Quick Ride Captain'),
         actions: [
-          IconButton(
-            tooltip: 'Sign in',
-            onPressed: QuickRideBackend.isInitialized
-                ? () => QuickRideAuth.signInWithGoogle(
-                      redirectTo: 'in.quickride.driver://login-callback',
-                    )
-                : null,
-            icon: const Icon(Icons.login),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          Text(
-            'Driver partner',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Explore the driver app before connecting your live driver account.',
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-          const SizedBox(height: 14),
-          _captainMap(height: 300),
-          const SizedBox(height: 14),
-          Card(
-            color: colors.secondaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.visibility_outlined,
-                      color: colors.onSecondaryContainer),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Preview mode · Read only\n'
-                      'Live actions such as going online, accepting rides, '
-                      'uploading documents and earnings sync become available '
-                      'after Google sign-in and backend setup.',
-                      style: TextStyle(color: colors.onSecondaryContainer),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text('Driver dashboard',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          _previewTile(
-            Icons.toggle_off_outlined,
-            'Availability',
-            'Online/offline status and approved operating pincode',
-          ),
-          _previewTile(
-            Icons.account_balance_wallet_outlined,
-            'Earnings and settlements',
-            'Daily earnings, completed trips and settlement summary',
-          ),
-          const SizedBox(height: 14),
-          Text('Ride management',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          _previewTile(
-            Icons.notifications_active_outlined,
-            'Ride offers',
-            'View pickup details, expiry and accept or reject offers',
-          ),
-          _previewTile(
-            Icons.alt_route_rounded,
-            'Next-ride offers',
-            'See possible follow-up rides near the current destination',
-          ),
-          _previewTile(
-            Icons.navigation_outlined,
-            'Trip navigation',
-            'Mapbox route, live GPS, ETA and spoken directions',
-          ),
-          _previewTile(
-            Icons.pin_outlined,
-            'Pickup verification',
-            'Verify customer OTP and update each trip status',
-          ),
-          const SizedBox(height: 14),
-          Text('Driver onboarding',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          _previewTile(
-            Icons.directions_car_outlined,
-            'Vehicle registration',
-            'Select a vehicle category and submit vehicle information',
-          ),
-          _previewTile(
-            Icons.upload_file_outlined,
-            'Document verification',
-            'Upload driving licence, RC and insurance for admin review',
-          ),
-          _previewTile(
-            Icons.location_on_outlined,
-            'Service pincodes',
-            'Apply to operate in additional approved service areas',
-          ),
-          _previewTile(
-            Icons.sos_outlined,
-            'Emergency support',
-            'Emergency dialer and ride-linked SOS event',
-          ),
-          const SizedBox(height: 18),
-          FilledButton.icon(
-            onPressed: QuickRideBackend.isInitialized
-                ? () => QuickRideAuth.signInWithGoogle(
-                      redirectTo: 'in.quickride.driver://login-callback',
-                    )
-                : null,
-            icon: const Icon(Icons.login),
-            label: const Text('Sign in to activate driver features'),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
   }
 
+  Widget _previewTile(
+    IconData icon,
+    String title,
+    String subtitle,
+  ) => Card(
+        child: ListTile(
+          leading: CircleAvatar(child: Icon(icon)),
+          title: Text(title),
+          subtitle: Text(subtitle),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _showPreviewFeature(title, subtitle),
+        ),
+      );
+
+  Future<void> _signInFromPreview() async {
+    if (_signingIn) return;
+    if (!QuickRideBackend.isInitialized) {
+      setState(() => _signInError =
+          'The sign-in service is not configured in this build. Check the Supabase URL and publishable key.');
+      return;
+    }
+    setState(() {
+      _signingIn = true;
+      _signInError = null;
+    });
+    try {
+      final response = await QuickRideAuth.signInWithGoogle(
+        redirectTo: 'com.quickride.driver://login-callback',
+      );
+      if (response.session == null || response.user == null ||
+          QuickRideAuth.currentUser == null) {
+        throw StateError('Google did not create an active Quick-Ride session.');
+      }
+    } catch (error) {
+      final details = error.toString();
+      final lower = details.toLowerCase();
+      final message = lower.contains('canceled') || lower.contains('cancelled')
+          ? 'Google sign-in was cancelled, or this Android app is missing its registered package name/SHA-1. Details: $details'
+          : 'Captain sign-in failed: $details';
+      if (mounted) setState(() => _signInError = message);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), duration: const Duration(seconds: 8)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
+  }
+
+  Widget _captainPreviewMetric({
+    required String label,
+    required String value,
+    required IconData icon,
+  }) =>
+      Card(
+        child: ListTile(
+          leading: Icon(icon),
+          title: Text(value, style: Theme.of(context).textTheme.titleLarge),
+          subtitle: Text(label),
+        ),
+      );
+
+  Widget _previewDashboard() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Captain dashboard',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('Preview the Captain workspace. Figures and requests below are examples, not live rides.'),
+          const SizedBox(height: 12),
+          _captainMap(height: 250),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const Icon(Icons.power_settings_new_rounded, size: 28),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Availability'),
+                        Text('You must be approved and signed in before going online.'),
+                      ],
+                    ),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _showPreviewFeature(
+                      'Go online',
+                      'Online status becomes available after your account, vehicle documents and operating pincode are approved.',
+                    ),
+                    child: const Text('Preview'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text('Today at a glance', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _captainPreviewMetric(label: 'Completed rides', value: '—', icon: Icons.check_circle_outline)),
+              SizedBox(width: 8),
+              Expanded(child: _captainPreviewMetric(label: 'Earnings', value: '₹—', icon: Icons.currency_rupee)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text('Your work', style: Theme.of(context).textTheme.titleLarge),
+          _previewTile(Icons.notifications_active_outlined, 'Ride requests', 'Review pickup, destination, estimated fare and request expiry.'),
+          _previewTile(Icons.alt_route_rounded, 'Next-ride opportunities', 'View eligible follow-up requests near your current destination.'),
+          _previewTile(Icons.navigation_outlined, 'Trip navigation', 'Open pickup/drop navigation, live GPS, route steps, ETA and voice guidance.'),
+        ],
+      );
+
+  Widget _previewRides() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Ride management', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('The following cards explain the Captain ride flow. No sample request can be accepted.'),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(children: [
+                    Icon(Icons.notifications_active_outlined),
+                    SizedBox(width: 8),
+                    Text('Incoming ride · Demo'),
+                    Spacer(),
+                    Chip(label: Text('Preview')),
+                  ]),
+                  const SizedBox(height: 10),
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.trip_origin, color: Colors.green),
+                    title: Text('Pickup location'),
+                    subtitle: Text('Shown after a real ride request arrives'),
+                  ),
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.flag_outlined),
+                    title: Text('Destination'),
+                    subtitle: Text('Customer destination and trip distance'),
+                  ),
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.payments_outlined),
+                    title: Text('Fare estimate'),
+                    subtitle: Text('Calculated by the Quick-Ride server'),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(child: OutlinedButton(
+                        onPressed: () => _showPreviewFeature('Reject ride', 'Rejecting a live request updates the dispatch service and is available only to an authenticated Captain.'),
+                        child: const Text('Reject · Preview'),
+                      )),
+                      const SizedBox(width: 8),
+                      Expanded(child: FilledButton(
+                        onPressed: () => _showPreviewFeature('Accept ride', 'Accepting a live offer reserves it through the server. This demonstration does not assign a driver or create a ride.'),
+                        child: const Text('Accept · Preview'),
+                      )),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _previewTile(Icons.pin_outlined, 'Pickup verification', 'Check the passenger pickup OTP before starting the trip.'),
+          _previewTile(Icons.play_circle_outline, 'Start and complete a ride', 'Follow server-validated ride status transitions and completion.'),
+          _previewTile(Icons.groups_2_outlined, 'Shared Auto trip', 'Review grouped passenger pickups, shared route progress and seat capacity.'),
+          _previewTile(Icons.cancel_outlined, 'Cancellation and issue reporting', 'Understand ride cancellation reasons and support escalation.'),
+          _previewTile(Icons.history_rounded, 'Ride history', 'View completed, cancelled and assigned trips.'),
+        ],
+      );
+
+  Widget _previewEarnings() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Earnings & settlements', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('The Captain account is not connected in preview mode, so no personal or financial figures are displayed.'),
+          const SizedBox(height: 12),
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Available balance'),
+                  SizedBox(height: 4),
+                  Text('₹—', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
+                  Text('Sign in to load your actual account ledger.'),
+                ],
+              ),
+            ),
+          ),
+          _previewTile(Icons.calendar_month_outlined, 'Daily and weekly summary', 'Review ride count, gross fare, platform commission and eligible net amount.'),
+          _previewTile(Icons.account_balance_wallet_outlined, 'Wallet and payouts', 'Check settlements, payment records, pending amounts and bank payout status.'),
+          _previewTile(Icons.receipt_long_outlined, 'Transaction history', 'Review subscriptions, commission ledger entries and ride-wise fare breakdown.'),
+          _previewTile(Icons.card_giftcard_outlined, 'Incentives and bonuses', 'View location-specific incentive programmes when configured.'),
+        ],
+      );
+
+  Widget _previewAccount() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Captain account', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('Explore onboarding and account tools before signing in.'),
+          const SizedBox(height: 12),
+          _previewTile(Icons.person_outline, 'Profile and personal details', 'Manage your name, contact details and account preferences.'),
+          _previewTile(Icons.directions_car_outlined, 'Vehicle registration', 'Choose Bike, Auto or Car category and submit registration, make, model and colour.'),
+          _previewTile(Icons.verified_user_outlined, 'KYC and document verification', 'Upload driving licence, vehicle RC and insurance for secure Admin review.'),
+          _previewTile(Icons.location_on_outlined, 'Service pincodes', 'Request primary and additional operating areas. Admin approval is required.'),
+          _previewTile(Icons.support_agent_outlined, 'Captain support', 'Get help with a ride, payments, account access or verification.'),
+          _previewTile(Icons.sos_outlined, 'Safety and emergency help', 'Use the ride-linked SOS flow and India emergency dialer when needed.'),
+          _previewTile(Icons.settings_outlined, 'App settings', 'Manage permissions, notifications, location sharing and preferences.'),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _signingIn ? null : _signInFromPreview,
+            icon: _signingIn
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.login),
+            label: Text(_signingIn ? 'Signing in…' : 'Sign in to activate Captain features'),
+          ),
+        ],
+      );
+
+  Widget _previewPage() => switch (_previewTabIndex) {
+        0 => _previewDashboard(),
+        1 => _previewRides(),
+        2 => _previewEarnings(),
+        _ => _previewAccount(),
+      };
+
+  Widget _previewScreen() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Quick Ride Captain'),
+        actions: [
+          IconButton(
+            tooltip: 'Sign in',
+            onPressed: _signingIn ? null : _signInFromPreview,
+            icon: const Icon(Icons.login),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          if (_signInError != null)
+            Material(
+              color: Theme.of(context).colorScheme.errorContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.error_outline, color: Theme.of(context).colorScheme.onErrorContainer),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_signInError!, style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer))),
+                    IconButton(
+                      tooltip: 'Dismiss',
+                      onPressed: () => setState(() => _signInError = null),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Expanded(child: _previewPage()),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _previewTabIndex,
+        onDestinationSelected: (index) => setState(() => _previewTabIndex = index),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Home'),
+          NavigationDestination(icon: Icon(Icons.route_outlined), selectedIcon: Icon(Icons.route), label: 'Rides'),
+          NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), selectedIcon: Icon(Icons.account_balance_wallet), label: 'Earnings'),
+          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Account'),
+        ],
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     final user = QuickRideAuth.currentUser;
@@ -900,20 +1157,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           unawaited(_syncAvailabilityFromProfile(driver));
           unawaited(_loadEarnings());
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _captainMap(height: 290),
+          return Scaffold(
+            body: ListView(
+              controller: _captainScrollController,
+              padding: const EdgeInsets.all(16),
+              children: [
+              KeyedSubtree(key: _dashboardSectionKey, child: _captainMap(height: 290)),
               const SizedBox(height: 12),
               _availabilityCard(),
               const SizedBox(height: 12),
-              _earningsCard(),
+              KeyedSubtree(key: _earningsSectionKey, child: _earningsCard()),
               if (_message != null) ...[
                 const SizedBox(height: 8),
                 Text(_message!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ],
               const SizedBox(height: 20),
-              Text('Ride offers', style: Theme.of(context).textTheme.titleLarge),
+              KeyedSubtree(key: _ridesSectionKey, child: Text('Ride offers', style: Theme.of(context).textTheme.titleLarge)),
               StreamBuilder<List<Map<String, dynamic>>>(
                 stream: offers,
                 builder: (context, offerSnapshot) {
@@ -981,7 +1240,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   );
                 },
               ),
-            ],
+
+              const SizedBox(height: 20),
+              _captainAccountSection(driver),
+              ],
+            ),
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: _driverTabIndex,
+              onDestinationSelected: _navigateCaptainSection,
+              destinations: const [
+                NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Home'),
+                NavigationDestination(icon: Icon(Icons.route_outlined), selectedIcon: Icon(Icons.route), label: 'Rides'),
+                NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), selectedIcon: Icon(Icons.account_balance_wallet), label: 'Earnings'),
+                NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Account'),
+              ],
+            ),
           );
         },
       ),

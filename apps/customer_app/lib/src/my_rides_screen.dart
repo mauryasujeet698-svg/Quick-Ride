@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 
-import 'customer_navigation_bar.dart';
 
 class CustomerRidesScreen extends StatefulWidget {
   const CustomerRidesScreen({super.key});
@@ -45,7 +44,6 @@ class _CustomerRidesScreenState extends State<CustomerRidesScreen> {
         body: _SignInPrompt(
           message: 'Sign in with Google to view your ride history.',
         ),
-        bottomNavigationBar: const CustomerNavigationBar(selectedIndex: 1),
       );
     }
 
@@ -99,7 +97,6 @@ class _CustomerRidesScreenState extends State<CustomerRidesScreen> {
           );
         },
       ),
-      bottomNavigationBar: const CustomerNavigationBar(selectedIndex: 1),
     );
   }
 }

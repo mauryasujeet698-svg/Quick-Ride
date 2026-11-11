@@ -1,6 +1,8 @@
 # Quick-Ride Android build configuration
 
-The Android workflow builds native Flutter Customer, Driver and Admin release APKs for `armeabi-v7a` and `arm64-v8a`. Customer and Driver use Mapbox's official native Maps SDK for Flutter; map rendering no longer uses a WebView or remotely loaded Mapbox GL JS. Every APK is checked against a strict 25,000,000-byte maximum. A build is rejected if any APK exceeds that limit.
+The Android workflow builds optimized Flutter Customer, Driver and Admin release APKs for `armeabi-v7a` and `arm64-v8a`. Every APK is checked against a strict 25,000,000-byte maximum.
+
+Customer and Driver maps are rendered directly by Flutter using `flutter_map` and Mapbox Streets raster tiles. There is no WebView or native Mapbox Maps SDK binary. Mapbox also provides Search Box, reverse geocoding and driving directions.
 
 ## GitHub Actions configuration
 
@@ -8,8 +10,8 @@ Configure these repository Actions secrets and variables before building:
 
 | Name | Type | Purpose |
 | --- | --- | --- |
-| `MAPBOX_ACCESS_TOKEN` | Secret or variable | Public Mapbox runtime token beginning with `pk.`; validated against Styles, Search Box and Directions before the build |
-| `MAPBOX_DOWNLOADS_TOKEN` | Secret | Secret Mapbox token with Downloads:Read scope; exposed to Gradle only as `SDK_REGISTRY_TOKEN` to download the native Android SDK |
+| `MAPBOX_ACCESS_TOKEN` | Secret or variable | Public Mapbox runtime token beginning with `pk.`; validated against Search Box and Directions before the build |
+| `MAPBOX_STYLE_ID` | Variable (optional) | Mapbox style ID. Defaults to `mapbox/streets-v12`. |
 | `GOOGLE_WEB_CLIENT_ID` | Secret or variable | Google OAuth Web application client ID used by native Google sign-in |
 | `SUPABASE_PUBLISHABLE_KEY` | Secret | Supabase publishable/anon client key; never use a service-role key here |
 | `SUPABASE_URL` | Variable | Supabase project URL |
@@ -20,17 +22,19 @@ Configure these repository Actions secrets and variables before building:
 | `FIREBASE_DRIVER_APP_ID` | Secret | Firebase Android app ID for Driver/Captain |
 | `FIREBASE_ADMIN_APP_ID` | Secret | Firebase Android app ID for Admin |
 
-The Mapbox downloads token is never passed to Dart or packaged in an APK. The runtime token must be a public `pk.*` token with access to Streets styles, Search Box and Directions. The build probes all three services before compiling. Never use a secret `sk.*` token as the runtime token. Map rendering uses the native Mapbox Android SDK, not a WebView.
+The Mapbox public token is used only by REST endpoints for place search, address lookup and route calculation. It is not a native map-rendering credential. Never use a secret `sk.*` token as the runtime token.
+
+The map uses Mapbox Streets raster tiles with the public token supplied through `MAPBOX_ACCESS_TOKEN`. The style can be changed with `MAPBOX_STYLE_ID`; the default is `mapbox/streets-v12`. The app displays Mapbox and OpenStreetMap attribution. CI checks that the configured token can access Streets tiles.
 
 ## Google sign-in
 
-Create a Google OAuth Web application client ID and configure Android OAuth clients for all three application IDs:
+Create one Google OAuth Web application client ID and configure three Android OAuth clients with these exact package IDs:
 
-- `in.quickride.customer`
-- `in.quickride.driver`
-- `in.quickride.admin`
+- `com.quickride.customer`
+- `com.quickride.driver`
+- `com.quickride.admin`
 
-Register the SHA-1 signing certificate fingerprints used by the installed APKs in Google Cloud/Firebase. The Web client ID is supplied as `GOOGLE_WEB_CLIENT_ID`; native sign-in exchanges the Google ID token with Supabase Auth inside the app.
+For the QA APKs, copy the SHA-1 fingerprint from the build artifact's `ANDROID_CERT_SHA1.txt` and use it when creating each Android OAuth client. The Web client ID is supplied to native Google Sign-In as `GOOGLE_WEB_CLIENT_ID` (`serverClientId`) and must also be enabled in Supabase Auth → Providers → Google with its matching Web client secret. A production keystore or Play App Signing certificate has a different SHA-1 and needs separate Android OAuth registrations.
 
 ## Supabase
 
@@ -38,4 +42,6 @@ Apply the repository migrations and deploy the Edge Functions required by ride b
 
 ## Validation and device acceptance
 
-GitHub Actions runs Flutter analysis/tests, Edge Function type checks, shared Auto route-planner tests and the three Android builds. Automated CI does not replace physical-device acceptance testing for Google sign-in, GPS permissions, Mapbox search/navigation, push notifications or driver/customer realtime tracking.
+GitHub Actions runs Flutter analysis/tests, Edge Function type checks, shared Auto route-planner tests and the three Android builds. The build checks the Mapbox Search Box and Directions services before compiling. Automated CI does not replace physical-device acceptance testing for Google sign-in, GPS permissions, Mapbox tile rendering, place search/navigation, push notifications or driver/customer realtime tracking.
+
+The current CI APK artifacts are unsigned QA/test builds unless a release signing configuration and keystore have been supplied. Do not publish the QA APKs to Play Store as production builds.

@@ -23,7 +23,7 @@ Independent on-demand ride-hailing platform designed for India, with real-time d
 
 ## Technology
 
-Flutter workspace, Riverpod 3, go_router, shared domain/auth/design/notification packages, Supabase Auth/PostgreSQL/PostGIS/Realtime/Edge Functions, OpenStreetMap (`flutter_map`), OSRM routing, Nominatim reverse geocoding and Firebase Cloud Messaging.
+Flutter workspace, Riverpod 3, go_router, shared domain/auth/design/notification packages, Supabase Auth/PostgreSQL/PostGIS/Realtime/Edge Functions, Mapbox Streets raster tiles rendered with `flutter_map`, Mapbox Search Box/reverse-geocoding/Directions REST APIs and Firebase Cloud Messaging.
 
 ## Backend foundation
 
@@ -55,6 +55,6 @@ Active platform integration branch: `feature/platform-core`.
 
 See the development status, architecture, security, Google sign-in setup and owner setup documents in `docs/`.
 
-The live database has not been seeded with service areas, approved pincodes, fare/category configuration, admin account or driver accounts. OpenStreetMap-based map display, reverse geocoding and routing use public QA endpoints without API keys; those community endpoints are rate-limited and best-effort, so configure suitable hosted or self-hosted OSM services before production traffic. Google OAuth, Firebase/FCM credentials, payment-provider settings and release signing remain owner setup tasks. APK builds no longer require Mapbox credentials; Android/device validation is still required.
+The live database has not been seeded with service areas, approved pincodes, fare/category configuration, admin account or driver accounts. Mapbox Streets raster tiles are rendered in Flutter through the lightweight `flutter_map` canvas; Mapbox Search Box, reverse geocoding and Directions remain enabled. Mapbox tile access is checked by CI. Customer maps centre on the detected pickup/current location and do not default to a country-wide view. Native Mapbox SDK binaries are not bundled, preserving the 25 MB APK target. Google OAuth, Firebase/FCM credentials, payment-provider settings and release signing remain owner setup tasks. Android/device validation is still required.
 
 Never commit Supabase service-role keys, database passwords, OAuth client secrets, signing keystores or FCM service-account keys. No open-source license has been selected; all rights are reserved unless a license is added.

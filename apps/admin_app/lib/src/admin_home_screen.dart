@@ -37,6 +37,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Map<String, dynamic>> fareConfigs = [];
   Map<String, dynamic>? directory;
   bool busy = false;
+  bool _adminAuthorized = false;
+  bool _signingIn = false;
+  int _previewTabIndex = 0;
+  String? _signInError;
   String? errorText;
   StreamSubscription<dynamic>? _authSubscription;
 
@@ -54,6 +58,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           setState(() {
             directory = null;
             selectedAreaId = null;
+            _adminAuthorized = false;
           });
         }
       });
@@ -105,12 +110,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Future<void> loadWithoutBusy() async {
+    _adminAuthorized = false;
     final results = await Future.wait([
       call('list'),
       call('list_vehicle_categories'),
       call('list_fare_configs'),
     ]);
     directory = results[0];
+    _adminAuthorized = true;
     vehicleCategories = (results[1]['vehicle_categories'] as List<dynamic>? ?? [])
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList();
@@ -487,157 +494,339 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     });
   }
 
-  Widget _previewTile(
-    IconData icon,
+  Future<void> _showPreviewFeature(
     String title,
     String description,
-  ) =>
-      Card(
-        child: ListTile(
-          leading: CircleAvatar(child: Icon(icon)),
-          title: Text(title),
-          subtitle: Text(description),
-          trailing: const Icon(Icons.chevron_right),
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(
+          '$description\n\nPreview mode is read-only. Connect an authorised Admin account to view or change live Quick-Ride data.',
         ),
-      );
-
-  Widget _previewScreen() {
-    final colors = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Admin'),
         actions: [
-          IconButton(
-            tooltip: 'Sign in',
-            onPressed: QuickRideBackend.isInitialized
-                ? () => QuickRideAuth.signInWithGoogle(
-                      redirectTo: 'in.quickride.admin://login-callback',
-                    )
-                : null,
-            icon: const Icon(Icons.login),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          Text(
-            'Platform control centre',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Explore the management areas before connecting your administrator account.',
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-          const SizedBox(height: 14),
-          Card(
-            color: colors.secondaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.visibility_outlined,
-                      color: colors.onSecondaryContainer),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Preview mode · Read only\n'
-                      'No real drivers, rides, service areas or financial '
-                      'figures are shown here. Connect the configured Supabase '
-                      'admin account to load and manage live platform data.',
-                      style: TextStyle(color: colors.onSecondaryContainer),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text('Service configuration',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          _previewTile(
-            Icons.location_city_outlined,
-            'Service areas and pincodes',
-            'Create operating areas, add pincodes and manage boundaries',
-          ),
-          _previewTile(
-            Icons.directions_car_outlined,
-            'Vehicle categories',
-            'Create and enable bike, auto, car and other ride categories',
-          ),
-          _previewTile(
-            Icons.currency_rupee_rounded,
-            'Fare and commercial rules',
-            'Configure base fare, distance/time rates and minimum fare',
-          ),
-          _previewTile(
-            Icons.business_center_outlined,
-            'Driver business models',
-            'Set subscription, commission or hybrid model per pincode',
-          ),
-          const SizedBox(height: 14),
-          Text('Platform operations',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          _previewTile(
-            Icons.verified_user_outlined,
-            'Driver and KYC approvals',
-            'Review vehicle details, documents and service-pincode requests',
-          ),
-          _previewTile(
-            Icons.route_outlined,
-            'Ride operations',
-            'Review active rides, driver assignment and operational status',
-          ),
-          _previewTile(
-            Icons.support_agent_outlined,
-            'Customer support',
-            'Review ride-linked support requests and resolutions',
-          ),
-          _previewTile(
-            Icons.sos_outlined,
-            'Safety and SOS queue',
-            'Review driver safety events and emergency escalations',
-          ),
-          ListTile(
-            leading: const Icon(Icons.notifications_active_outlined),
-            title: const Text('Notification centre'),
-            subtitle: const Text('Send a test push to Customer, Captain, Admin or selected devices'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push('/notifications'),
-          ),
-          const SizedBox(height: 18),
-          OutlinedButton.icon(
-            onPressed: () => context.push('/operations'),
-            icon: const Icon(Icons.dashboard_outlined),
-            label: const Text('Explore operations dashboard'),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: QuickRideBackend.isInitialized
-                ? () => QuickRideAuth.signInWithGoogle(
-                      redirectTo: 'in.quickride.admin://login-callback',
-                    )
-                : null,
-            icon: const Icon(Icons.login),
-            label: const Text('Sign in to manage Quick-Ride'),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
   }
 
+  Widget _previewTile(
+    IconData icon,
+    String title,
+    String description, {
+    VoidCallback? onTap,
+  }) =>
+      Card(
+        child: ListTile(
+          leading: CircleAvatar(child: Icon(icon)),
+          title: Text(title),
+          subtitle: Text(description),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: onTap ?? () => _showPreviewFeature(title, description),
+        ),
+      );
+
+  Future<void> _signInFromPreview() async {
+    if (_signingIn) return;
+    if (!QuickRideBackend.isInitialized) {
+      setState(() => _signInError =
+          'The sign-in service is not configured in this build. Check the Supabase URL and publishable key.');
+      return;
+    }
+    setState(() {
+      _signingIn = true;
+      _signInError = null;
+    });
+    try {
+      final response = await QuickRideAuth.signInWithGoogle(
+        redirectTo: 'com.quickride.admin://login-callback',
+      );
+      if (response.session == null || response.user == null ||
+          QuickRideAuth.currentUser == null) {
+        throw StateError('Google did not create an active Quick-Ride session.');
+      }
+    } catch (error) {
+      final details = error.toString();
+      final lower = details.toLowerCase();
+      final message = lower.contains('canceled') || lower.contains('cancelled')
+          ? 'Google sign-in was cancelled, or this Android app is missing its registered package name/SHA-1. Details: $details'
+          : 'Admin sign-in failed: $details';
+      if (mounted) setState(() => _signInError = message);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), duration: const Duration(seconds: 8)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
+  }
+
+  Widget _previewDashboard() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Platform overview', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('Explore the Admin control centre. All figures in this preview are intentionally blank, not live platform data.'),
+          const SizedBox(height: 14),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(children: [
+                    Icon(Icons.dashboard_customize_outlined),
+                    SizedBox(width: 10),
+                    Text('Quick-Ride control centre'),
+                    Spacer(),
+                    Chip(label: Text('Preview')),
+                  ]),
+                  const SizedBox(height: 10),
+                  const Text('A single operating console for service coverage, vehicle supply, fare rules, dispatch, driver verification and customer safety.'),
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    _previewMetricChip('Rides', '—'),
+                    _previewMetricChip('Captains', '—'),
+                    _previewMetricChip('Service areas', '—'),
+                    _previewMetricChip('Open tickets', '—'),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text('Start exploring', style: Theme.of(context).textTheme.titleLarge),
+          _previewTile(Icons.people_alt_outlined, 'Captain management', 'Applications, vehicle details, KYC documents and operating pincode approvals.'),
+          _previewTile(Icons.route_outlined, 'Ride operations', 'Live booking status, driver assignment, route progress and cancellations.'),
+          _previewTile(Icons.map_outlined, 'Service coverage', 'Manage operating cities, pincodes, boundaries and active services.'),
+          _previewTile(Icons.currency_rupee_outlined, 'Commercial controls', 'Configure vehicle fares, commissions, subscriptions and dispatch rules.'),
+          _previewTile(Icons.support_agent_outlined, 'Customer support and safety', 'Ride-linked complaints, SOS review queue and operational follow-up.'),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/operations'),
+            icon: const Icon(Icons.monitor_heart_outlined),
+            label: const Text('Explore operations dashboard'),
+          ),
+        ],
+      );
+
+  Widget _previewCaptains() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Captain operations', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('Explore the verification and supply-management workflow. No real driver records are shown.'),
+          const SizedBox(height: 12),
+          _previewTile(Icons.person_add_alt_1_outlined, 'New Captain applications', 'Review profile status, submitted vehicle category and registration details.'),
+          _previewTile(Icons.badge_outlined, 'KYC document review', 'Open secure driving licence, vehicle RC and insurance review flows.'),
+          _previewTile(Icons.location_on_outlined, 'Service-pincode requests', 'Approve or reject applications to operate in additional pincodes.'),
+          _previewTile(Icons.directions_car_outlined, 'Vehicle and category status', 'Manage available vehicle classes and whether each can be booked.'),
+          _previewTile(Icons.toggle_on_outlined, 'Captain availability', 'Inspect online/offline state, latest GPS heartbeat and current assignment.'),
+          _previewTile(Icons.account_balance_wallet_outlined, 'Captain settlements', 'Review subscriptions, commission entries and payout reconciliation.'),
+        ],
+      );
+
+  Widget _previewRides() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Ride operations', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('The live ride board is available to authorised Admins only. These are read-only module previews.'),
+          const SizedBox(height: 12),
+          _previewTile(Icons.route_outlined, 'Live ride board', 'View requested, searching, offered, accepted, arriving, in-progress and completed states.'),
+          _previewTile(Icons.alt_route_rounded, 'Dispatch and assignment', 'Inspect eligible Captains, offer batches, search radius, offer expiry and manual assignment.'),
+          _previewTile(Icons.groups_2_outlined, 'Shared Auto operations', 'Monitor shared trips, seats, passengers, grouped pickups and detour settings.'),
+          _previewTile(Icons.location_searching_outlined, 'Live map and tracking', 'Locate active trips, review route progress and inspect stale location signals.'),
+          _previewTile(Icons.cancel_outlined, 'Cancellation and refunds', 'Review cancellation reasons and payment state before applying an authorised resolution.'),
+          _previewTile(Icons.support_agent_outlined, 'Ride support tickets', 'Filter customer issues by active status and link each case to its ride.'),
+          _previewTile(Icons.sos_outlined, 'Safety event queue', 'Review SOS events and record an internal Operations review without implying external emergency response.'),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/operations'),
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('Open operations preview'),
+          ),
+        ],
+      );
+
+  Widget _previewConfiguration() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Platform configuration', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('Explore the settings that control which services can operate and how each ride is priced.'),
+          const SizedBox(height: 12),
+          _previewTile(Icons.location_city_outlined, 'Service areas and pincodes', 'Create operating cities, add six-digit pincodes and activate verified boundaries.'),
+          _previewTile(Icons.map_outlined, 'Geographic boundaries', 'Review GeoJSON polygon coverage before activating a booking area.'),
+          _previewTile(Icons.directions_car_outlined, 'Vehicle categories', 'Create and enable Bike, Auto, Car and other vehicle classes.'),
+          _previewTile(Icons.currency_rupee_outlined, 'Fare rules', 'Set base fare, per-kilometre, per-minute, minimum fare and booking fee.'),
+          _previewTile(Icons.business_center_outlined, 'Commercial model', 'Choose subscription, commission or hybrid terms separately per pincode.'),
+          _previewTile(Icons.tune_outlined, 'Dispatch configuration', 'Adjust search radii, offer batch size, expiry, GPS freshness and ride-chain range.'),
+          _previewTile(Icons.groups_2_outlined, 'Auto Sharing', 'Set seat capacity, passenger fare share, detour and extra travel time.'),
+          _previewTile(Icons.local_offer_outlined, 'Service availability', 'Control which enabled vehicle categories appear in each operating pincode.'),
+        ],
+      );
+
+  Widget _previewMore() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('More controls', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text('Additional operating tools and account controls. Sending notifications or changing any live setting requires Admin access.'),
+          const SizedBox(height: 12),
+          _previewTile(
+            Icons.notifications_active_outlined,
+            'Notification centre',
+            'Compose test, targeted or limited broadcast notifications for Customer, Captain and Admin apps.',
+            onTap: () => context.push('/notifications'),
+          ),
+          _previewTile(Icons.analytics_outlined, 'Reports and performance', 'Review ride volume, conversion, service-area performance and financial summaries.'),
+          _previewTile(Icons.shield_outlined, 'Roles and permissions', 'Understand separation between Customer, Captain, Admin and Operations access.'),
+          _previewTile(Icons.receipt_long_outlined, 'Admin audit history', 'Review who changed fare, service, driver-verification and dispatch settings.'),
+          _previewTile(Icons.headset_mic_outlined, 'Support operations', 'Review unresolved ride tickets and record outcomes.'),
+          _previewTile(Icons.settings_outlined, 'Platform settings', 'Review operating policies, app version, notifications and service-wide defaults.'),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _signingIn ? null : _signInFromPreview,
+            icon: _signingIn
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.login),
+            label: Text(_signingIn ? 'Signing in…' : 'Sign in to manage Quick-Ride'),
+          ),
+        ],
+      );
+
+  Widget _previewMetricChip(String label, String value) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            Text(label, style: Theme.of(context).textTheme.labelSmall),
+          ],
+        ),
+      );
+
+  Widget _previewPage() => switch (_previewTabIndex) {
+        0 => _previewDashboard(),
+        1 => _previewCaptains(),
+        2 => _previewRides(),
+        3 => _previewConfiguration(),
+        _ => _previewMore(),
+      };
+
+  Widget _previewScreen() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Quick-Ride Admin'),
+        actions: [
+          IconButton(
+            tooltip: 'Sign in',
+            onPressed: _signingIn ? null : _signInFromPreview,
+            icon: const Icon(Icons.login),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          if (_signInError != null)
+            Material(
+              color: Theme.of(context).colorScheme.errorContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.error_outline, color: Theme.of(context).colorScheme.onErrorContainer),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_signInError!, style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer))),
+                    IconButton(
+                      tooltip: 'Dismiss',
+                      onPressed: () => setState(() => _signInError = null),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Expanded(child: _previewPage()),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _previewTabIndex,
+        onDestinationSelected: (index) => setState(() => _previewTabIndex = index),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Overview'),
+          NavigationDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: 'Captains'),
+          NavigationDestination(icon: Icon(Icons.route_outlined), selectedIcon: Icon(Icons.route), label: 'Rides'),
+          NavigationDestination(icon: Icon(Icons.tune_outlined), selectedIcon: Icon(Icons.tune), label: 'Setup'),
+          NavigationDestination(icon: Icon(Icons.more_horiz), selectedIcon: Icon(Icons.more_horiz), label: 'More'),
+        ],
+      ),
+    );
+  }
+
+  Widget _authorizationPendingScreen() => Scaffold(
+        appBar: AppBar(
+          title: const Text('Quick-Ride Admin'),
+          actions: [
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: QuickRideAuth.signOut,
+              icon: const Icon(Icons.logout),
+            ),
+          ],
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.admin_panel_settings_outlined, size: 48),
+                const SizedBox(height: 12),
+                Text(
+                  busy ? 'Verifying Admin permissions…' : 'Admin access is required',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  busy
+                      ? 'Checking your account with the protected Admin service.'
+                      : (errorText ?? 'This Google account is signed in but does not have an Admin or Operations role. The project owner must grant the role securely in Supabase.'),
+                  textAlign: TextAlign.center,
+                ),
+                if (busy) ...[
+                  const SizedBox(height: 12),
+                  const CircularProgressIndicator(),
+                ] else ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: load,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry Admin verification'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
   @override
   Widget build(BuildContext context) {
     if (!QuickRideBackend.isInitialized ||
         QuickRideAuth.currentUser == null) {
       return _previewScreen();
     }
+    if (!_adminAuthorized) return _authorizationPendingScreen();
 
     final areas = directory?['service_areas'] as List<dynamic>? ?? [];
     return Scaffold(

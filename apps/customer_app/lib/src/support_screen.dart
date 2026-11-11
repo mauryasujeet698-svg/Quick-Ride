@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 
-import 'customer_navigation_bar.dart';
 
 class CustomerSupportScreen extends StatefulWidget {
   const CustomerSupportScreen({super.key, this.initialRideId});
@@ -138,7 +137,6 @@ class _CustomerSupportScreenState extends State<CustomerSupportScreen> {
             ),
           ),
         ),
-        bottomNavigationBar: const CustomerNavigationBar(selectedIndex: 2),
       );
     }
 
@@ -216,7 +214,6 @@ class _CustomerSupportScreenState extends State<CustomerSupportScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: const CustomerNavigationBar(selectedIndex: 2),
     );
   }
 }

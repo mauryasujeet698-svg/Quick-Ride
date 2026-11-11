@@ -81,11 +81,18 @@ class QuickRideAuth {
         );
       }
 
-      return await QuickRideBackend.client.auth.signInWithIdToken(
+      final response = await QuickRideBackend.client.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
         accessToken: accessToken,
       );
+      if (response.session == null || response.user == null ||
+          QuickRideBackend.client.auth.currentUser == null) {
+        throw const AuthException(
+          'Google returned successfully, but Quick Ride did not receive an active Supabase session. Check the Google OAuth client and Supabase Google provider configuration.',
+        );
+      }
+      return response;
     } catch (_) {
       _googleInitialization = null;
       rethrow;

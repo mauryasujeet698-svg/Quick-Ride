@@ -9,7 +9,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../customer_preferences.dart';
-import 'customer_navigation_bar.dart';
 
 class CustomerProfileScreen extends StatefulWidget {
   const CustomerProfileScreen({super.key});
@@ -21,6 +20,8 @@ class CustomerProfileScreen extends StatefulWidget {
 class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   StreamSubscription<dynamic>? _authSubscription;
   bool _deleting = false;
+  bool _signingIn = false;
+  String? _signInError;
 
   @override
   void initState() {
@@ -36,6 +37,49 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   void dispose() {
     _authSubscription?.cancel();
     super.dispose();
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_signingIn) return;
+    if (!QuickRideBackend.isInitialized) {
+      const message =
+          'Quick Ride could not connect to its sign-in service. Check the Supabase URL and publishable key in the app configuration.';
+      setState(() => _signInError = message);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(message),
+          duration: Duration(seconds: 8),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _signingIn = true;
+      _signInError = null;
+    });
+    try {
+      final response = await QuickRideAuth.signInWithGoogle(
+        redirectTo: 'com.quickride.customer://login-callback',
+      );
+      if (response.session == null || response.user == null ||
+          QuickRideAuth.currentUser == null) {
+        throw StateError('Google account was selected, but the app did not receive a signed-in session.');
+      }
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_t('Signed in successfully.', 'सफलतापूर्वक साइन इन हो गया।'))),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final message = 'Google sign-in failed: ' + error.toString();
+      setState(() => _signInError = message);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 8)),
+      );
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
   }
 
   String _t(String english, String hindi) =>
@@ -484,14 +528,26 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                 if (user == null) ...[
                   const SizedBox(height: 14),
                   FilledButton.icon(
-                    onPressed: QuickRideBackend.isInitialized
-                        ? () async => QuickRideAuth.signInWithGoogle(
-                              redirectTo: 'in.quickride.customer://login-callback',
-                            )
-                        : null,
-                    icon: const Icon(Icons.login),
-                    label: Text(_t('Continue with Google', 'Google से जारी रखें')),
+                    onPressed: _signingIn ? null : _signInWithGoogle,
+                    icon: _signingIn
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.login),
+                    label: Text(_signingIn
+                        ? _t('Signing in…', 'साइन इन हो रहा है…')
+                        : _t('Continue with Google', 'Google से जारी रखें')),
                   ),
+                  if (_signInError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _signInError!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: colors.error, fontSize: 12),
+                    ),
+                  ],
                 ] else ...[
                   const SizedBox(height: 14),
                   OutlinedButton.icon(
@@ -696,7 +752,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: const CustomerNavigationBar(selectedIndex: 3),
     );
   }
 }

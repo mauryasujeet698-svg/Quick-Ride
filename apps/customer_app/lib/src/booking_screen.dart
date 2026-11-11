@@ -38,7 +38,6 @@ class CustomerBookingScreen extends StatefulWidget {
 
 class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   final _pin = TextEditingController();
-  QuickRideMapController? _mapController;
   RidePoint? _pickup;
   RidePoint? _destination;
   List<Map<String, dynamic>> _categories = [];
@@ -210,12 +209,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _quote = null;
       });
       if (pickup) unawaited(_loadCategories());
-      if (moveCamera) {
-        _mapController?.moveTo(
-          LatLng(latitude, longitude),
-          zoom: 15,
-        );
-      }
+      // QuickRideMapView automatically fits the updated pickup/destination markers.
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -262,7 +256,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       setState(() => _error = 'Sign in with Google to check fares and nearby drivers.');
       try {
         await QuickRideAuth.signInWithGoogle(
-          redirectTo: 'in.quickride.customer://login-callback',
+          redirectTo: 'com.quickride.customer://login-callback',
         );
       } catch (error) {
         final details = error.toString().toLowerCase();
@@ -341,16 +335,36 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
               if (sharedQuote['shared_auto'] is Map) {
                 results.add({
                   'category_id': id,
-                  'category_name': 'Shared Auto',
+                  'category_name': 'Auto Sharing',
                   'category_code': code,
                   'ride_mode': 'shared_auto',
                   'passenger_count': 1,
                   'quote': sharedQuote,
                   'quote_status': 'quoted',
                 });
+              } else {
+                results.add({
+                  'category_id': id,
+                  'category_name': 'Auto Sharing',
+                  'category_code': code,
+                  'ride_mode': 'shared_auto',
+                  'passenger_count': 1,
+                  'quote': null,
+                  'quote_status': 'unavailable',
+                  'error': 'Auto Sharing is not enabled in this pickup area yet.',
+                });
               }
-            } catch (_) {
-              // Shared Auto is an optional mode; private Auto stays visible.
+            } catch (error) {
+              results.add({
+                'category_id': id,
+                'category_name': 'Auto Sharing',
+                'category_code': code,
+                'ride_mode': 'shared_auto',
+                'passenger_count': 1,
+                'quote': null,
+                'quote_status': 'unavailable',
+                'error': 'Auto Sharing is currently unavailable in this pickup area.',
+              });
             }
           }
         } catch (error) {
@@ -365,6 +379,18 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             'quote_status': 'fare_unavailable',
             'error': error.toString(),
           });
+          if (code == 'auto' || code == 'autorickshaw') {
+            results.add({
+              'category_id': id,
+              'category_name': 'Auto Sharing',
+              'category_code': code,
+              'ride_mode': 'shared_auto',
+              'passenger_count': 1,
+              'quote': null,
+              'quote_status': 'unavailable',
+              'error': 'Auto Sharing is currently unavailable in this pickup area.',
+            });
+          }
         }
       }
       if (!mounted) return;
@@ -404,7 +430,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       setState(() => _error = 'Sign in before confirming your ride.');
       try {
         await QuickRideAuth.signInWithGoogle(
-          redirectTo: 'in.quickride.customer://login-callback',
+          redirectTo: 'com.quickride.customer://login-callback',
         );
       } catch (error) {
         if (mounted) setState(() => _error = 'Google sign-in failed: ' + error.toString());
@@ -469,60 +495,77 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             flex: 6,
             child: Stack(
               children: [
-                QuickRideMapView(
-                  key: const ValueKey('quick-ride-booking-map'),
-                  initialCenter: _pickup == null
-                      ? const LatLng(20.5937, 78.9629)
-                      : LatLng(_pickup!.latitude, _pickup!.longitude),
-                  initialZoom: _pickup == null ? 4.5 : 15,
-                  currentPosition: _pickup == null
-                      ? null
-                      : LatLng(_pickup!.latitude, _pickup!.longitude),
-                  pickup: _pickup == null
-                      ? null
-                      : LatLng(_pickup!.latitude, _pickup!.longitude),
-                  destination: _destination == null
-                      ? null
-                      : LatLng(_destination!.latitude, _destination!.longitude),
-                  routePoints: _quoteRoutePoints,
-                  onMapCreated: (map) {
-                    _mapController = map;
-                    final pickup = _pickup;
-                    if (pickup != null) {
-                      map.moveTo(
-                        LatLng(pickup.latitude, pickup.longitude),
-                        zoom: 15,
-                      );
-                    }
-                  },
-                  onTap: (point) => _setPoint(
-                    longitude: point.longitude,
-                    latitude: point.latitude,
-                    pickup: _selectPickup,
+                if (_pickup != null || _destination != null) ...[
+                  QuickRideMapView(
+                    key: const ValueKey('quick-ride-booking-map'),
+                    initialCenter: _pickup == null
+                        ? LatLng(_destination!.latitude, _destination!.longitude)
+                        : LatLng(_pickup!.latitude, _pickup!.longitude),
+                    initialZoom: 15,
+                    currentPosition: _pickup == null
+                        ? null
+                        : LatLng(_pickup!.latitude, _pickup!.longitude),
+                    pickup: _pickup == null
+                        ? null
+                        : LatLng(_pickup!.latitude, _pickup!.longitude),
+                    destination: _destination == null
+                        ? null
+                        : LatLng(_destination!.latitude, _destination!.longitude),
+                    routePoints: _quoteRoutePoints,
+                    onTap: (point) => _setPoint(
+                      longitude: point.longitude,
+                      latitude: point.latitude,
+                      pickup: _selectPickup,
+                    ),
                   ),
-                ),
-                const Positioned(
-                  top: 12,
-                  left: 12,
-                  right: 12,
-                  child: IgnorePointer(
-                    child: Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('Tap the map to set the selected location'),
+                  const Positioned(
+                    top: 12,
+                    left: 12,
+                    right: 12,
+                    child: IgnorePointer(
+                      child: Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Text('Tap the map to set the selected location'),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  right: 12,
-                  bottom: 12,
-                  child: FloatingActionButton.small(
-                    heroTag: 'current-location',
-                    onPressed: _tryCurrentLocation,
-                    child: const Icon(Icons.my_location),
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: FloatingActionButton.small(
+                      heroTag: 'current-location',
+                      onPressed: _tryCurrentLocation,
+                      child: const Icon(Icons.my_location),
+                    ),
                   ),
-                ),
+                ] else
+                  ColoredBox(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_searching_rounded, size: 36),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Waiting for a pickup location. Enable location or choose a pickup from the home screen.',
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: _tryCurrentLocation,
+                              icon: const Icon(Icons.my_location),
+                              label: const Text('Use current location'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -605,9 +648,11 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                         (availability?['available_count'] as num?)?.toInt();
                     final shared = option['ride_mode'] == 'shared_auto';
                     final statusLabel = quote == null
-                        ? (QuickRideAuth.currentUser == null
-                            ? 'Sign in to check fare and drivers'
-                            : 'Fare not configured yet')
+                        ? (shared
+                            ? 'Not available in this pickup area yet'
+                            : QuickRideAuth.currentUser == null
+                                ? 'Sign in to check fare and drivers'
+                                : 'Fare not configured yet')
                         : nearbyCount == 0
                             ? 'No vehicle found · Select and search again'
                             : nearbyCount == null
@@ -665,10 +710,16 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             TextButton(
-                              onPressed: _busy
+                              onPressed: _busy || (shared && quote == null)
                                   ? null
                                   : () => _selectServiceOption(option),
-                              child: Text(isSelected ? 'Selected' : 'Choose'),
+                              child: Text(
+                                shared && quote == null
+                                    ? 'Unavailable'
+                                    : isSelected
+                                        ? 'Selected'
+                                        : 'Choose',
+                              ),
                             ),
                           ],
                         ),

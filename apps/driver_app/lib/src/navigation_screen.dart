@@ -366,7 +366,8 @@ class _DriverRideNavigationScreenState
                       children: [
                         Expanded(
                           child: QuickRideMapView(
-                            key: ValueKey('driver-navigation-mapbox-${widget.rideId}'),
+                            userAgentPackageName: 'com.quickride.driver',
+                            key: ValueKey('driver-navigation-osm-${widget.rideId}'),
                             initialCenter: current,
                             currentPosition: current,
                             pickup: _navigatingToDestination ? null : target,
