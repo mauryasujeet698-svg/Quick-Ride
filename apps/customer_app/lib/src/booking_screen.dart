@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
+import 'collapsible_map_sliver.dart';
 
 
 class RidePoint {
@@ -29,9 +30,17 @@ class RidePoint {
 }
 
 class CustomerBookingScreen extends StatefulWidget {
-  const CustomerBookingScreen({super.key, this.initialPickup, this.initialDestination});
+  const CustomerBookingScreen({
+    super.key,
+    this.initialPickup,
+    this.initialDestination,
+    this.initialVehicleCategoryId,
+    this.initialVehicleCategoryCode,
+  });
   final RidePoint? initialPickup;
   final RidePoint? initialDestination;
+  final int? initialVehicleCategoryId;
+  final String? initialVehicleCategoryCode;
   @override
   State<CustomerBookingScreen> createState() => _CustomerBookingScreenState();
 }
@@ -55,6 +64,9 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   Map<String, dynamic>? _booking;
   Map<String, dynamic>? _sharedAuto;
   String? _pickupOtp;
+  List<LatLng> _previewRoutePoints = const [];
+  bool _loadingPreviewRoute = false;
+  int _mapRecenterSignal = 0;
 
   @override
   void initState() {
@@ -65,6 +77,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     _selectPickup = _pickup == null;
     unawaited(_loadCategories());
     if (_pickup == null) unawaited(_tryCurrentLocation());
+    if (_pickup != null && _destination != null) unawaited(_refreshPreviewRoute());
   }
 
   @override
@@ -123,9 +136,17 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       if (!mounted) return;
       setState(() {
         _categories = categories;
-        _categoryId = categories.isEmpty
-            ? null
-            : (categories.first['id'] as num).toInt();
+        final preferredCategory = categories.where((category) {
+          final idMatches = widget.initialVehicleCategoryId != null &&
+              (category['id'] as num).toInt() == widget.initialVehicleCategoryId;
+          final codeMatches = widget.initialVehicleCategoryCode != null &&
+              category['code'].toString().toLowerCase() ==
+                  widget.initialVehicleCategoryCode!.toLowerCase();
+          return idMatches || codeMatches;
+        }).firstOrNull;
+        _categoryId = preferredCategory == null
+            ? (categories.isEmpty ? null : (categories.first['id'] as num).toInt())
+            : (preferredCategory['id'] as num).toInt();
         _serviceQuotes = categories.map((category) => <String, dynamic>{
           'category_id': category['id'],
           'category_name': category['name'],
@@ -152,6 +173,29 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _loadingCategories = false;
         _error = 'Vehicle options could not be loaded: ' + error.toString();
       });
+    }
+  }
+
+  Future<void> _refreshPreviewRoute() async {
+    final pickup = _pickup;
+    final destination = _destination;
+    if (pickup == null || destination == null) {
+      if (mounted) setState(() => _previewRoutePoints = const []);
+      return;
+    }
+    if (mounted) setState(() => _loadingPreviewRoute = true);
+    try {
+      final route = await QuickRideMaps.drivingRoute(
+        origin: LatLng(pickup.latitude, pickup.longitude),
+        destination: LatLng(destination.latitude, destination.longitude),
+      );
+      if (mounted) setState(() => _previewRoutePoints = route.points);
+    } catch (error) {
+      // A route-preview failure should not block quote/fare retrieval.
+      debugPrint('Quick-Ride route preview unavailable: $error');
+      if (mounted) setState(() => _previewRoutePoints = const []);
+    } finally {
+      if (mounted) setState(() => _loadingPreviewRoute = false);
     }
   }
 
@@ -203,6 +247,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       setState(() {
         if (pickup) {
           _pickup = point;
+          _mapRecenterSignal += 1;
           if (pincode != null) _pin.text = pincode;
         } else {
           _destination = point;
@@ -210,6 +255,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _quote = null;
       });
       if (pickup) unawaited(_loadCategories());
+      if (_pickup != null && _destination != null) unawaited(_refreshPreviewRoute());
       if (moveCamera) {
         _mapController?.moveTo(
           LatLng(latitude, longitude),
@@ -225,11 +271,11 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
 
   List<LatLng> get _quoteRoutePoints {
     final geometryValue = _quote?['route_geometry'];
-    if (geometryValue is! Map) return const [];
+    if (geometryValue is! Map) return _previewRoutePoints;
     final geometry = Map<String, dynamic>.from(geometryValue);
     final rawCoordinates = geometry['coordinates'];
-    if (rawCoordinates is! List) return const [];
-    return rawCoordinates
+    if (rawCoordinates is! List) return _previewRoutePoints;
+    final points = rawCoordinates
         .whereType<List>()
         .where((pair) =>
             pair.length >= 2 && pair[0] is num && pair[1] is num)
@@ -238,6 +284,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
               (pair[0] as num).toDouble(),
             ))
         .toList(growable: false);
+    return points.length >= 2 ? points : _previewRoutePoints;
   }
 
   Map<String, dynamic> _request(
@@ -463,18 +510,22 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
           icon: const Icon(Icons.arrow_back),
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            flex: 6,
-            child: Stack(
+      body: CustomScrollView(
+        slivers: [
+          CollapsibleMapSliver(
+            child: SizedBox.expand(
+              child: Stack(
               children: [
                 QuickRideMapView(
                   key: const ValueKey('quick-ride-booking-map'),
                   initialCenter: _pickup == null
-                      ? const LatLng(20.5937, 78.9629)
+                      ? const LatLng(25.45, 81.85)
                       : LatLng(_pickup!.latitude, _pickup!.longitude),
-                  initialZoom: _pickup == null ? 4.5 : 15,
+                  initialZoom: 13.5,
+                  cameraTarget: _pickup == null
+                      ? null
+                      : LatLng(_pickup!.latitude, _pickup!.longitude),
+                  recenterSignal: _mapRecenterSignal,
                   currentPosition: _pickup == null
                       ? null
                       : LatLng(_pickup!.latitude, _pickup!.longitude),
@@ -525,10 +576,12 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                 ),
               ],
             ),
+            ),
           ),
-          Expanded(
-            flex: 5,
+          SliverToBoxAdapter(
             child: ListView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
               children: [
                 TextField(
