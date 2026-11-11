@@ -70,21 +70,9 @@ class QuickRideAuth {
         );
       }
 
-      final authorization = await googleAccount.authorizationClient
-              .authorizationForScopes(const ['email']) ??
-          await googleAccount.authorizationClient
-              .authorizeScopes(const ['email']);
-      final accessToken = authorization.accessToken;
-      if (accessToken.isEmpty) {
-        throw const AuthException(
-          'Google did not grant the access token required to finish sign-in.',
-        );
-      }
-
       return await QuickRideBackend.client.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
-        accessToken: accessToken,
       );
     } catch (_) {
       _googleInitialization = null;
