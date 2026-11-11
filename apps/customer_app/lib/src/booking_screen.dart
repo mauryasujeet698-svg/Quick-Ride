@@ -569,6 +569,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                     ),
                   ),
                 ),
+                if (_loadingPreviewRoute)
+                  const Positioned(
+                    left: 14,
+                    right: 14,
+                    bottom: 12,
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
                 Positioned(
                   right: 12,
                   bottom: 12,
