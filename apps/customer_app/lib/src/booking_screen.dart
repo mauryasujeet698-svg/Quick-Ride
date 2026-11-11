@@ -210,12 +210,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _quote = null;
       });
       if (pickup) unawaited(_loadCategories());
-      if (moveCamera) {
-        _mapController?.moveTo(
-          LatLng(latitude, longitude),
-          zoom: 15,
-        );
-      }
+      // QuickRideMapView automatically fits the updated pickup/destination markers.
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -520,13 +515,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                     routePoints: _quoteRoutePoints,
                     onMapCreated: (map) {
                       _mapController = map;
-                      final pickup = _pickup;
-                      if (pickup != null) {
-                        map.moveTo(
-                          LatLng(pickup.latitude, pickup.longitude),
-                          zoom: 15,
-                        );
-                      }
                     },
                     onTap: (point) => _setPoint(
                       longitude: point.longitude,
