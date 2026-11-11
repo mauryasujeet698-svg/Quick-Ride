@@ -249,22 +249,34 @@ jobs:
               fi
             done
           done
-      - name: Export Android OAuth package IDs and QA signing fingerprint
+      - name: Export Android OAuth package IDs and QA signing fingerprints
         shell: bash
         run: |
           set -euo pipefail
-          {
-            echo "Customer Android application ID: com.quickride.customer"
-            echo "Captain Android application ID: com.quickride.driver"
-            echo "Admin Android application ID: com.quickride.admin"
-            echo
-            echo "Register each package ID with the SHA-1 fingerprint below as an Android OAuth client."
-            if [[ -f "$HOME/.android/debug.keystore" ]]; then
-              keytool -list -v -alias androiddebugkey -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android 2>/dev/null | awk '/SHA1:/{print; found=1; exit} END {if (!found) exit 1}'
-            else
-              echo "QA debug keystore was not found. Inspect the APK signing certificate with apksigner."
+          cat > dist/ANDROID_CERT_SHA1.txt <<'EOF'
+          Customer Android application ID: com.quickride.customer
+          Captain Android application ID: com.quickride.driver
+          Admin Android application ID: com.quickride.admin
+
+          Register each package ID as an Android OAuth client using the SHA-1 digest of its APK signer.
+          These QA APKs are signed using the Android debug signer selected by the Gradle QA build.
+          EOF
+          apksigner="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/opt/android-sdk}}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [[ -z "$apksigner" ]]; then
+            apksigner="$(command -v apksigner || true)"
+          fi
+          if [[ -z "$apksigner" ]]; then
+            echo "::error::Android apksigner was not found; cannot verify the APK signing SHA-1."
+            exit 1
+          fi
+          for apk in $(find dist -type f -name '*.apk' | sort); do
+            digest="$("$apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-1 digest:/{print $2; exit}')"
+            if [[ -z "$digest" ]]; then
+              echo "::error::Could not extract the signing certificate SHA-1 from $apk"
+              exit 1
             fi
-          } > dist/ANDROID_CERT_SHA1.txt
+            printf '%s SHA-1: %s\n' "$apk" "$digest" | tee -a dist/ANDROID_CERT_SHA1.txt
+          done
           cat dist/ANDROID_CERT_SHA1.txt
       - name: Write APK size report, content breakdown and checksums
         shell: bash
