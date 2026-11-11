@@ -120,6 +120,24 @@ jobs:
           path.write_text(gradle.replace(marker, optimized, 1))
           (path.parent / "proguard-rules.pro").touch()
           PY
+            python3 - "apps/${app}_app/android/app/build.gradle.kts" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          marker = "android {"
+          if text.count(marker) != 1:
+              raise SystemExit(f"Could not safely configure native library packaging in {path}")
+          packaging = """android {
+              packaging {
+                  jniLibs {
+                      useLegacyPackaging = true
+                  }
+              }
+          """
+          path.write_text(text.replace(marker, packaging, 1))
+          PY
             python3 - "apps/${app}_app/android/gradle/wrapper/gradle-wrapper.properties" <<'PY'
           from pathlib import Path
           import re
