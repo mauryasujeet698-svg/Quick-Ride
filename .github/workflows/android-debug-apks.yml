@@ -20,7 +20,7 @@ jobs:
       FIREBASE_DRIVER_APP_ID: ${{ secrets.FIREBASE_DRIVER_APP_ID }}
       FIREBASE_ADMIN_APP_ID: ${{ secrets.FIREBASE_ADMIN_APP_ID }}
       MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN || vars.MAPBOX_ACCESS_TOKEN || '' }}
-      OSM_TILE_URL: ${{ vars.OSM_TILE_URL || '' }}
+      MAPBOX_STYLE_ID: ${{ vars.MAPBOX_STYLE_ID || 'mapbox/streets-v12' }}
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_CLIENT_ID || vars.GOOGLE_WEB_CLIENT_ID || vars.GOOGLE_CLIENT_ID || '' }}
       MAPBOX_TOKEN_SOURCE: ${{ secrets.MAPBOX_ACCESS_TOKEN != '' && 'secrets.MAPBOX_ACCESS_TOKEN' || vars.MAPBOX_ACCESS_TOKEN != '' && 'vars.MAPBOX_ACCESS_TOKEN' || 'none' }}
       MAX_APK_BYTES: 25000000
@@ -164,7 +164,12 @@ jobs:
             echo "::error::Mapbox Directions preflight failed (HTTP $route_code). Check directions:read scope."
             exit 1
           fi
-          echo "Mapbox Search Box and Directions preflight checks passed."
+          tile_code="$(curl --silent --show-error --output /tmp/mapbox-tile.png --write-out '%{http_code}' "https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/0/0/0?access_token=${MAPBOX_ACCESS_TOKEN}")"
+          if [[ "$tile_code" != "200" ]]; then
+            echo "::error::Mapbox Streets tile preflight failed (HTTP $tile_code). Check styles:tiles access for this token."
+            exit 1
+          fi
+          echo "Mapbox Streets tiles, Search Box and Directions preflight checks passed."
 
       - name: Build optimized ABI-specific APKs
         shell: bash
@@ -190,7 +195,7 @@ jobs:
               "SUPABASE_URL": os.environ["SUPABASE_URL"].strip(),
               "SUPABASE_PUBLISHABLE_KEY": os.environ["SUPABASE_PUBLISHABLE_KEY"].strip(),
               "MAPBOX_ACCESS_TOKEN": os.environ["MAPBOX_ACCESS_TOKEN"].strip(),
-              "OSM_TILE_URL": os.environ["OSM_TILE_URL"].strip() or "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+              "MAPBOX_STYLE_ID": os.environ["MAPBOX_STYLE_ID"].strip() or "mapbox/streets-v12",
               "GOOGLE_WEB_CLIENT_ID": os.environ["GOOGLE_WEB_CLIENT_ID"].strip(),
               "FIREBASE_API_KEY": os.environ["FIREBASE_API_KEY"].strip(),
               "FIREBASE_PROJECT_ID": os.environ["FIREBASE_PROJECT_ID"].strip(),
