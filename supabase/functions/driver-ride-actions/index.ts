@@ -51,16 +51,61 @@ async function notifyUsers(
 
 async function notifyOfferedDrivers(db: any, url: string, serviceKey: string, rideId: string) {
   const { data: offers } = await db.from("ride_offers")
-    .select("driver_id").eq("ride_id", rideId).eq("status", "offered");
+    .select("id,driver_id,expires_at")
+    .eq("ride_id", rideId)
+    .eq("status", "pending");
+  const { data: ride } = await db.from("rides")
+    .select("pickup_address,destination_address,estimated_fare,estimated_distance_m,estimated_duration_s,vehicle_category_id,currency")
+    .eq("id", rideId)
+    .maybeSingle();
+  if (ride && offers?.length) {
+    const { data: category } = await db.from("vehicle_categories")
+      .select("name").eq("id", ride.vehicle_category_id).maybeSingle();
+    const distance = Number(ride.estimated_distance_m ?? 0);
+    const duration = Number(ride.estimated_duration_s ?? 0);
+    const fare = Number(ride.estimated_fare ?? 0);
+    const vehicle = String(category?.name ?? "Ride");
+    const body = `${String(ride.pickup_address ?? "Pickup")} → ${String(ride.destination_address ?? "Destination")} · ${distance > 0 ? (distance / 1000).toFixed(1) + " km" : "distance pending"} · ${duration > 0 ? Math.ceil(duration / 60) + " min" : "time pending"} · ${fare > 0 ? "₹" + fare.toFixed(0) : "fare pending"}`;
+    await Promise.all(offers.map((offer: { id: string; driver_id: string; expires_at: string }) =>
+      notifyUsers(
+        url,
+        serviceKey,
+        [String(offer.driver_id)],
+        "driver",
+        `New ${vehicle} ride request`,
+        body.slice(0, 250),
+        {
+          type: "ride_offer",
+          offer_id: String(offer.id),
+          ride_id: rideId,
+          expires_at: String(offer.expires_at),
+        },
+      ),
+    ));
+  }
+
   const { data: chainOffers } = await db.from("ride_chain_offers")
-    .select("driver_id").eq("next_ride_id", rideId).eq("status", "offered");
-  const recipients = [
-    ...(offers ?? []).map((row: { driver_id: string }) => row.driver_id),
-    ...(chainOffers ?? []).map((row: { driver_id: string }) => row.driver_id),
-  ];
-  await notifyUsers(url, serviceKey, recipients, "driver", "New Quick-Ride request",
-    "A nearby trip is available. Open Quick-Ride to review and respond.",
-    { type: "ride_offer", ride_id: rideId });
+    .select("id,driver_id,expires_at")
+    .eq("next_ride_id", rideId)
+    .eq("status", "offered");
+  if (chainOffers?.length) {
+    await Promise.all(chainOffers.map((offer: { id: string; driver_id: string; expires_at: string }) =>
+      notifyUsers(
+        url,
+        serviceKey,
+        [String(offer.driver_id)],
+        "driver",
+        "A possible next ride is available",
+        "A new request may be available near your current destination. Review it in Quick-Ride.",
+        {
+          type: "ride_chain_offer",
+          chain_offer_id: String(offer.id),
+          ride_id: rideId,
+          expires_at: String(offer.expires_at),
+        },
+      ),
+    ));
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -324,6 +369,40 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    if (action === "get_offer_details") {
+      const offerId = String(body.offerId ?? "");
+      if (!offerId) return fail(400, "OFFER_REQUIRED", "offerId is required");
+      const { data: offer, error: offerError } = await db.from("ride_offers")
+        .select("id,ride_id,status,expires_at")
+        .eq("id", offerId)
+        .eq("driver_id", user.id)
+        .maybeSingle();
+      if (offerError) return fail(500, "OFFER_LOOKUP_FAILED", "Unable to load this ride offer");
+      if (!offer) return fail(404, "OFFER_NOT_FOUND", "This ride offer was not found for your account");
+      if (String(offer.status) !== "pending" ||
+          !Number.isFinite(Date.parse(String(offer.expires_at))) ||
+          Date.parse(String(offer.expires_at)) <= Date.now()) {
+        return fail(409, "OFFER_EXPIRED", "This ride offer has expired or is no longer available");
+      }
+      const { data: ride, error: rideError } = await db.from("rides")
+        .select("id,pickup_address,destination_address,estimated_fare,estimated_distance_m,estimated_duration_s,vehicle_category_id,currency")
+        .eq("id", offer.ride_id)
+        .maybeSingle();
+      if (rideError || !ride) return fail(404, "RIDE_NOT_FOUND", "Ride details are no longer available");
+      const { data: category } = await db.from("vehicle_categories")
+        .select("name,code")
+        .eq("id", ride.vehicle_category_id)
+        .maybeSingle();
+      return respond(200, {
+        offer,
+        ride: {
+          ...ride,
+          vehicle_category_name: category?.name ?? "Ride",
+          vehicle_category_code: category?.code ?? null,
+        },
+      });
+    }
+
     if (action === "set_online" || action === "set_offline") {
       const pincode = action === "set_online" ? body.pincode : null;
       if (action === "set_online" && !isPincode(pincode)) return fail(400, "INVALID_PINCODE", "Choose an approved service pincode");
