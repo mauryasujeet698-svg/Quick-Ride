@@ -249,6 +249,23 @@ jobs:
               fi
             done
           done
+      - name: Export Android OAuth package IDs and QA signing fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "Customer Android application ID: com.quickride.customer"
+            echo "Captain Android application ID: com.quickride.driver"
+            echo "Admin Android application ID: com.quickride.admin"
+            echo
+            echo "Register each package ID with the SHA-1 fingerprint below as an Android OAuth client."
+            if [[ -f "$HOME/.android/debug.keystore" ]]; then
+              keytool -list -v -alias androiddebugkey -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android 2>/dev/null | awk '/SHA1:/{print; found=1; exit} END {if (!found) exit 1}'
+            else
+              echo "QA debug keystore was not found. Inspect the APK signing certificate with apksigner."
+            fi
+          } > dist/ANDROID_CERT_SHA1.txt
+          cat dist/ANDROID_CERT_SHA1.txt
       - name: Write APK size report, content breakdown and checksums
         shell: bash
         run: |
