@@ -47,7 +47,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     });
     try {
       final response = await QuickRideAuth.signInWithGoogle(
-        redirectTo: 'in.quickride.customer://login-callback',
+        redirectTo: 'com.quickride.customer://login-callback',
       );
       if (response.session == null || response.user == null ||
           QuickRideAuth.currentUser == null) {
