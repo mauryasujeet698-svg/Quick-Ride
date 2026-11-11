@@ -343,14 +343,46 @@ class QuickRideMaps {
 class QuickRideMapController {
   QuickRideMapController._(this._map);
   final fm.MapController _map;
+
   void moveTo(LatLng point, {double? zoom}) => _map.move(point, zoom ?? 15);
-  void fitRoute(List<LatLng> points, {EdgeInsets padding = const EdgeInsets.fromLTRB(36, 175, 36, 250)}) {
-    if (points.length < 2) return;
-    _map.fitCamera(fm.CameraFit.coordinates(coordinates: points, padding: padding, maxZoom: 17));
+
+  void fitPoints(
+    List<LatLng> points, {
+    EdgeInsets padding = const EdgeInsets.fromLTRB(36, 120, 36, 120),
+  }) {
+    if (points.isEmpty) return;
+    if (points.length == 1) {
+      moveTo(points.single, zoom: 16);
+      return;
+    }
+    _map.fitCamera(
+      fm.CameraFit.coordinates(
+        coordinates: points,
+        padding: padding,
+        maxZoom: 17,
+      ),
+    );
   }
+
+  void fitRoute(
+    List<LatLng> points, {
+    EdgeInsets padding = const EdgeInsets.fromLTRB(36, 175, 36, 250),
+  }) {
+    if (points.length < 2) {
+      fitPoints(points, padding: padding);
+      return;
+    }
+    _map.fitCamera(
+      fm.CameraFit.coordinates(
+        coordinates: points,
+        padding: padding,
+        maxZoom: 17,
+      ),
+    );
+  }
+
   void rotate(double degrees) => _map.rotate(degrees);
 }
-
 class QuickRideSearchResult {
   const QuickRideSearchResult({
     required this.mapboxId,
@@ -444,15 +476,61 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
   late final fm.MapController _mapController = fm.MapController();
   QuickRideMapController? _controller;
   bool _mapReady = false;
-  LatLng get _initial => widget.currentPosition ?? widget.initialCenter ?? const LatLng(20.5937, 78.9629);
+
+  LatLng? get _initial =>
+      widget.currentPosition ??
+      widget.initialCenter ??
+      widget.pickup ??
+      widget.destination ??
+      (widget.routePoints.isNotEmpty ? widget.routePoints.first : null);
+
+  List<LatLng> get _visiblePoints {
+    final points = <LatLng>[];
+    if (widget.currentPosition != null) points.add(widget.currentPosition!);
+    if (widget.pickup != null) points.add(widget.pickup!);
+    if (widget.destination != null) points.add(widget.destination!);
+    return points;
+  }
+
+  void _fitVisiblePoints() {
+    final controller = _controller;
+    if (!_mapReady || controller == null) return;
+    if (widget.routePoints.length >= 2) {
+      controller.fitRoute(widget.routePoints,
+        padding: EdgeInsets.fromLTRB(36, 145, 36, widget.fitRouteBottomInset));
+      return;
+    }
+    controller.fitPoints(
+      _visiblePoints,
+      padding: EdgeInsets.fromLTRB(52, 110, 52, widget.fitRouteBottomInset),
+    );
+  }
+
+  void _autoZoom() {
+    if (!_mapReady) return;
+    if (widget.navigationCamera) {
+      final point = widget.currentPosition ?? widget.initialCenter ?? widget.pickup ?? widget.destination;
+      if (point != null) _controller?.moveTo(point, zoom: 17);
+      return;
+    }
+    _fitVisiblePoints();
+  }
 
   void _onMapReady() {
     if (!mounted) return;
     _controller = QuickRideMapController._(_mapController);
     setState(() => _mapReady = true);
     widget.onMapCreated?.call(_controller!);
-    if (widget.routePoints.length >= 2) {
-      _controller!.fitRoute(widget.routePoints, padding: EdgeInsets.fromLTRB(36, 175, 36, widget.fitRouteBottomInset));
+    if (widget.navigationCamera) {
+      if (widget.routePoints.length >= 2) {
+        _controller!.fitRoute(widget.routePoints,
+          padding: EdgeInsets.fromLTRB(36, 150, 36, widget.fitRouteBottomInset));
+      } else {
+        final point = widget.currentPosition ?? widget.initialCenter ?? widget.pickup ?? widget.destination;
+        if (point != null) _controller!.moveTo(point, zoom: 17);
+      }
+    } else {
+      _fitVisiblePoints();
     }
   }
 
@@ -484,17 +562,29 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
   @override
   void didUpdateWidget(covariant QuickRideMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final shouldRecenter = widget.recenterSignal != oldWidget.recenterSignal ||
-        (widget.followCurrentPosition && oldWidget.currentPosition != widget.currentPosition) ||
+    final shouldRecenter =
+        widget.recenterSignal != oldWidget.recenterSignal ||
+        (widget.followCurrentPosition &&
+            oldWidget.currentPosition != widget.currentPosition) ||
         widget.navigationCamera != oldWidget.navigationCamera;
-    if (shouldRecenter) {
-      final point = widget.currentPosition ?? widget.initialCenter;
-      if (_mapReady && point != null) _controller?.moveTo(point, zoom: widget.navigationCamera ? 17 : 15.5);
+    final pointsChanged =
+        widget.currentPosition != oldWidget.currentPosition ||
+        widget.initialCenter != oldWidget.initialCenter ||
+        widget.pickup != oldWidget.pickup ||
+        widget.destination != oldWidget.destination;
+    final routeChanged = !listEquals(oldWidget.routePoints, widget.routePoints);
+
+    if (!_mapReady) return;
+    if (widget.navigationCamera && shouldRecenter) {
+      final point = widget.currentPosition ?? widget.initialCenter ?? widget.pickup ?? widget.destination;
+      if (point != null) {
+        _controller?.moveTo(point, zoom: 17);
+      }
+      return;
     }
-    if (!widget.navigationCamera && !listEquals(oldWidget.routePoints, widget.routePoints) &&
-        widget.routePoints.length >= 2 && _mapReady) {
-      _controller?.fitRoute(widget.routePoints,
-        padding: EdgeInsets.fromLTRB(36, 175, 36, widget.fitRouteBottomInset));
+    if (!widget.navigationCamera &&
+        (pointsChanged || routeChanged || widget.recenterSignal != oldWidget.recenterSignal)) {
+      _fitVisiblePoints();
     }
   }
 
@@ -502,12 +592,41 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
   Widget build(BuildContext context) {
     final override = QuickRideMaps.mapWidgetOverride;
     if (override != null) return override(context, widget);
+
+    final initial = _initial;
+    if (initial == null) {
+      return ColoredBox(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.location_searching_rounded, size: 36),
+                SizedBox(height: 10),
+                Text(
+                  'Location is not available yet. Enable GPS or choose a location to open the map.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Stack(fit: StackFit.expand, children: [
       fm.FlutterMap(
         key: const ValueKey('quickRideOsmMap'),
         mapController: _mapController,
         options: fm.MapOptions(
-          initialCenter: _initial, initialZoom: widget.initialZoom, maxZoom: 19,
+          initialCenter: initial,
+          initialZoom: widget.initialZoom,
+          maxZoom: 19,
+          interactionOptions: const fm.InteractionOptions(
+            flags: fm.InteractiveFlag.all,
+          ),
           onTap: (tapPosition, point) => widget.onTap?.call(point),
           onMapReady: _onMapReady,
         ),
@@ -519,10 +638,26 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
           ),
           if (widget.routePoints.length >= 2)
             fm.PolylineLayer(polylines: [fm.Polyline(
-              points: widget.routePoints, color: const Color(0xFF2167D5), strokeWidth: 5,
+              points: widget.routePoints,
+              color: const Color(0xFF2167D5),
+              strokeWidth: 5,
             )]),
           if (_markers.isNotEmpty) fm.MarkerLayer(markers: _markers),
         ],
+      ),
+      Positioned(
+        left: 10,
+        bottom: 10,
+        child: Material(
+          elevation: 2,
+          color: Colors.white.withValues(alpha: 0.96),
+          shape: const CircleBorder(),
+          child: IconButton(
+            tooltip: 'Auto zoom to location',
+            onPressed: _mapReady ? _autoZoom : null,
+            icon: const Icon(Icons.center_focus_strong_rounded),
+          ),
+        ),
       ),
       Positioned(right: 8, bottom: 8, child: IgnorePointer(child: DecoratedBox(
         decoration: BoxDecoration(
