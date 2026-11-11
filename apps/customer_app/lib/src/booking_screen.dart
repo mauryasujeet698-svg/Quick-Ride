@@ -341,16 +341,36 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
               if (sharedQuote['shared_auto'] is Map) {
                 results.add({
                   'category_id': id,
-                  'category_name': 'Shared Auto',
+                  'category_name': 'Auto Sharing',
                   'category_code': code,
                   'ride_mode': 'shared_auto',
                   'passenger_count': 1,
                   'quote': sharedQuote,
                   'quote_status': 'quoted',
                 });
+              } else {
+                results.add({
+                  'category_id': id,
+                  'category_name': 'Auto Sharing',
+                  'category_code': code,
+                  'ride_mode': 'shared_auto',
+                  'passenger_count': 1,
+                  'quote': null,
+                  'quote_status': 'unavailable',
+                  'error': 'Auto Sharing is not enabled in this pickup area yet.',
+                });
               }
-            } catch (_) {
-              // Shared Auto is an optional mode; private Auto stays visible.
+            } catch (error) {
+              results.add({
+                'category_id': id,
+                'category_name': 'Auto Sharing',
+                'category_code': code,
+                'ride_mode': 'shared_auto',
+                'passenger_count': 1,
+                'quote': null,
+                'quote_status': 'unavailable',
+                'error': 'Auto Sharing is currently unavailable in this pickup area.',
+              });
             }
           }
         } catch (error) {
@@ -632,9 +652,11 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                         (availability?['available_count'] as num?)?.toInt();
                     final shared = option['ride_mode'] == 'shared_auto';
                     final statusLabel = quote == null
-                        ? (QuickRideAuth.currentUser == null
-                            ? 'Sign in to check fare and drivers'
-                            : 'Fare not configured yet')
+                        ? (shared
+                            ? 'Not available in this pickup area yet'
+                            : QuickRideAuth.currentUser == null
+                                ? 'Sign in to check fare and drivers'
+                                : 'Fare not configured yet')
                         : nearbyCount == 0
                             ? 'No vehicle found · Select and search again'
                             : nearbyCount == null
@@ -692,10 +714,16 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             TextButton(
-                              onPressed: _busy
+                              onPressed: _busy || (shared && quote == null)
                                   ? null
                                   : () => _selectServiceOption(option),
-                              child: Text(isSelected ? 'Selected' : 'Choose'),
+                              child: Text(
+                                shared && quote == null
+                                    ? 'Unavailable'
+                                    : isSelected
+                                        ? 'Selected'
+                                        : 'Choose',
+                              ),
                             ),
                           ],
                         ),
