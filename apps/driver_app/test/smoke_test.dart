@@ -23,16 +23,28 @@ void main() {
     );
     expect(find.text('Trip navigation'), findsOneWidget);
 
-    await tester.tap(find.text('Rides'));
+    final captainNav = tester.getRect(find.byType(NavigationBar));
+    await tester.tapAt(Offset(
+      captainNav.left + captainNav.width * 0.375,
+      captainNav.center.dy,
+    ));
     await tester.pumpAndSettle();
     expect(find.text('Ride management'), findsOneWidget);
     expect(find.text('Accept · Preview'), findsOneWidget);
 
-    await tester.tap(find.text('Earnings'));
+    final earningsNav = tester.getRect(find.byType(NavigationBar));
+    await tester.tapAt(Offset(
+      earningsNav.left + earningsNav.width * 0.625,
+      earningsNav.center.dy,
+    ));
     await tester.pumpAndSettle();
     expect(find.text('Earnings & settlements'), findsOneWidget);
 
-    await tester.tap(find.text('Account'));
+    final accountNav = tester.getRect(find.byType(NavigationBar));
+    await tester.tapAt(Offset(
+      accountNav.left + accountNav.width * 0.875,
+      accountNav.center.dy,
+    ));
     await tester.pumpAndSettle();
     expect(find.text('Captain account'), findsOneWidget);
     await tester.scrollUntilVisible(
