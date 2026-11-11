@@ -166,6 +166,21 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return error(400, "INVALID_JSON", "Request body must be valid JSON"); }
 
   const action = body.action;
+  if (action === "rebook_details") {
+    const rideId = String(body.rideId ?? "");
+    if (!rideId) return error(400, "RIDE_REQUIRED", "rideId is required");
+    const { data, error: rebookError } = await db.rpc(
+      "get_customer_ride_rebook_details",
+      { p_customer_id: user.id, p_ride_id: rideId },
+    );
+    if (rebookError) {
+      console.error("Customer Book Again lookup failed", rebookError.message);
+      return error(500, "REBOOK_LOOKUP_FAILED", "Previous ride details could not be loaded");
+    }
+    if (!data) return error(404, "REBOOK_NOT_AVAILABLE", "This ride cannot be booked again");
+    return reply(200, { rebook: data, note: "The current fare and driver availability will be recalculated." });
+  }
+
   if (action === "cancel") {
     const rideId = String(body.rideId ?? "");
     const reason = typeof body.reason === "string" ? body.reason.slice(0, 250) : "customer_cancelled";
