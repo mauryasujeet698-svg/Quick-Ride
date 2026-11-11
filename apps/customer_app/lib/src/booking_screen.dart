@@ -469,60 +469,87 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             flex: 6,
             child: Stack(
               children: [
-                QuickRideMapView(
-                  key: const ValueKey('quick-ride-booking-map'),
-                  initialCenter: _pickup == null
-                      ? const LatLng(20.5937, 78.9629)
-                      : LatLng(_pickup!.latitude, _pickup!.longitude),
-                  initialZoom: _pickup == null ? 4.5 : 15,
-                  currentPosition: _pickup == null
-                      ? null
-                      : LatLng(_pickup!.latitude, _pickup!.longitude),
-                  pickup: _pickup == null
-                      ? null
-                      : LatLng(_pickup!.latitude, _pickup!.longitude),
-                  destination: _destination == null
-                      ? null
-                      : LatLng(_destination!.latitude, _destination!.longitude),
-                  routePoints: _quoteRoutePoints,
-                  onMapCreated: (map) {
-                    _mapController = map;
-                    final pickup = _pickup;
-                    if (pickup != null) {
-                      map.moveTo(
-                        LatLng(pickup.latitude, pickup.longitude),
-                        zoom: 15,
-                      );
-                    }
-                  },
-                  onTap: (point) => _setPoint(
-                    longitude: point.longitude,
-                    latitude: point.latitude,
-                    pickup: _selectPickup,
+                if (_pickup != null || _destination != null) ...[
+                  QuickRideMapView(
+                    key: const ValueKey('quick-ride-booking-map'),
+                    initialCenter: _pickup == null
+                        ? LatLng(_destination!.latitude, _destination!.longitude)
+                        : LatLng(_pickup!.latitude, _pickup!.longitude),
+                    initialZoom: 15,
+                    currentPosition: _pickup == null
+                        ? null
+                        : LatLng(_pickup!.latitude, _pickup!.longitude),
+                    pickup: _pickup == null
+                        ? null
+                        : LatLng(_pickup!.latitude, _pickup!.longitude),
+                    destination: _destination == null
+                        ? null
+                        : LatLng(_destination!.latitude, _destination!.longitude),
+                    routePoints: _quoteRoutePoints,
+                    onMapCreated: (map) {
+                      _mapController = map;
+                      final pickup = _pickup;
+                      if (pickup != null) {
+                        map.moveTo(
+                          LatLng(pickup.latitude, pickup.longitude),
+                          zoom: 15,
+                        );
+                      }
+                    },
+                    onTap: (point) => _setPoint(
+                      longitude: point.longitude,
+                      latitude: point.latitude,
+                      pickup: _selectPickup,
+                    ),
                   ),
-                ),
-                const Positioned(
-                  top: 12,
-                  left: 12,
-                  right: 12,
-                  child: IgnorePointer(
-                    child: Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('Tap the map to set the selected location'),
+                  const Positioned(
+                    top: 12,
+                    left: 12,
+                    right: 12,
+                    child: IgnorePointer(
+                      child: Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Text('Tap the map to set the selected location'),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  right: 12,
-                  bottom: 12,
-                  child: FloatingActionButton.small(
-                    heroTag: 'current-location',
-                    onPressed: _tryCurrentLocation,
-                    child: const Icon(Icons.my_location),
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: FloatingActionButton.small(
+                      heroTag: 'current-location',
+                      onPressed: _tryCurrentLocation,
+                      child: const Icon(Icons.my_location),
+                    ),
                   ),
-                ),
+                ] else
+                  ColoredBox(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_searching_rounded, size: 36),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Waiting for a pickup location. Enable location or choose a pickup from the home screen.',
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: _tryCurrentLocation,
+                              icon: const Icon(Icons.my_location),
+                              label: const Text('Use current location'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
