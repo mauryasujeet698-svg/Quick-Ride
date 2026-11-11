@@ -624,20 +624,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     }
   }
 
-  Future<void> _showAboutQuickRide() async {
-    await showAboutDialog(
-      context: context,
-      applicationName: 'Quick Ride',
-      applicationVersion: '0.1.0 (1)',
-      applicationIcon: const Icon(Icons.route_rounded, size: 36),
-      children: [
-        Text(_t(
-          'Quick Ride helps customers find available local ride options, request trips and follow ride updates.',
-          'Quick Ride ग्राहकों को स्थानीय राइड विकल्प खोजने, ट्रिप अनुरोध करने और राइड अपडेट देखने में मदद करता है।',
-        )),
-      ],
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -754,7 +740,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             icon: Icons.info_outline_rounded,
             title: _t('About Quick Ride', 'Quick Ride के बारे में'),
             subtitle: _t('App information and version', 'ऐप की जानकारी और संस्करण'),
-            onTap: _showAboutQuickRide,
+            onTap: () => context.push('/about'),
           ),
           _profileOption(
             icon: Icons.share_outlined,
