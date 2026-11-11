@@ -257,7 +257,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       setState(() => _error = 'Sign in with Google to check fares and nearby drivers.');
       try {
         await QuickRideAuth.signInWithGoogle(
-          redirectTo: 'in.quickride.customer://login-callback',
+          redirectTo: 'com.quickride.customer://login-callback',
         );
       } catch (error) {
         final details = error.toString().toLowerCase();
@@ -431,7 +431,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       setState(() => _error = 'Sign in before confirming your ride.');
       try {
         await QuickRideAuth.signInWithGoogle(
-          redirectTo: 'in.quickride.customer://login-callback',
+          redirectTo: 'com.quickride.customer://login-callback',
         );
       } catch (error) {
         if (mounted) setState(() => _error = 'Google sign-in failed: ' + error.toString());
