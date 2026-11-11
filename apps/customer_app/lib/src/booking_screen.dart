@@ -38,7 +38,6 @@ class CustomerBookingScreen extends StatefulWidget {
 
 class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   final _pin = TextEditingController();
-  QuickRideMapController? _mapController;
   RidePoint? _pickup;
   RidePoint? _destination;
   List<Map<String, dynamic>> _categories = [];
@@ -513,9 +512,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                         ? null
                         : LatLng(_destination!.latitude, _destination!.longitude),
                     routePoints: _quoteRoutePoints,
-                    onMapCreated: (map) {
-                      _mapController = map;
-                    },
                     onTap: (point) => _setPoint(
                       longitude: point.longitude,
                       latitude: point.latitude,
