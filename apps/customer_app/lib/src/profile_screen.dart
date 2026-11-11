@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
-import 'package:quick_ride_notifications/quick_ride_notifications.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -376,7 +375,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     bool destructive = false,
   }) {
     final colors = Theme.of(context).colorScheme;
-    final foreground = destructive ? colors.error : colors.primary;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
