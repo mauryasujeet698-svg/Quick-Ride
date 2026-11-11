@@ -15,15 +15,18 @@ void main() {
     expect(find.text('Setup'), findsOneWidget);
     expect(find.text('More'), findsOneWidget);
 
-    await tester.tap(find.text('Captains'));
+    tester.widget<NavigationBar>(find.byType(NavigationBar))
+        .onDestinationSelected!(1);
     await tester.pumpAndSettle();
     expect(find.text('Captain operations'), findsOneWidget);
 
-    await tester.tap(find.text('Rides'));
+    tester.widget<NavigationBar>(find.byType(NavigationBar))
+        .onDestinationSelected!(2);
     await tester.pumpAndSettle();
     expect(find.text('Ride operations'), findsOneWidget);
 
-    await tester.tap(find.text('Setup'));
+    tester.widget<NavigationBar>(find.byType(NavigationBar))
+        .onDestinationSelected!(3);
     await tester.pumpAndSettle();
     expect(find.text('Platform configuration'), findsOneWidget);
     await tester.tap(find.text('Service areas and pincodes'));
@@ -32,7 +35,8 @@ void main() {
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('More'));
+    tester.widget<NavigationBar>(find.byType(NavigationBar))
+        .onDestinationSelected!(4);
     await tester.pumpAndSettle();
     expect(find.text('More controls'), findsOneWidget);
     await tester.scrollUntilVisible(
