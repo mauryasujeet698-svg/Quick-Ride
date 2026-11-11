@@ -932,11 +932,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           const SizedBox(height: 10),
           Text('Today at a glance', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
-          const Row(
+          Row(
             children: [
-              Expanded(child: _CaptainPreviewMetric(label: 'Completed rides', value: '—', icon: Icons.check_circle_outline)),
+              Expanded(child: _captainPreviewMetric(label: 'Completed rides', value: '—', icon: Icons.check_circle_outline)),
               SizedBox(width: 8),
-              Expanded(child: _CaptainPreviewMetric(label: 'Earnings', value: '₹—', icon: Icons.currency_rupee)),
+              Expanded(child: _captainPreviewMetric(label: 'Earnings', value: '₹—', icon: Icons.currency_rupee)),
             ],
           ),
           const SizedBox(height: 14),
