@@ -456,6 +456,7 @@ class QuickRideMapView extends StatefulWidget {
     this.initialZoom = 13,
     this.showUserLocation = true,
     this.currentPosition,
+    this.cameraTarget,
     this.pickup,
     this.destination,
     this.routePoints = const [],
@@ -472,6 +473,7 @@ class QuickRideMapView extends StatefulWidget {
   final double initialZoom;
   final bool showUserLocation;
   final LatLng? currentPosition;
+  final LatLng? cameraTarget;
   final LatLng? pickup;
   final LatLng? destination;
   final List<LatLng> routePoints;
@@ -620,6 +622,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
     final mapDataChanged =
         !listEquals(oldWidget.routePoints, widget.routePoints) ||
         oldWidget.currentPosition != widget.currentPosition ||
+        oldWidget.cameraTarget != widget.cameraTarget ||
         oldWidget.pickup != widget.pickup ||
         oldWidget.destination != widget.destination ||
         oldWidget.showUserLocation != widget.showUserLocation;
@@ -634,7 +637,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
             oldWidget.currentPosition != widget.currentPosition) ||
         widget.navigationCamera != oldWidget.navigationCamera;
     if (shouldRecenter) {
-      final point = widget.currentPosition ?? widget.initialCenter;
+      final point = widget.cameraTarget ?? widget.currentPosition ?? widget.initialCenter;
       if (point != null) {
         _controller?.moveTo(point, zoom: widget.navigationCamera ? 17 : 15.5);
       }
