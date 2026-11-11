@@ -8,7 +8,8 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: CustomerHomeScreen()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Quick Ride'), findsOneWidget);
+    expect(find.text('Quick Ride'), findsNothing);
+    expect(find.byType(CustomerHomeScreen), findsOneWidget);
     expect(find.text('Pickup'), findsOneWidget);
     expect(find.text('Destination'), findsOneWidget);
     expect(find.text('Where would you like to go?'), findsOneWidget);
