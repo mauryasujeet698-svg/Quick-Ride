@@ -23,9 +23,11 @@ void main() {
     );
     expect(find.text('Trip navigation'), findsOneWidget);
 
-    tester.widget<NavigationBar>(find.byType(NavigationBar))
+    final captainNavigation = find.byType(NavigationBar);
+    tester.widget<NavigationBar>(captainNavigation)
         .onDestinationSelected!(1);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(tester.widget<NavigationBar>(captainNavigation).selectedIndex, 1);
     expect(find.text('Ride management'), findsOneWidget);
     expect(find.text('Accept · Preview'), findsOneWidget);
 
