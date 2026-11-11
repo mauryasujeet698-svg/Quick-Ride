@@ -164,6 +164,12 @@ class _RideCard extends StatelessWidget {
                     icon: const Icon(Icons.my_location, size: 18),
                     label: const Text('Track ride'),
                   ),
+                if (!active)
+                  OutlinedButton.icon(
+                    onPressed: () => _bookAgain(context, id),
+                    icon: const Icon(Icons.replay_rounded, size: 18),
+                    label: const Text('Book again'),
+                  ),
                 OutlinedButton.icon(
                   onPressed: () => context.push('/support?rideId=' + Uri.encodeComponent(id)),
                   icon: const Icon(Icons.support_agent_outlined, size: 18),
@@ -180,6 +186,29 @@ class _RideCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _bookAgain(BuildContext context, String id) async {
+    try {
+      final response = await QuickRideBackend.invoke(
+        'ride-booking',
+        body: {'action': 'rebook_details', 'rideId': id},
+      );
+      final payload = Map<String, dynamic>.from(response.data as Map);
+      final rebook = Map<String, dynamic>.from(payload['rebook'] as Map);
+      if (!context.mounted) return;
+      await context.push('/book', extra: {
+        'pickup': Map<String, dynamic>.from(rebook['pickup'] as Map),
+        'destination': Map<String, dynamic>.from(rebook['destination'] as Map),
+        'vehicleCategoryId': (rebook['vehicle_category_id'] as num).toInt(),
+      });
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not prepare this ride again: $error')),
+        );
+      }
+    }
   }
 
   Future<void> _cancel(BuildContext context, String id) async {
