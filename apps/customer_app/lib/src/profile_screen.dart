@@ -445,41 +445,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     }
   }
 
-  Future<void> _confirmSignOut() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(_t('Sign out of Quick Ride?', 'Quick Ride से साइन आउट करें?')),
-        content: Text(_t(
-          'You will be signed out on this device. Your account and ride records will remain available when you sign in again. Signing out does not cancel an active ride.',
-          'इस डिवाइस पर आपका साइन-इन समाप्त हो जाएगा। दोबारा साइन-इन करने पर आपका खाता और राइड रिकॉर्ड उपलब्ध रहेंगे। साइन आउट करने से सक्रिय राइड रद्द नहीं होगी।',
-        )),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(_t('Cancel', 'रद्द करें')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(_t('Sign out', 'साइन आउट')),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await QuickRideAuth.signOut();
-      if (mounted) context.go('/');
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_t('Could not sign out: $error', 'साइन आउट नहीं हो सका: $error'))),
-        );
-      }
-    }
-  }
-
-
   @override
   Widget build(BuildContext context) {
     final user = QuickRideAuth.currentUser;
