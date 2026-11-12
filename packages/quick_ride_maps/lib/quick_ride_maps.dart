@@ -11,6 +11,16 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mb;
 
 export 'package:latlong2/latlong.dart';
 
+class _QuickRideCacheEntry {
+  const _QuickRideCacheEntry({
+    required this.value,
+    required this.expiresAt,
+  });
+
+  final Object value;
+  final DateTime expiresAt;
+}
+
 /// Mapbox-backed location search, address lookup, routing and native map view.
 class QuickRideMaps {
   QuickRideMaps._();
@@ -19,6 +29,54 @@ class QuickRideMaps {
   static const String accessToken = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
   static final http.Client _http = http.Client();
   static final Random _random = Random.secure();
+
+  // Keep recently used location and route responses in memory so tab changes,
+  // repeated selections and rebuilds do not trigger duplicate network calls.
+  static final Map<String, _QuickRideCacheEntry> _responseCache = {};
+  static final Map<String, Future<dynamic>> _inFlightRequests = {};
+
+  static Future<T> _remember<T>(
+    String key, {
+    required Duration ttl,
+    required Future<T> Function() load,
+  }) async {
+    final now = DateTime.now();
+    final cached = _responseCache[key];
+    if (cached != null && cached.expiresAt.isAfter(now)) {
+      return cached.value as T;
+    }
+    if (cached != null) _responseCache.remove(key);
+
+    final pending = _inFlightRequests[key];
+    if (pending != null) return await pending as T;
+
+    final future = load();
+    _inFlightRequests[key] = future;
+    try {
+      final value = await future;
+      _responseCache[key] = _QuickRideCacheEntry(
+        value: value,
+        expiresAt: DateTime.now().add(ttl),
+      );
+      if (_responseCache.length > 250) {
+        final expiredKeys = _responseCache.entries
+            .where((entry) => !entry.value.expiresAt.isAfter(DateTime.now()))
+            .map((entry) => entry.key)
+            .toList(growable: false);
+        for (final expiredKey in expiredKeys) {
+          _responseCache.remove(expiredKey);
+        }
+        while (_responseCache.length > 250) {
+          _responseCache.remove(_responseCache.keys.first);
+        }
+      }
+      return value;
+    } finally {
+      if (identical(_inFlightRequests[key], future)) {
+        _inFlightRequests.remove(key);
+      }
+    }
+  }
   static String? _activeSearchSessionToken;
   static DateTime? _searchSessionStartedAt;
   static bool _configured = false;
@@ -47,27 +105,31 @@ class QuickRideMaps {
     configure();
   }
 
-  static Future<geo.Position> currentPosition() async {
-    if (!await geo.Geolocator.isLocationServiceEnabled()) {
-      throw StateError('Location services are disabled. Enable GPS and try again.');
-    }
-    var permission = await geo.Geolocator.checkPermission();
-    if (permission == geo.LocationPermission.denied) {
-      permission = await geo.Geolocator.requestPermission();
-    }
-    if (permission == geo.LocationPermission.denied ||
-        permission == geo.LocationPermission.deniedForever) {
-      throw StateError(
-        'Location permission was not granted. You can still search for a pickup location.',
+  static Future<geo.Position> currentPosition() => _remember(
+        'device-current-location',
+        ttl: const Duration(seconds: 20),
+        load: () async {
+          if (!await geo.Geolocator.isLocationServiceEnabled()) {
+            throw StateError('Location services are disabled. Enable GPS and try again.');
+          }
+          var permission = await geo.Geolocator.checkPermission();
+          if (permission == geo.LocationPermission.denied) {
+            permission = await geo.Geolocator.requestPermission();
+          }
+          if (permission == geo.LocationPermission.denied ||
+              permission == geo.LocationPermission.deniedForever) {
+            throw StateError(
+              'Location permission was not granted. You can still search for a pickup location.',
+            );
+          }
+          return geo.Geolocator.getCurrentPosition(
+            locationSettings: const geo.LocationSettings(
+              accuracy: geo.LocationAccuracy.high,
+              timeLimit: Duration(seconds: 15),
+            ),
+          );
+        },
       );
-    }
-    return geo.Geolocator.getCurrentPosition(
-      locationSettings: const geo.LocationSettings(
-        accuracy: geo.LocationAccuracy.high,
-        timeLimit: Duration(seconds: 15),
-      ),
-    );
-  }
 
   static Stream<geo.Position> watchDriverPosition() {
     return geo.Geolocator.getPositionStream(
@@ -213,127 +275,141 @@ class QuickRideMaps {
   static Future<String> reverseGeocode(
     LatLng point, {
     String language = defaultLanguage,
-  }) async {
-    _requireToken();
-    final uri = Uri.https('api.mapbox.com', '/search/geocode/v6/reverse', {
-      'longitude': point.longitude.toString(),
-      'latitude': point.latitude.toString(),
-      'language': language,
-      'country': 'IN',
-      'access_token': accessToken,
-    });
-    final response = await _http
-        .get(uri, headers: const {'Accept': 'application/geo+json'})
-        .timeout(const Duration(seconds: 12));
-    if (response.statusCode != 200) {
-      throw StateError('Mapbox address lookup failed (' + response.statusCode.toString() + ').');
-    }
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final features = payload['features'] as List<dynamic>? ?? const [];
-    if (features.isEmpty || features.first is! Map) {
-      return 'Selected location (' +
-          point.latitude.toStringAsFixed(5) + ', ' +
-          point.longitude.toStringAsFixed(5) + ')';
-    }
-    final properties =
-        Map<String, dynamic>.from((features.first as Map)['properties'] as Map? ?? const {});
-    final context = Map<String, dynamic>.from(
-      properties['context'] as Map? ?? const {},
+  }) {
+    final key = 'reverse:${point.latitude.toStringAsFixed(5)}:${point.longitude.toStringAsFixed(5)}:$language';
+    return _remember(
+      key,
+      ttl: const Duration(hours: 12),
+      load: () async {
+        _requireToken();
+        final uri = Uri.https('api.mapbox.com', '/search/geocode/v6/reverse', {
+          'longitude': point.longitude.toString(),
+          'latitude': point.latitude.toString(),
+          'language': language,
+          'country': 'IN',
+          'access_token': accessToken,
+        });
+        final response = await _http
+            .get(uri, headers: const {'Accept': 'application/geo+json'})
+            .timeout(const Duration(seconds: 12));
+        if (response.statusCode != 200) {
+          throw StateError('Mapbox address lookup failed (${response.statusCode}).');
+        }
+        final payload = jsonDecode(response.body) as Map<String, dynamic>;
+        final features = payload['features'] as List<dynamic>? ?? const [];
+        if (features.isEmpty || features.first is! Map) {
+          return 'Selected location (${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)})';
+        }
+        final properties = Map<String, dynamic>.from(
+          (features.first as Map)['properties'] as Map? ?? const {},
+        );
+        final context = Map<String, dynamic>.from(
+          properties['context'] as Map? ?? const {},
+        );
+        final postcodeContext = context['postcode'];
+        final postcode = postcodeContext is Map
+            ? (postcodeContext['name'] ?? postcodeContext['text'])?.toString()
+            : null;
+        final address = (properties['full_address'] ??
+                properties['place_formatted'] ??
+                properties['name'] ??
+                'Selected location')
+            .toString();
+        if (postcode != null &&
+            RegExp(r'^[1-9][0-9]{5}$').hasMatch(postcode) &&
+            !address.contains(postcode)) {
+          return '$address, $postcode';
+        }
+        return address;
+      },
     );
-    final postcodeContext = context['postcode'];
-    final postcode = postcodeContext is Map
-        ? (postcodeContext['name'] ?? postcodeContext['text'])?.toString()
-        : null;
-    final address = (properties['full_address'] ??
-            properties['place_formatted'] ??
-            properties['name'] ??
-            'Selected location')
-        .toString();
-    if (postcode != null &&
-        RegExp(r'^[1-9][0-9][0-9][0-9][0-9][0-9]$').hasMatch(postcode) &&
-        !address.contains(postcode)) {
-      return address + ', ' + postcode;
-    }
-    return address;
   }
 
   static Future<QuickRideRoute> drivingRoute({
     required LatLng origin,
     required LatLng destination,
     bool includeSteps = false,
-  }) async {
-    _requireToken();
-    final coordinates =
-        '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
-    final uri = Uri.https(
-      'api.mapbox.com',
-      '/directions/v5/mapbox/driving/$coordinates',
-      {
-        'alternatives': 'false',
-        'overview': 'full',
-        'geometries': 'geojson',
-        'steps': includeSteps ? 'true' : 'false',
-        'language': 'en',
-        'access_token': accessToken,
+  }) {
+    final key = 'route:${origin.latitude.toStringAsFixed(5)}:${origin.longitude.toStringAsFixed(5)}:${destination.latitude.toStringAsFixed(5)}:${destination.longitude.toStringAsFixed(5)}:$includeSteps';
+    return _remember(
+      key,
+      ttl: const Duration(minutes: 5),
+      load: () async {
+        _requireToken();
+        final coordinates =
+            '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
+        final uri = Uri.https(
+          'api.mapbox.com',
+          '/directions/v5/mapbox/driving/$coordinates',
+          {
+            'alternatives': 'false',
+            'overview': 'full',
+            'geometries': 'geojson',
+            'steps': includeSteps ? 'true' : 'false',
+            'language': 'en',
+            'access_token': accessToken,
+          },
+        );
+        final response = await _http.get(uri).timeout(const Duration(seconds: 18));
+        if (response.statusCode != 200) {
+          throw StateError('Mapbox route service failed (${response.statusCode}).');
+        }
+        final payload = jsonDecode(response.body) as Map<String, dynamic>;
+        if (payload['code'] != 'Ok') {
+          throw StateError((payload['message'] ?? 'No drivable route found.').toString());
+        }
+        final routes = payload['routes'] as List<dynamic>? ?? const [];
+        if (routes.isEmpty || routes.first is! Map) {
+          throw StateError('Mapbox returned no drivable route.');
+        }
+        final route = Map<String, dynamic>.from(routes.first as Map);
+        final geometry = Map<String, dynamic>.from(route['geometry'] as Map);
+        final rawCoordinates = geometry['coordinates'] as List<dynamic>? ?? const [];
+        final points = rawCoordinates
+            .whereType<List<dynamic>>()
+            .where((pair) => pair.length >= 2 && pair[0] is num && pair[1] is num)
+            .map((pair) => LatLng(
+                  (pair[1] as num).toDouble(),
+                  (pair[0] as num).toDouble(),
+                ))
+            .toList(growable: false);
+        if (points.length < 2) {
+          throw StateError('Mapbox returned an incomplete route.');
+        }
+
+        final steps = <QuickRideRouteStep>[];
+        if (includeSteps) {
+          final legs = route['legs'] as List<dynamic>? ?? const [];
+          for (final rawLeg in legs) {
+            if (rawLeg is! Map) continue;
+            final rawSteps = rawLeg['steps'] as List<dynamic>? ?? const [];
+            for (final raw in rawSteps) {
+              if (raw is! Map) continue;
+              final item = Map<String, dynamic>.from(raw);
+              final maneuver = Map<String, dynamic>.from(item['maneuver'] as Map? ?? const {});
+              final location = maneuver['location'] as List<dynamic>? ?? const [];
+              steps.add(QuickRideRouteStep(
+                instruction: (maneuver['instruction'] ?? 'Continue along the route').toString(),
+                location: location.length >= 2 && location[0] is num && location[1] is num
+                    ? LatLng((location[1] as num).toDouble(), (location[0] as num).toDouble())
+                    : null,
+                distanceMeters: (item['distance'] as num?)?.toDouble() ?? 0,
+                durationSeconds: (item['duration'] as num?)?.toDouble() ?? 0,
+              ));
+            }
+          }
+        }
+
+        return QuickRideRoute(
+          points: points,
+          distanceMeters: (route['distance'] as num).toDouble(),
+          durationSeconds: (route['duration'] as num).toDouble(),
+          steps: steps,
+        );
       },
     );
-    final response = await _http.get(uri).timeout(const Duration(seconds: 18));
-    if (response.statusCode != 200) {
-      throw StateError('Mapbox route service failed (${response.statusCode}).');
-    }
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    if (payload['code'] != 'Ok') {
-      throw StateError((payload['message'] ?? 'No drivable route found.').toString());
-    }
-    final routes = payload['routes'] as List<dynamic>? ?? const [];
-    if (routes.isEmpty || routes.first is! Map) {
-      throw StateError('Mapbox returned no drivable route.');
-    }
-    final route = Map<String, dynamic>.from(routes.first as Map);
-    final geometry = Map<String, dynamic>.from(route['geometry'] as Map);
-    final rawCoordinates = geometry['coordinates'] as List<dynamic>? ?? const [];
-    final points = rawCoordinates
-        .whereType<List<dynamic>>()
-        .where((pair) => pair.length >= 2 && pair[0] is num && pair[1] is num)
-        .map((pair) => LatLng(
-              (pair[1] as num).toDouble(),
-              (pair[0] as num).toDouble(),
-            ))
-        .toList(growable: false);
-    if (points.length < 2) {
-      throw StateError('Mapbox returned an incomplete route.');
-    }
-
-    final steps = <QuickRideRouteStep>[];
-    if (includeSteps) {
-      final legs = route['legs'] as List<dynamic>? ?? const [];
-      for (final rawLeg in legs) {
-        if (rawLeg is! Map) continue;
-        final rawSteps = rawLeg['steps'] as List<dynamic>? ?? const [];
-        for (final raw in rawSteps) {
-          if (raw is! Map) continue;
-          final item = Map<String, dynamic>.from(raw);
-          final maneuver = Map<String, dynamic>.from(item['maneuver'] as Map? ?? const {});
-          final location = maneuver['location'] as List<dynamic>? ?? const [];
-          steps.add(QuickRideRouteStep(
-            instruction: (maneuver['instruction'] ?? 'Continue along the route').toString(),
-            location: location.length >= 2 && location[0] is num && location[1] is num
-                ? LatLng((location[1] as num).toDouble(), (location[0] as num).toDouble())
-                : null,
-            distanceMeters: (item['distance'] as num?)?.toDouble() ?? 0,
-            durationSeconds: (item['duration'] as num?)?.toDouble() ?? 0,
-          ));
-        }
-      }
-    }
-
-    return QuickRideRoute(
-      points: points,
-      distanceMeters: (route['distance'] as num).toDouble(),
-      durationSeconds: (route['duration'] as num).toDouble(),
-      steps: steps,
-    );
   }
+
 }
 
 /// Native Mapbox map controller shared by customer and driver screens.
