@@ -589,6 +589,19 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
   Future<void> _onMapCreated(mb.MapboxMap map) async {
     _controller = QuickRideMapController._(map);
 
+    // Explicitly preserve pan and multi-touch zoom on the ride map.
+    await map.gestures.updateSettings(mb.GesturesSettings(
+      scrollEnabled: true,
+      pinchToZoomEnabled: true,
+      doubleTapToZoomInEnabled: true,
+      doubleTouchToZoomOutEnabled: true,
+      quickZoomEnabled: true,
+    ));
+    // Retain Mapbox and provider attribution but disable its round source menu.
+    await map.attribution.updateSettings(
+      mb.AttributionSettings(clickable: false),
+    );
+
     map.addInteraction(mb.TapInteraction.onMap((context) {
       final coordinate = context.point.coordinates;
       widget.onTap?.call(LatLng(coordinate.lat.toDouble(), coordinate.lng.toDouble()));

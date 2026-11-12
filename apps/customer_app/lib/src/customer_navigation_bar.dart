@@ -33,13 +33,14 @@ class CustomerNavigationBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     final selectedIndex = navigationShell.currentIndex;
+    final colors = Theme.of(context).colorScheme;
     return SafeArea(
       top: false,
       minimum: EdgeInsets.fromLTRB(16, 5, 16, safeBottom > 0 ? 3 : 7),
       child: Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: const Color(0xFF17251E),
+          color: colors.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(25),
           boxShadow: [
             BoxShadow(
@@ -73,7 +74,7 @@ class CustomerNavigationBar extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 2),
                       decoration: BoxDecoration(
                         color: selected
-                            ? const Color(0xFF83CFFF)
+                            ? colors.primaryContainer
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(21),
                       ),
@@ -84,8 +85,8 @@ class CustomerNavigationBar extends StatelessWidget {
                             selected ? item.selectedIcon : item.icon,
                             size: 21,
                             color: selected
-                                ? const Color(0xFF102B3D)
-                                : const Color(0xFFC5D1CA),
+                                ? colors.onPrimaryContainer
+                                : colors.onSurfaceVariant,
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -97,8 +98,8 @@ class CustomerNavigationBar extends StatelessWidget {
                               height: 1.05,
                               fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                               color: selected
-                                  ? const Color(0xFF102B3D)
-                                  : const Color(0xFFC5D1CA),
+                                  ? colors.onPrimaryContainer
+                                  : colors.onSurfaceVariant,
                             ),
                           ),
                         ],

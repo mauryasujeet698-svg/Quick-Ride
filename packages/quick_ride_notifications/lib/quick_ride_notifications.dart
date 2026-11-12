@@ -49,6 +49,14 @@ class QuickRideNotifications {
   static Stream<RemoteMessage> get openedMessages => _openedMessages.stream;
   static Stream<RemoteMessage> get foregroundMessages => _foregroundMessages.stream;
 
+  /// Read the OS permission without prompting the user.
+  static Future<AuthorizationStatus?> notificationAuthorizationStatus() async {
+    final messaging = _messaging;
+    if (messaging == null) return null;
+    final settings = await messaging.getNotificationSettings();
+    return settings.authorizationStatus;
+  }
+
   static Future<bool> initialize({required String appRole}) async {
     if (!const {'customer', 'driver', 'admin'}.contains(appRole)) {
       throw ArgumentError.value(appRole, 'appRole', 'Unsupported Quick-Ride app role');

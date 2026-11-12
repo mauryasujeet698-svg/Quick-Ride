@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 
@@ -115,7 +116,14 @@ class _CustomerSupportScreenState extends State<CustomerSupportScreen> {
     }
     if (user == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Help & Support')),
+        appBar: AppBar(
+          title: const Text('Help & Support'),
+          leading: IconButton(
+            tooltip: 'Back',
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => context.canPop() ? context.pop() : context.go('/profile'),
+          ),
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -142,7 +150,14 @@ class _CustomerSupportScreenState extends State<CustomerSupportScreen> {
 
     final validSelection = _rides.any((ride) => ride['id'].toString() == _selectedRideId);
     return Scaffold(
-      appBar: AppBar(title: const Text('Help & Support')),
+      appBar: AppBar(
+        title: const Text('Help & Support'),
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/profile'),
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(18),
         children: [

@@ -223,6 +223,9 @@ class QuickRideCustomerApp extends StatelessWidget {
         ),
       ),
       GoRoute(path: '/settings', builder: (_, __) => const CustomerSettingsScreen()),
+      GoRoute(path: '/saved-addresses', builder: (_, __) => const CustomerPlacesScreen()),
+      GoRoute(path: '/favourite-places', builder: (_, __) => const CustomerPlacesScreen(favouritesOnly: true)),
+      GoRoute(path: '/notification-settings', builder: (_, __) => const CustomerNotificationSettingsScreen()),
       GoRoute(
         path: '/privacy-policy',
         builder: (_, __) => const CustomerInformationScreen(page: 'privacy'),
