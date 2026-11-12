@@ -283,20 +283,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           recenterSignal: _mapRecenterSignal,
           fitRouteBottomInset: 110,
         ),
-        Positioned(
-          top: 12,
-          left: 14,
-          child: Material(
-            elevation: 3,
-            color: colors.surface,
-            borderRadius: BorderRadius.circular(24),
-            child: IconButton(
-              tooltip: 'Use current location',
-              onPressed: _loadingLocation ? null : _detectCurrentLocation,
-              icon: const Icon(Icons.my_location_rounded),
-            ),
-          ),
-        ),
         if (_loadingRoute)
           const Positioned(
             left: 0,
