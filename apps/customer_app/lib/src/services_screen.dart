@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'customer_navigation_bar.dart';
 
 class CustomerServicesScreen extends StatelessWidget {
   const CustomerServicesScreen({super.key});
@@ -152,7 +151,6 @@ class CustomerServicesScreen extends StatelessWidget {
           ),
         ],
       ),
-      bottomNavigationBar: const CustomerNavigationBar(selectedIndex: 2),
     );
   }
 }
