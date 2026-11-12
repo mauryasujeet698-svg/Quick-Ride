@@ -17,7 +17,7 @@ class _QuickRideCacheEntry {
     required this.expiresAt,
   });
 
-  final Object value;
+  final Object? value;
   final DateTime expiresAt;
 }
 
