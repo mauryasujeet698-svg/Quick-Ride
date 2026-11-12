@@ -97,7 +97,6 @@ class _CustomerRidesScreenState extends State<CustomerRidesScreen> {
           );
         },
       ),
-      bottomNavigationBar: const CustomerNavigationBar(selectedIndex: 1),
     );
   }
 }
