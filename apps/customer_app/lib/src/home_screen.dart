@@ -8,7 +8,6 @@ import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../customer_preferences.dart';
 
-import 'customer_navigation_bar.dart';
 import 'collapsible_map_sliver.dart';
 
 class CustomerHomeScreen extends StatefulWidget {
@@ -585,7 +584,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: const CustomerNavigationBar(selectedIndex: 0),
     );
   }
 
