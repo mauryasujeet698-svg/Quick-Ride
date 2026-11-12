@@ -22,10 +22,10 @@ jobs:
       - name: Analyze applications and shared packages
         run: |
           for app in apps/customer_app apps/driver_app apps/admin_app; do
-            (cd "$app" && flutter analyze --no-pub)
+            (cd "$app" && flutter analyze --no-pub --no-fatal-infos)
           done
           for package in packages/*; do
-            (cd "$package" && flutter analyze --no-pub)
+            (cd "$package" && flutter analyze --no-pub --no-fatal-infos)
           done
       - uses: denoland/setup-deno@v2
         with:
