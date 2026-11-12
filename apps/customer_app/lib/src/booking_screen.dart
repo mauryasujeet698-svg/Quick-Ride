@@ -542,31 +542,25 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                   routePoints: _quoteRoutePoints,
                   onMapCreated: (map) {
                     _mapController = map;
+                    final routePoints = _quoteRoutePoints;
                     final pickup = _pickup;
-                    if (pickup != null) {
+                    if (routePoints.length >= 2) {
+                      map.fitRoute(
+                        routePoints,
+                        padding: const EdgeInsets.fromLTRB(28, 70, 28, 70),
+                      );
+                    } else if (pickup != null) {
                       map.moveTo(
                         LatLng(pickup.latitude, pickup.longitude),
                         zoom: 15,
                       );
                     }
                   },
+                  fitRouteBottomInset: 70,
                   onTap: (point) => _setPoint(
                     longitude: point.longitude,
                     latitude: point.latitude,
                     pickup: _selectPickup,
-                  ),
-                ),
-                const Positioned(
-                  top: 12,
-                  left: 12,
-                  right: 12,
-                  child: IgnorePointer(
-                    child: Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('Tap the map to set the selected location'),
-                      ),
-                    ),
                   ),
                 ),
                 if (_loadingPreviewRoute)
@@ -576,15 +570,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                     bottom: 12,
                     child: LinearProgressIndicator(minHeight: 2),
                   ),
-                Positioned(
-                  right: 12,
-                  bottom: 12,
-                  child: FloatingActionButton.small(
-                    heroTag: 'current-location',
-                    onPressed: _tryCurrentLocation,
-                    child: const Icon(Icons.my_location),
-                  ),
-                ),
               ],
             ),
             ),
@@ -595,37 +580,38 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
               physics: const NeverScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
               children: [
-                TextField(
-                  controller: _pin,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  onChanged: (_) => setState(() {
-                    _sharedAutoCapacity = 3;
-                    _quote = null;
-                    _sharedAuto = null;
-                    _error = null;
-                  }),
-                  decoration: const InputDecoration(
-                    labelText: 'Pickup pincode',
-                    counterText: '',
-                    prefixIcon: Icon(Icons.pin_drop_outlined),
-                  ),
-                ),
                 if (_loadingCategories) const LinearProgressIndicator(),
                 if (!_loadingCategories && _categories.isEmpty)
                   const Text('No vehicle services are configured yet.'),
                 const SizedBox(height: 10),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: true, label: Text('Set pickup'), icon: Icon(Icons.trip_origin)),
-                    ButtonSegment(value: false, label: Text('Set destination'), icon: Icon(Icons.flag_outlined)),
-                  ],
-                  selected: {_selectPickup},
-                  onSelectionChanged: (selection) => setState(() => _selectPickup = selection.first),
+                Card(
+                  elevation: 1,
+                  child: Column(
+                    children: [
+                      ListTile(
+                        selected: _selectPickup,
+                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer,
+                        leading: const Icon(Icons.trip_origin_rounded, color: Color(0xFF159B65)),
+                        title: const Text('Pickup', style: TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: Text(_pickup?.address ?? 'Choose pickup location',
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        trailing: Icon(_selectPickup ? Icons.edit_location_alt_rounded : Icons.chevron_right_rounded),
+                        onTap: () => setState(() => _selectPickup = true),
+                      ),
+                      const Divider(height: 1, indent: 14, endIndent: 14),
+                      ListTile(
+                        selected: !_selectPickup,
+                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer,
+                        leading: const Icon(Icons.flag_rounded, color: Color(0xFFD94747)),
+                        title: const Text('Destination', style: TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: Text(_destination?.address ?? 'Choose destination',
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        trailing: Icon(!_selectPickup ? Icons.edit_location_alt_rounded : Icons.chevron_right_rounded),
+                        onTap: () => setState(() => _selectPickup = false),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 10),
-                _pointTile('Pickup', _pickup),
-                _pointTile('Destination', _destination),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
                   Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -872,14 +858,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     );
   }
 
-  Widget _pointTile(String label, RidePoint? point) => ListTile(
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(label == 'Pickup' ? Icons.trip_origin : Icons.flag_outlined),
-        title: Text(label),
-        subtitle: Text(point?.address ?? 'Tap the map to select'),
-        trailing: point == null ? const Icon(Icons.location_searching) : const Icon(Icons.check_circle),
-      );
 }
 
 class _RideStatusStream extends StatelessWidget {
