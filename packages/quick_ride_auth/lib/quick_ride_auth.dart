@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_notifications/quick_ride_notifications.dart';
@@ -34,6 +36,7 @@ class QuickRideAuth {
         'Google sign-in is not configured. Add the GOOGLE_WEB_CLIENT_ID build secret.',
       );
     }
+    var stage = 'Google SDK initialization';
     try {
       _googleInitialization ??= _googleSignIn.initialize(
         serverClientId: _googleWebClientId,
@@ -46,36 +49,31 @@ class QuickRideAuth {
         );
       }
 
-      GoogleSignInAccount googleAccount;
-      try {
-        googleAccount = await _googleSignIn.authenticate();
-      } catch (error) {
-        // Credential Manager can retain an account re-authentication state
-        // after an interrupted sign-out. Clear Google's native session and
-        // retry only this known stale-session failure once.
-        final details = error.toString().toLowerCase();
-        if (!details.contains('account reauth failed')) rethrow;
-        try {
-          await _googleSignIn.signOut();
-        } catch (_) {
-          // Continue with a fresh account selection attempt.
-        }
-        googleAccount = await _googleSignIn.authenticate();
-      }
+      stage = 'Google account selection';
+      // Exactly one picker request per user tap. Never silently reopen it.
+      final googleAccount = await _googleSignIn.authenticate();
 
+      stage = 'Google ID-token retrieval';
       final idToken = googleAccount.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
         throw const AuthException(
-          'Google did not return an ID token. Check the Android OAuth client configuration.',
+          'Google returned no ID token. Verify the Web OAuth client ID and Android package/SHA-1 registrations.',
         );
       }
 
+      stage = 'Supabase Google token exchange';
       return await QuickRideBackend.client.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
       _googleInitialization = null;
+      developer.log(
+        'Sign-in failed at $stage: $error',
+        name: 'quick_ride.auth',
+        error: error,
+        stackTrace: stackTrace,
+      );
       rethrow;
     }
   }

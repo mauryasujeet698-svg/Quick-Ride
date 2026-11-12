@@ -6,10 +6,16 @@ import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_notifications/quick_ride_notifications.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:app_settings/app_settings.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../customer_preferences.dart';
+
+const _quickRidePlayStoreUrl = String.fromEnvironment(
+  'QUICK_RIDE_PLAY_STORE_URL',
+  defaultValue: 'https://play.google.com/store/apps/details?id=com.quickride.customer',
+);
 
 class CustomerProfileScreen extends StatefulWidget {
   const CustomerProfileScreen({super.key});
@@ -208,73 +214,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     }
   }
 
-  Future<void> _showSavedPlaces() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: ValueListenableBuilder<List<Map<String, dynamic>>>(
-          valueListenable: QuickRideCustomerPreferences.savedPlaces,
-          builder: (context, places, _) => Padding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Saved places',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        )),
-                const SizedBox(height: 8),
-                if (places.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 22),
-                    child: Text('Save a place from Recent places on the home screen.'),
-                  )
-                else
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: places.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final place = places[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.favorite_rounded,
-                              color: Color(0xFFE45872)),
-                          title: Text(place['name'].toString()),
-                          subtitle: Text(place['address'].toString()),
-                          trailing: IconButton(
-                            tooltip: 'Remove saved place',
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            onPressed: () =>
-                                QuickRideCustomerPreferences.removeSavedPlace(place),
-                          ),
-                          onTap: () {
-                            Navigator.of(sheetContext).pop();
-                            this.context.go('/book', extra: {
-                              'pickup': {
-                                'longitude': place['longitude'],
-                                'latitude': place['latitude'],
-                                'address': place['address'],
-                                'pincode': place['postalCode'],
-                              },
-                            });
-                          },
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _showFareHistory() async {
     final user = QuickRideAuth.currentUser;
     if (user == null) {
@@ -407,79 +346,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
-  Future<void> _showFavouritePlaces() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: ValueListenableBuilder<List<Map<String, dynamic>>>(
-          valueListenable: QuickRideCustomerPreferences.savedPlaces,
-          builder: (context, places, _) {
-            final favourites = places.where((place) => place['is_favorite'] == true).toList();
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-              child: SizedBox(
-                height: MediaQuery.of(sheetContext).size.height * 0.55,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _t('Favourite places', 'पसंदीदा स्थान'),
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 8),
-                    if (favourites.isEmpty)
-                      Expanded(
-                        child: Center(
-                          child: Text(_t(
-                            'Tap the heart beside a recent place on Home to save it here.',
-                            'यहां सेव करने के लिए होम स्क्रीन पर हाल के स्थान के पास दिल वाले आइकन पर टैप करें।',
-                          )),
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: ListView.separated(
-                          itemCount: favourites.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final place = favourites[index];
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: const Icon(Icons.favorite_rounded, color: Color(0xFFE45872)),
-                              title: Text(place['name'].toString()),
-                              subtitle: Text(place['address'].toString()),
-                              trailing: IconButton(
-                                tooltip: _t('Remove favourite', 'पसंदीदा से हटाएं'),
-                                icon: const Icon(Icons.favorite_border_rounded),
-                                onPressed: () => QuickRideCustomerPreferences.removeSavedPlace(place),
-                              ),
-                              onTap: () {
-                                Navigator.of(sheetContext).pop();
-                                this.context.go('/book', extra: {
-                                  'pickup': {
-                                    'longitude': place['longitude'],
-                                    'latitude': place['latitude'],
-                                    'address': place['address'],
-                                    'pincode': place['postalCode'],
-                                  },
-                                });
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
   Future<void> _showPayments() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -492,28 +358,36 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _t('Payments', 'भुगतान'),
+                _t('Payment methods', 'भुगतान के तरीके'),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 12),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.payments_outlined),
-                title: Text(_t('Cash payment', 'नकद भुगतान')),
-                subtitle: Text(_t(
-                  'Cash is available when offered for an eligible ride.',
-                  'पात्र राइड के लिए उपलब्ध होने पर नकद भुगतान किया जा सकता है।',
-                )),
+                title: Text(_t('Cash', 'नकद')),
+                subtitle: Text(_t('Available for eligible rides.', 'पात्र राइड के लिए उपलब्ध।')),
+                trailing: const Icon(Icons.check_circle_rounded, color: Colors.green),
               ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.credit_card_outlined),
-                title: Text(_t('Digital payments', 'डिजिटल भुगतान')),
-                subtitle: Text(_t(
-                  'Additional payment methods will appear here when enabled.',
-                  'अन्य भुगतान विकल्प उपलब्ध होने पर यहां दिखाई देंगे।',
-                )),
-              ),
+              for (final method in <(IconData, String)>[
+                (Icons.account_balance_outlined, 'UPI'),
+                (Icons.credit_card_outlined, 'Credit card'),
+                (Icons.credit_card_rounded, 'Debit card'),
+              ])
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(method.$1, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  title: Text(method.$2),
+                  subtitle: Text(_t(
+                    'Not available yet. This option will be enabled after a payment provider is integrated.',
+                    'अभी उपलब्ध नहीं है। भुगतान प्रदाता जुड़ने के बाद इसे चालू किया जाएगा।',
+                  )),
+                  trailing: Text(
+                    _t('Unavailable', 'उपलब्ध नहीं'),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600),
+                  ),
+                  enabled: false,
+                ),
               const Divider(),
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -532,32 +406,15 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
-  Future<void> _showNotificationsInfo() async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(_t('Notifications', 'सूचनाएं')),
-        content: Text(_t(
-          'Quick Ride uses notifications for ride requests, driver updates and safety messages. You can manage notification permission from your Android app settings.',
-          'Quick Ride राइड अनुरोध, ड्राइवर अपडेट और सुरक्षा संदेशों के लिए सूचनाओं का उपयोग करता है। आप Android ऐप सेटिंग में सूचना अनुमति बदल सकते हैं।',
-        )),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(_t('Got it', 'समझ गया')),
-          ),
-        ],
-      ),
-    );
-  }
+  void _showNotificationsInfo() => context.push('/notification-settings');
 
   Future<void> _shareApp() async {
     try {
       await SharePlus.instance.share(
         ShareParams(
           text: _t(
-            'Try Quick Ride for local rides and easy trip booking.',
-            'स्थानीय राइड और आसान ट्रिप बुकिंग के लिए Quick Ride आज़माएं।',
+            'Try Quick Ride for local rides and easy trip booking. Download it here: $_quickRidePlayStoreUrl',
+            'स्थानीय राइड और आसान ट्रिप बुकिंग के लिए Quick Ride आज़माएं। यहां से डाउनलोड करें: $_quickRidePlayStoreUrl',
           ),
         ),
       );
@@ -571,7 +428,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   }
 
   Future<void> _checkForUpdates() async {
-    final uri = Uri.parse('https://github.com/mauryasujeet698-svg/Quick-Ride/releases');
+    final uri = Uri.parse(_quickRidePlayStoreUrl);
     try {
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!opened && mounted) {
@@ -669,22 +526,10 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               onTap: _editPersonalDetails,
             ),
           _profileOption(
-            icon: Icons.route_outlined,
-            title: _t('My rides', 'मेरी राइड'),
-            subtitle: _t('Current, completed and cancelled rides', 'वर्तमान, पूरी और रद्द राइड'),
-            onTap: () => context.go('/my-rides'),
-          ),
-          _profileOption(
             icon: Icons.bookmark_border_rounded,
             title: _t('Saved addresses', 'सेव किए गए पते'),
             subtitle: _t('Home, work and other saved locations', 'घर, काम और अन्य सेव किए गए स्थान'),
-            onTap: _showSavedPlaces,
-          ),
-          _profileOption(
-            icon: Icons.favorite_border_rounded,
-            title: _t('Favourite places', 'पसंदीदा स्थान'),
-            subtitle: _t('Quickly choose places you have loved', 'अपने पसंदीदा स्थान जल्दी चुनें'),
-            onTap: _showFavouritePlaces,
+            onTap: () => context.push('/saved-addresses'),
           ),
           _profileOption(
             icon: Icons.receipt_long_outlined,
@@ -708,7 +553,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             icon: Icons.support_agent_outlined,
             title: _t('Help & support', 'सहायता और सपोर्ट'),
             subtitle: _t('Get help with a ride or a general issue', 'राइड या अन्य समस्या में सहायता लें'),
-            onTap: () => context.go('/support'),
+            onTap: () => context.push('/support'),
           ),
           _profileOption(
             icon: Icons.notifications_outlined,
@@ -721,18 +566,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             title: _t('Settings', 'सेटिंग्स'),
             subtitle: _t('Appearance, language and account preferences', 'दिखावट, भाषा और खाते की प्राथमिकताएं'),
             onTap: () => context.push('/settings'),
-          ),
-          _profileOption(
-            icon: Icons.privacy_tip_outlined,
-            title: _t('Privacy policy', 'गोपनीयता नीति'),
-            subtitle: _t('How Quick Ride handles your information', 'Quick Ride आपकी जानकारी का उपयोग कैसे करता है'),
-            onTap: () => context.push('/privacy-policy'),
-          ),
-          _profileOption(
-            icon: Icons.description_outlined,
-            title: _t('Terms & Conditions', 'नियम और शर्तें'),
-            subtitle: _t('Terms for using Quick Ride', 'Quick Ride के उपयोग की शर्तें'),
-            onTap: () => context.push('/terms'),
           ),
           _profileOption(
             icon: Icons.info_outline_rounded,
@@ -752,14 +585,187 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             subtitle: _t('Check published Quick Ride releases', 'Quick Ride के नए रिलीज़ देखें'),
             onTap: _checkForUpdates,
           ),
-          if (user != null)
-            _profileOption(
-              icon: Icons.logout_rounded,
-              title: _t('Sign out', 'साइन आउट'),
-              subtitle: _t('Sign out of this device', 'इस डिवाइस से साइन आउट करें'),
-              onTap: _confirmSignOut,
-              destructive: true,
+        ],
+      ),
+    );
+  }
+}
+
+class CustomerPlacesScreen extends StatelessWidget {
+  const CustomerPlacesScreen({super.key, this.favouritesOnly = false});
+
+  final bool favouritesOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = favouritesOnly ? 'Favourite places' : 'Saved addresses';
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: ValueListenableBuilder<List<Map<String, dynamic>>>(
+        valueListenable: QuickRideCustomerPreferences.savedPlaces,
+        builder: (context, places, _) {
+          final visible = favouritesOnly
+              ? places.where((place) => place['is_favorite'] == true).toList()
+              : places;
+          if (visible.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      favouritesOnly ? Icons.favorite_border_rounded : Icons.bookmark_border_rounded,
+                      size: 44,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      favouritesOnly
+                          ? 'Your favourite places will appear here. Tap the heart beside a recent place on Home to add one.'
+                          : 'Your saved addresses will appear here. Save a location from your recent places on Home.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            itemCount: visible.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final place = visible[index];
+              final lat = (place['latitude'] as num).toDouble();
+              final lng = (place['longitude'] as num).toDouble();
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+                leading: CircleAvatar(
+                  child: Icon(favouritesOnly ? Icons.favorite_rounded : Icons.bookmark_outline_rounded),
+                ),
+                title: Text(place['name']?.toString() ?? 'Saved location'),
+                subtitle: Text(
+                  place['address']?.toString() ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: IconButton(
+                  tooltip: favouritesOnly ? 'Remove from favourites' : 'Remove saved address',
+                  icon: Icon(
+                    favouritesOnly ? Icons.favorite_border_rounded : Icons.delete_outline_rounded,
+                    color: favouritesOnly
+                        ? const Color(0xFFE45872)
+                        : Theme.of(context).colorScheme.error,
+                  ),
+                  onPressed: () {
+                    if (favouritesOnly) {
+                      QuickRideCustomerPreferences.addSavedPlace({
+                        ...place,
+                        'is_favorite': false,
+                      });
+                    } else {
+                      QuickRideCustomerPreferences.removeSavedPlace(place);
+                    }
+                  },
+                ),
+                onTap: () => context.push('/book', extra: {
+                  'pickup': {
+                    'longitude': lng,
+                    'latitude': lat,
+                    'address': place['address'],
+                    'pincode': place['postalCode'],
+                  },
+                }),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class CustomerNotificationSettingsScreen extends StatefulWidget {
+  const CustomerNotificationSettingsScreen({super.key});
+
+  @override
+  State<CustomerNotificationSettingsScreen> createState() =>
+      _CustomerNotificationSettingsScreenState();
+}
+
+class _CustomerNotificationSettingsScreenState
+    extends State<CustomerNotificationSettingsScreen> {
+  late Future<dynamic> _permission;
+
+  @override
+  void initState() {
+    super.initState();
+    _permission = QuickRideNotifications.notificationAuthorizationStatus();
+  }
+
+  Future<void> _openSettings() async {
+    await AppSettings.openAppSettings(type: AppSettingsType.notification);
+    if (!mounted) return;
+    setState(() {
+      _permission = QuickRideNotifications.notificationAuthorizationStatus();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Notifications')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const Icon(Icons.notifications_active_outlined, size: 42),
+          const SizedBox(height: 12),
+          Text(
+            'Quick Ride uses notifications to keep you informed about ride confirmations, driver arrival, ride status, cancellations, safety alerts and important service announcements.',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: 18),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: FutureBuilder<dynamic>(
+                future: _permission,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircularProgressIndicator(),
+                      title: Text('Checking notification permission'),
+                    );
+                  }
+                  final status = snapshot.data;
+                  final raw = status?.toString().split('.').last;
+                  final enabled = raw == 'authorized' || raw == 'provisional';
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      enabled ? Icons.notifications_active_rounded : Icons.notifications_off_outlined,
+                      color: enabled ? Colors.green : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    title: Text(enabled ? 'Notifications enabled' : 'Notification status'),
+                    subtitle: Text(raw?.replaceAll('_', ' ') ?? 'Notification service is not configured in this build'),
+                  );
+                },
+              ),
             ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _openSettings,
+            icon: const Icon(Icons.settings_outlined),
+            label: const Text('Open notification settings'),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Quick Ride does not change your device notification permission automatically from this screen. You can review or change it in Android settings.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ],
       ),
     );
@@ -778,6 +784,40 @@ class _CustomerSettingsScreenState extends State<CustomerSettingsScreen> {
 
   String _t(String english, String hindi) =>
       QuickRideCustomerPreferences.locale.value.languageCode == 'hi' ? hindi : english;
+
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_t('Sign out of Quick Ride?', 'Quick Ride से साइन आउट करें?')),
+        content: Text(_t(
+          'You will be signed out on this device. Your account and ride records remain available when you sign in again. Signing out does not cancel an active ride.',
+          'इस डिवाइस पर आपका साइन-इन समाप्त हो जाएगा। दोबारा साइन-इन करने पर आपका खाता और राइड रिकॉर्ड उपलब्ध रहेंगे। साइन आउट करने से सक्रिय राइड रद्द नहीं होगी।',
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(_t('Cancel', 'रद्द करें')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(_t('Sign out', 'साइन आउट')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await QuickRideAuth.signOut();
+      if (mounted) context.go('/');
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_t('Could not sign out: $error', 'साइन आउट नहीं हो सका: $error'))),
+        );
+      }
+    }
+  }
 
   Future<void> _deleteAccount() async {
     final confirmed = await showDialog<bool>(
@@ -896,19 +936,7 @@ class _CustomerSettingsScreenState extends State<CustomerSettingsScreen> {
               title: Text(_t('Notification preferences', 'सूचना प्राथमिकताएं')),
               subtitle: Text(_t('Manage notification permission in device settings', 'डिवाइस सेटिंग में सूचना अनुमति प्रबंधित करें')),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (dialogContext) => AlertDialog(
-                  title: Text(_t('Notifications', 'सूचनाएं')),
-                  content: Text(_t(
-                    'Ride updates and safety alerts use Android notification permission. To change permission, open Android Settings → Apps → Quick Ride → Notifications.',
-                    'राइड अपडेट और सुरक्षा अलर्ट के लिए Android सूचना अनुमति आवश्यक है। अनुमति बदलने के लिए Android Settings → Apps → Quick Ride → Notifications खोलें।',
-                  )),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(_t('OK', 'ठीक है'))),
-                  ],
-                ),
-              ),
+              onTap: () => context.push('/notification-settings'),
             ),
           ),
           Card(
@@ -918,22 +946,48 @@ class _CustomerSettingsScreenState extends State<CustomerSettingsScreen> {
               title: Text(_t('Location preferences', 'लोकेशन प्राथमिकताएं')),
               subtitle: Text(_t('Control location permission for pickup and maps', 'पिकअप और मैप के लिए लोकेशन अनुमति नियंत्रित करें')),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (dialogContext) => AlertDialog(
-                  title: Text(_t('Location access', 'लोकेशन अनुमति')),
-                  content: Text(_t(
-                    'Quick Ride uses your location to help set a pickup point and provide ride-related map features. You can change location permission in Android Settings → Apps → Quick Ride → Permissions.',
-                    'Quick Ride पिकअप स्थान और राइड मैप सुविधाओं के लिए आपकी लोकेशन का उपयोग करता है। अनुमति बदलने के लिए Android Settings → Apps → Quick Ride → Permissions खोलें।',
-                  )),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(_t('OK', 'ठीक है'))),
-                  ],
-                ),
-              ),
+              onTap: () => AppSettings.openAppSettings(type: AppSettingsType.location),
             ),
           ),
-          if (user != null)
+          Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.favorite_border_rounded),
+                  title: Text(_t('Favourite places', 'पसंदीदा स्थान')),
+                  subtitle: Text(_t('Manage your favourite pickup locations', 'अपने पसंदीदा पिकअप स्थान प्रबंधित करें')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/favourite-places'),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  title: Text(_t('Privacy policy', 'गोपनीयता नीति')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/privacy-policy'),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.description_outlined),
+                  title: Text(_t('Terms & Conditions', 'नियम और शर्तें')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/terms'),
+                ),
+              ],
+            ),
+          ),
+          if (user != null) ...[
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                leading: Icon(Icons.logout_rounded, color: colors.error),
+                title: Text(_t('Logout', 'लॉग आउट'), style: TextStyle(color: colors.error, fontWeight: FontWeight.w700)),
+                subtitle: Text(_t('Sign out of this device', 'इस डिवाइस से साइन आउट करें')),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _confirmSignOut,
+              ),
+            ),
             Card(
               margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
@@ -949,6 +1003,7 @@ class _CustomerSettingsScreenState extends State<CustomerSettingsScreen> {
                 onTap: _deleting ? null : _deleteAccount,
               ),
             ),
+          ],
         ],
       ),
     );
