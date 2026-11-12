@@ -10,7 +10,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../customer_preferences.dart';
-import 'customer_navigation_bar.dart';
 
 class CustomerProfileScreen extends StatefulWidget {
   const CustomerProfileScreen({super.key});
@@ -763,7 +762,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             ),
         ],
       ),
-      bottomNavigationBar: const CustomerNavigationBar(selectedIndex: 3),
     );
   }
 }
