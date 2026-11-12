@@ -1,12 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+/// Holds the four customer destinations in GoRouter's indexed stack.
+/// Inactive branches stay mounted, preserving the Home map and scroll state.
+class CustomerTabShell extends StatelessWidget {
+  const CustomerTabShell({super.key, required this.navigationShell});
+
+  final StatefulNavigationShell navigationShell;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: navigationShell,
+        bottomNavigationBar: CustomerNavigationBar(
+          navigationShell: navigationShell,
+        ),
+      );
+}
+
 class CustomerNavigationBar extends StatelessWidget {
-  const CustomerNavigationBar({super.key, required this.selectedIndex});
+  const CustomerNavigationBar({super.key, required this.navigationShell});
 
-  final int selectedIndex;
+  final StatefulNavigationShell navigationShell;
 
-  static const _routes = ['/', '/my-rides', '/services', '/profile'];
   static const _items = <({IconData icon, IconData selectedIcon, String label})>[
     (icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'Home'),
     (icon: Icons.route_outlined, selectedIcon: Icons.route_rounded, label: 'My Rides'),
@@ -17,19 +32,20 @@ class CustomerNavigationBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final selectedIndex = navigationShell.currentIndex;
     return SafeArea(
       top: false,
-      minimum: EdgeInsets.fromLTRB(16, 8, 16, safeBottom > 0 ? 4 : 10),
+      minimum: EdgeInsets.fromLTRB(16, 5, 16, safeBottom > 0 ? 3 : 7),
       child: Container(
-        padding: const EdgeInsets.all(7),
+        padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
           color: const Color(0xFF17251E),
-          borderRadius: BorderRadius.circular(32),
+          borderRadius: BorderRadius.circular(25),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.16),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -45,41 +61,44 @@ class CustomerNavigationBar extends StatelessWidget {
                   selected: selected,
                   label: item.label,
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(26),
-                    onTap: () {
-                      if (!selected) context.go(_routes[index]);
-                    },
+                    borderRadius: BorderRadius.circular(21),
+                    onTap: () => navigationShell.goBranch(
+                      index,
+                      initialLocation: index == selectedIndex,
+                    ),
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 190),
+                      duration: const Duration(milliseconds: 180),
                       curve: Curves.easeOutCubic,
-                      constraints: const BoxConstraints(minHeight: 72),
-                      padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 3),
+                      constraints: const BoxConstraints(minHeight: 49),
+                      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 2),
                       decoration: BoxDecoration(
-                        color: selected ? const Color(0xFF315D48) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(26),
+                        color: selected
+                            ? const Color(0xFF83CFFF)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(21),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
                             selected ? item.selectedIcon : item.icon,
-                            size: 27,
+                            size: 21,
                             color: selected
-                                ? const Color(0xFFE2F5E9)
-                                : const Color(0xFFC2CEC7),
+                                ? const Color(0xFF102B3D)
+                                : const Color(0xFFC5D1CA),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 2),
                           Text(
                             item.label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 11.5,
-                              height: 1.1,
+                              fontSize: 9.5,
+                              height: 1.05,
                               fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                               color: selected
-                                  ? const Color(0xFFE2F5E9)
-                                  : const Color(0xFFC2CEC7),
+                                  ? const Color(0xFF102B3D)
+                                  : const Color(0xFFC5D1CA),
                             ),
                           ),
                         ],
