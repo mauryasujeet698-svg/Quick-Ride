@@ -12,6 +12,7 @@ import 'package:quick_ride_maps/quick_ride_maps.dart';
 
 import 'customer_preferences.dart';
 import 'src/booking_screen.dart';
+import 'src/customer_navigation_bar.dart';
 import 'src/home_screen.dart';
 import 'src/my_rides_screen.dart';
 import 'src/profile_screen.dart';
@@ -140,7 +141,44 @@ class QuickRideCustomerApp extends StatelessWidget {
 
   static final router = GoRouter(
     routes: [
-      GoRoute(path: '/', builder: (_, __) => const CustomerHomeScreen()),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            CustomerTabShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (_, __) => const CustomerHomeScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/my-rides',
+                builder: (_, __) => const CustomerRidesScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/services',
+                builder: (_, __) => const CustomerServicesScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/profile',
+                builder: (_, __) => const CustomerProfileScreen(),
+              ),
+            ],
+          ),
+        ],
+      ),
       GoRoute(
         path: '/book',
         builder: (_, state) {
