@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -77,8 +76,6 @@ class QuickRideMaps {
       }
     }
   }
-  static String? _activeSearchSessionToken;
-  static DateTime? _searchSessionStartedAt;
   static bool _configured = false;
 
   /// Allows widget tests to replace the native map canvas. Production leaves this null.
@@ -147,22 +144,9 @@ class QuickRideMaps {
     );
   }
 
-  static String _sessionToken() {
-    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
-  }
-
-  static Uri _searchUri(String path, Map<String, String> parameters) {
-    _requireToken();
-    return Uri.https('api.mapbox.com', '/search/searchbox/v1$path', {
-      ...parameters,
-      'access_token': accessToken,
-    });
-  }
-
+  /// Uses Geocoding v6 rather than Search Box: Search Box coverage is limited
+  /// to selected regions and does not include India. Geocoding v6 supports
+  /// country-filtered autocomplete and returns the coordinates with each result.
   static Future<List<QuickRideSearchResult>> searchSuggestions({
     required String query,
     LatLng? proximity,
@@ -170,100 +154,87 @@ class QuickRideMaps {
   }) async {
     final text = query.trim();
     if (text.length < 2) return const [];
-    final startedAt = _searchSessionStartedAt;
-    if (_activeSearchSessionToken == null ||
-        startedAt == null ||
-        DateTime.now().difference(startedAt) > const Duration(minutes: 2)) {
-      _activeSearchSessionToken = _sessionToken();
-      _searchSessionStartedAt = DateTime.now();
-    }
-    final sessionToken = _activeSearchSessionToken!;
-    final uri = _searchUri('/suggest', {
+    _requireToken();
+    final uri = Uri.https('api.mapbox.com', '/search/geocode/v6/forward', {
       'q': text,
-      'session_token': sessionToken,
+      'autocomplete': 'true',
       'limit': '8',
       'language': language,
       'country': 'IN',
+      'types': 'country,region,postcode,district,place,locality,neighborhood,address,street',
       if (proximity != null)
         'proximity': '${proximity.longitude},${proximity.latitude}',
+      'access_token': _normalizedAccessToken,
     });
     final response = await _http
-        .get(uri, headers: const {'Accept': 'application/json'})
+        .get(uri, headers: const {'Accept': 'application/geo+json'})
         .timeout(const Duration(seconds: 12));
     if (response.statusCode != 200) {
       throw StateError('Mapbox place search failed (${response.statusCode}).');
     }
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final suggestions = payload['suggestions'] as List<dynamic>? ?? const [];
-    return suggestions
+    final features = payload['features'] as List<dynamic>? ?? const [];
+    return features
         .whereType<Map>()
         .map((raw) => Map<String, dynamic>.from(raw))
-        .where((item) => item['mapbox_id'] is String)
-        .map((item) {
-          final name = (item['name'] ?? item['place_formatted'] ?? 'Location').toString();
-          final address = (item['full_address'] ?? item['place_formatted'] ?? name).toString();
+        .map((feature) {
+          final properties = Map<String, dynamic>.from(
+            feature['properties'] as Map? ?? const {},
+          );
+          final geometry = Map<String, dynamic>.from(
+            feature['geometry'] as Map? ?? const {},
+          );
+          final coordinates = geometry['coordinates'] as List<dynamic>? ?? const [];
+          if (coordinates.length < 2 ||
+              coordinates[0] is! num ||
+              coordinates[1] is! num) {
+            return null;
+          }
+          final context = Map<String, dynamic>.from(
+            properties['context'] as Map? ?? const {},
+          );
+          final postcodeContext = context['postcode'];
+          final contextPostalCode = postcodeContext is Map
+              ? (postcodeContext['name'] ?? postcodeContext['text'])?.toString()
+              : null;
+          final name = (properties['name_preferred'] ??
+                  properties['name'] ??
+                  properties['full_address'] ??
+                  'Location')
+              .toString();
+          final address = (properties['full_address'] ??
+                  properties['place_formatted'] ??
+                  name)
+              .toString();
           return QuickRideSearchResult(
-            mapboxId: item['mapbox_id'].toString(),
-            sessionToken: sessionToken,
-            point: const LatLng(0, 0),
+            mapboxId: (properties['mapbox_id'] ?? feature['id'] ?? '').toString(),
+            point: LatLng(
+              (coordinates[1] as num).toDouble(),
+              (coordinates[0] as num).toDouble(),
+            ),
             name: name,
             address: address,
-            resultType: (item['feature_type'] ?? '').toString(),
-            postalCode: _postalCode(address),
+            resultType: (properties['feature_type'] ?? '').toString(),
+            postalCode: _postalCode(address) ?? contextPostalCode,
           );
         })
+        .whereType<QuickRideSearchResult>()
         .toList(growable: false);
   }
 
+  /// Geocoding v6 already returns coordinates in each suggestion, so selection
+  /// does not need a second Search Box retrieve request or a temporary session.
   static Future<QuickRidePlace> retrieveSuggestion(
     QuickRideSearchResult suggestion,
   ) async {
-    _requireToken();
-    if (suggestion.sessionToken == null || suggestion.sessionToken!.isEmpty) {
-      throw StateError('This search result has expired. Search again and select a result.');
+    if (suggestion.point.latitude == 0 && suggestion.point.longitude == 0) {
+      throw StateError('This search result has no coordinates. Search again and select a result.');
     }
-    final uri = _searchUri('/retrieve/${Uri.encodeComponent(suggestion.mapboxId)}', {
-      'session_token': suggestion.sessionToken!,
-    });
-    final response = await _http
-        .get(uri, headers: const {'Accept': 'application/geo+json'})
-        .timeout(const Duration(seconds: 12));
-    if (_activeSearchSessionToken == suggestion.sessionToken) {
-      _activeSearchSessionToken = null;
-      _searchSessionStartedAt = null;
-    }
-    if (response.statusCode != 200) {
-      throw StateError('Mapbox could not retrieve the selected place (${response.statusCode}).');
-    }
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final features = payload['features'] as List<dynamic>? ?? const [];
-    if (features.isEmpty || features.first is! Map) {
-      throw StateError('Mapbox returned no coordinates for this place.');
-    }
-    final feature = Map<String, dynamic>.from(features.first as Map);
-    final geometry = Map<String, dynamic>.from(feature['geometry'] as Map? ?? const {});
-    final coordinates = geometry['coordinates'] as List<dynamic>? ?? const [];
-    if (coordinates.length < 2 || coordinates[0] is! num || coordinates[1] is! num) {
-      throw StateError('Mapbox returned invalid coordinates for this place.');
-    }
-    final properties = Map<String, dynamic>.from(feature['properties'] as Map? ?? const {});
-    final context = Map<String, dynamic>.from(properties['context'] as Map? ?? const {});
-    final postcodeContext = context['postcode'];
-    final contextPostalCode = postcodeContext is Map
-        ? (postcodeContext['name'] ?? postcodeContext['text'])?.toString()
-        : null;
-    final longitude = (coordinates[0] as num).toDouble();
-    final latitude = (coordinates[1] as num).toDouble();
-    final name = (properties['name'] ?? suggestion.name).toString();
-    final address = (properties['full_address'] ??
-            properties['place_formatted'] ??
-            suggestion.address)
-        .toString();
     return QuickRidePlace(
-      point: LatLng(latitude, longitude),
-      name: name,
-      address: address,
-      postalCode: _postalCode(address) ?? contextPostalCode,
+      point: suggestion.point,
+      name: suggestion.name,
+      address: suggestion.address,
+      postalCode: suggestion.postalCode,
     );
   }
 
