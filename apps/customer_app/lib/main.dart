@@ -71,7 +71,7 @@ class _QuickRideCustomerBootstrapState extends State<QuickRideCustomerBootstrap>
         if (initial != null) _handleOpenedMessage(initial);
       }
     } catch (error, stack) {
-      debugPrint('Quick-Ride Customer startup failed: $error\n$stack');
+      debugPrint('Quick-Ride Customer startup failed (' + error.runtimeType.toString() + ').');
     } finally {
       if (mounted) setState(() => _ready = true);
     }
