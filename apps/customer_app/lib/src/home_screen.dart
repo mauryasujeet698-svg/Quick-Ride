@@ -264,7 +264,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     final colors = Theme.of(context).colorScheme;
     final pickupLabel = _pickup?.address ??
         (_loadingLocation ? 'Detecting your location…' : 'Choose pickup location');
-    final destinationLabel = _destination?.address ?? 'Where would you like to go?';
 
     final map = Stack(
       fit: StackFit.expand,
@@ -294,10 +293,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     );
 
     final bookingCard = Card(
-      elevation: 2,
+      elevation: 1,
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
         child: Column(
           children: [
             ListTile(
@@ -318,7 +317,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               trailing: IconButton(
-                tooltip: 'Change pickup',
+                tooltip: 'Edit pickup',
                 onPressed: () => setState(() {
                   _selectingPickup = true;
                   _searchController.clear();
@@ -329,39 +328,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               ),
             ),
             const Divider(height: 1),
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(
-                Icons.flag_outlined,
-                color: Color(0xFF2463EB),
-              ),
-              title: const Text(
-                'Destination',
-                style: TextStyle(fontSize: 11, letterSpacing: 0.8),
-              ),
-              subtitle: Text(
-                destinationLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: _destination == null
-                      ? colors.onSurfaceVariant
-                      : colors.onSurface,
-                ),
-              ),
-              trailing: IconButton(
-                tooltip: 'Change destination',
-                onPressed: () => setState(() {
-                  _selectingPickup = false;
-                  _searchController.clear();
-                  _suggestions = const [];
-                  _error = null;
-                }),
-                icon: const Icon(Icons.edit_outlined),
-              ),
-            ),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
@@ -372,7 +339,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                     onSubmitted: _loadSuggestions,
                     decoration: InputDecoration(
                       hintText: _selectingPickup
-                          ? 'Enter pickup location'
+                          ? 'Search pickup location'
                           : 'Enter destination',
                       prefixIcon: const Icon(Icons.search_rounded),
                       isDense: true,
@@ -442,17 +409,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 ),
               ),
             ],
-            if (_pickup != null && _destination != null) ...[
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _openBooking,
-                  icon: const Icon(Icons.search_rounded),
-                  label: const Text('View ride options'),
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -460,10 +416,13 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
     final recentPlaces = QuickRideCustomerPreferences.recentPlaces.value;
     return Scaffold(
-      body: SafeArea(
-        child: CustomScrollView(
+      body: CustomScrollView(
           slivers: [
-            CollapsibleMapSliver(child: map),
+            CollapsibleMapSliver(
+              child: map,
+              expandedHeightFactor: 0.48,
+              collapsedHeightFactor: 0.20,
+            ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
               sliver: SliverList(
@@ -569,7 +528,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 
