@@ -53,7 +53,7 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error.toString();
+        _error = 'Ride offer could not be loaded. Please try again.';
         _loading = false;
       });
     }
@@ -102,7 +102,7 @@ class _DriverOfferScreenState extends State<DriverOfferScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not ${accept ? 'accept' : 'reject'} this offer: $error')),
+        SnackBar(content: Text('Could not ' + (accept ? 'accept' : 'reject') + ' this offer. Please try again.')),
       );
       await _loadOffer();
     } finally {
