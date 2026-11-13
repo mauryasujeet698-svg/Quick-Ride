@@ -11,6 +11,7 @@ import 'package:quick_ride_backend/quick_ride_backend.dart';
 import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'driver_navigation_drawer.dart';
 
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
@@ -736,6 +737,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   Widget _previewScreen() {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
+      drawer: const DriverNavigationDrawer(),
       appBar: AppBar(
         title: const Text('Quick Ride Captain'),
         actions: [
@@ -884,6 +886,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         .from('rides').stream(primaryKey: ['id']).eq('driver_id', user.id);
 
     return Scaffold(
+      drawer: const DriverNavigationDrawer(),
       appBar: AppBar(
         title: const Text('Quick Ride Captain'),
         actions: [
