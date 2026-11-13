@@ -269,7 +269,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       }
       if (_pickup != null && _destination != null) {
         await _refreshPreviewRoute();
-        if (QuickRideAuth.currentUser != null && _categories.isNotEmpty) {
+        if (!_selectPickup && QuickRideAuth.currentUser != null && _categories.isNotEmpty) {
           unawaited(_getQuote());
         }
       }
