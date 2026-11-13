@@ -201,11 +201,14 @@ jobs:
           for value in "${signing_values[@]}"; do
             [[ -n "$value" ]] && signing_count=$((signing_count + 1))
           done
-          if [[ "$signing_count" != "4" ]]; then
-            echo "::error::Stable Android signing is required for reliable Google sign-in. Configure ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD in GitHub Actions secrets."
+          if [[ "$signing_count" == "0" ]]; then
+            echo "::warning::Stable release-signing secrets are not configured. Continuing with an Android debug certificate for this QA build. Google sign-in will only work when this certificate's SHA-1 is registered with the Android OAuth client."
+          elif [[ "$signing_count" != "4" ]]; then
+            echo "::error::Android signing secrets are only partially configured. Set all four (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD), or remove all four to use QA debug signing."
             exit 1
+          else
+            echo "Stable Android release signing is configured."
           fi
-          echo "Stable Android release signing is configured."
       - name: Verify Mapbox token and native services
         shell: bash
         run: |
