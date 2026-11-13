@@ -679,16 +679,32 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
           ));
         }
 
-        if (widget.showUserLocation) {
-          addMarker(widget.currentPosition, const Color(0xFF2463EB), 8);
+        final location = widget.showUserLocation ? widget.currentPosition : null;
+        if (location != null) {
+          // Ola-style anchored locator: a green pin head, a short dark stem,
+          // and the blue current-position dot. All are map annotations, so
+          // they stay attached to the geographic location while panning/zooming.
+          final pinHead = LatLng(location.latitude + 0.00010, location.longitude);
+          addMarker(pinHead, const Color(0xFF159B65), 8);
+          addMarker(location, const Color(0xFF2463EB), 5);
+          await route.create(mb.PolylineAnnotationOptions(
+            geometry: mb.LineString(
+              coordinates: [
+                mb.Position(location.longitude, location.latitude),
+                mb.Position(pinHead.longitude, pinHead.latitude),
+              ],
+            ),
+            lineColor: const Color(0xFF263238).toARGB32(),
+            lineWidth: 2.5,
+          ));
+        } else {
+          addMarker(widget.pickup, const Color(0xFF159B65), 8);
         }
-        addMarker(widget.pickup, const Color(0xFF159B65), 8);
         addMarker(widget.destination, const Color(0xFFD94747), 8);
         if (markerOptions.isNotEmpty) {
           await markers.createMulti(markerOptions);
         }
 
-        await route.deleteAll();
         if (widget.routePoints.length >= 2) {
           await route.create(mb.PolylineAnnotationOptions(
             geometry: mb.LineString(
