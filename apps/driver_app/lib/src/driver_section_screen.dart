@@ -225,7 +225,7 @@ class _DriverSectionScreenState extends State<DriverSectionScreen> {
                 child: Text('Preview mode · Sign in to view your private ' + page.title.toLowerCase() + ' information.'),
               ),
             ),
-          if (widget.section == 'settings' || widget.section == 'support' || widget.section == 'privacy' || widget.section == 'about' || !needsData) ...[
+          if (!needsData || !signedIn || widget.section == 'settings' || widget.section == 'support' || widget.section == 'privacy' || widget.section == 'about') ...[
             ...page.details.map((detail) => Padding(
                   padding: const EdgeInsets.only(bottom: 13),
                   child: Row(
