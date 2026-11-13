@@ -98,7 +98,7 @@ class _AdminNotificationCenterScreenState
       if (!mounted) return;
       setState(() => _result = data);
     } catch (error) {
-      if (mounted) setState(() => _error = 'Notification could not be sent: $error');
+      if (mounted) setState(() => _error = 'Notification could not be sent. Please try again.');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
