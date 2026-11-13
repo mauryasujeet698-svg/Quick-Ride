@@ -60,7 +60,7 @@ class _CustomerRidesScreenState extends State<CustomerRidesScreen> {
           if (snapshot.hasError) {
             return Center(child: Padding(
               padding: const EdgeInsets.all(24),
-              child: Text('Ride history could not be loaded: ' + snapshot.error.toString()),
+              child: const Text('Ride history is temporarily unavailable.'),
             ));
           }
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
@@ -202,7 +202,7 @@ class _RideCard extends StatelessWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not prepare this ride again: $error')),
+          SnackBar(content: Text('Could not prepare this ride again. Please try again.')),
         );
       }
     }
@@ -253,7 +253,7 @@ class _RideCard extends StatelessWidget {
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not cancel this ride: ' + error.toString())),
+          SnackBar(content: Text('Could not cancel this ride. Please try again.')),
         );
       }
     }
