@@ -136,8 +136,8 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_t(
-              'Could not update your details: $error',
-              'जानकारी अपडेट नहीं हो सकी: $error',
+              'Could not update your details. Please try again.',
+              'जानकारी अपडेट नहीं हो सकी। कृपया फिर प्रयास करें।',
             )),
           ),
         );
@@ -199,8 +199,8 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_t(
-              'Safety tools could not be opened: $error',
-              'सुरक्षा सुविधाएं नहीं खुल सकीं: $error',
+              'Safety tools could not be opened. Please try again.',
+              'सुरक्षा सुविधाएं नहीं खुल सकीं। कृपया फिर प्रयास करें।',
             )),
           ),
         );
@@ -360,7 +360,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Fare history could not be loaded: ' + error.toString())),
+          SnackBar(content: Text('Fare history is temporarily unavailable.')),
         );
       }
     }
@@ -564,7 +564,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_t('Could not open the share menu: $error', 'शेयर मेन्यू नहीं खुल सका: $error'))),
+          SnackBar(content: Text(_t('Could not open the share menu. Please try again.', 'शेयर मेन्यू नहीं खुल सका। कृपया फिर प्रयास करें।'))),
         );
       }
     }
@@ -582,7 +582,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_t('Could not check for updates: $error', 'अपडेट नहीं देख सके: $error'))),
+          SnackBar(content: Text(_t('Could not check for updates. Please try again.', 'अपडेट नहीं देख सके। कृपया फिर प्रयास करें।'))),
         );
       }
     }
@@ -616,7 +616,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_t('Could not sign out: $error', 'साइन आउट नहीं हो सका: $error'))),
+          SnackBar(content: Text(_t('Could not sign out. Please try again.', 'साइन आउट नहीं हो सका। कृपया फिर प्रयास करें।'))),
         );
       }
     }
@@ -650,7 +650,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                           } catch (error) {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(_t('Sign-in failed: $error', 'साइन-इन विफल: $error'))),
+                                SnackBar(content: Text(_t('Sign-in failed. Please try again.', 'साइन-इन विफल। कृपया फिर प्रयास करें।'))),
                               );
                             }
                           }
@@ -825,7 +825,7 @@ class _CustomerSettingsScreenState extends State<CustomerSettingsScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_t('Account deletion failed: $error', 'खाता हटाने में विफल: $error'))),
+          SnackBar(content: Text(_t('Account deletion failed. Please try again.', 'खाता हटाने में विफल। कृपया फिर प्रयास करें।'))),
         );
       }
     } finally {
