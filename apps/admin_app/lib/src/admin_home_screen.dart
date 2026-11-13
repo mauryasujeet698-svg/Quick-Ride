@@ -41,14 +41,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   String? errorText;
   StreamSubscription<dynamic>? _authSubscription;
 
+  bool get _isDesignatedAdmin =>
+      QuickRideAuth.currentUser?.email?.toLowerCase() == 'mauryasujeet698@gmail.com';
+
   @override
   void initState() {
     super.initState();
     if (QuickRideBackend.isInitialized) {
-      if (QuickRideAuth.currentUser != null) unawaited(load());
+      if (_isDesignatedAdmin) unawaited(load());
       _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
         if (!mounted) return;
-        if (QuickRideAuth.currentUser != null) {
+        if (_isDesignatedAdmin) {
           setState(() {});
           if (directory == null && !busy) unawaited(load());
         } else {
@@ -636,8 +639,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!QuickRideBackend.isInitialized ||
-        QuickRideAuth.currentUser == null) {
+    if (!QuickRideBackend.isInitialized || !_isDesignatedAdmin) {
       return _previewScreen();
     }
 
