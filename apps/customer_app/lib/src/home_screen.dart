@@ -87,7 +87,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       if (!mounted) return;
       setState(() {
         _loadingLocation = false;
-        _error = 'Location is unavailable. Search for your pickup or enter it manually. ' + error.toString();
+        _error = 'Location is unavailable. Search for your pickup or enter it manually.';
       });
     }
   }
@@ -117,7 +117,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       if (!mounted) return;
       setState(() => _suggestions = results);
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = 'Search is temporarily unavailable. Please try again.');
     } finally {
       if (mounted) setState(() => _searching = false);
     }
@@ -159,7 +159,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     } catch (error) {
       if (mounted) setState(() {
         _searching = false;
-        _error = error.toString();
+        _error = 'Could not select that location. Please search again.';
       });
     }
   }
@@ -185,7 +185,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     } catch (error) {
       if (mounted) setState(() {
         _route = null;
-        _error = 'Route preview is temporarily unavailable. You can still continue to fare search. ' + error.toString();
+        _error = 'Route preview is temporarily unavailable. You can still continue to fare search.';
       });
     } finally {
       if (mounted) setState(() => _loadingRoute = false);
