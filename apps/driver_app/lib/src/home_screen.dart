@@ -101,7 +101,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         _categoryId = rows.isEmpty ? null : (rows.first['id'] as num).toInt();
       });
     } catch (error) {
-      if (mounted) setState(() => _message = 'Vehicle options unavailable: $error');
+      if (mounted) setState(() => _message = 'Vehicle options are temporarily unavailable. Please try again.');
     }
   }
 
@@ -301,7 +301,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     try {
       await work();
     } catch (error) {
-      if (mounted) setState(() => _message = error.toString());
+      if (mounted) setState(() => _message = 'The requested action could not be completed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -352,7 +352,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           .toList();
       if (mounted) setState(() => _documents = rows);
     } catch (error) {
-      if (mounted) setState(() => _message = 'Document status could not be loaded: $error');
+      if (mounted) setState(() => _message = 'Document status could not be loaded. Please try again.');
     } finally {
       if (mounted) setState(() => _loadingDocuments = false);
     }
@@ -422,7 +422,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         setState(() => _message = 'Document uploaded. It is waiting for Admin review.');
       }
     } catch (error) {
-      if (mounted) setState(() => _message = 'Document upload failed: $error');
+      if (mounted) setState(() => _message = 'Document upload failed. Please try again.');
     } finally {
       if (mounted) setState(() => _uploadingDocumentType = null);
     }
@@ -593,7 +593,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _message = 'Could not restore driver availability: $error');
+        setState(() => _message = 'Driver availability could not be restored. Please try again.');
       }
       _availabilitySyncKey = null;
     } finally {
@@ -699,11 +699,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             'recordedAt': position.timestamp.toUtc().toIso8601String(),
           });
         } catch (error) {
-          if (mounted) setState(() => _message = 'Location update failed: $error');
+          if (mounted) setState(() => _message = 'Location update failed. Check GPS and connection.');
         }
       },
       onError: (Object error) {
-        if (mounted) setState(() => _message = 'GPS stream stopped: $error');
+        if (mounted) setState(() => _message = 'GPS updates stopped. Check location permission and GPS.');
       },
     );
   }
