@@ -104,7 +104,10 @@ class _QuickRideAdminBootstrapState extends State<QuickRideAdminBootstrap> {
       debugPrint('Quick-Ride Admin startup failed: $error\n$stack');
       if (mounted) {
         setState(() {
-          _error = error.toString();
+          // Keep the complete read-only Admin preview navigable even if the
+          // backend is temporarily unavailable. Live actions remain protected.
+          _error = 'Connection unavailable. You can still explore Admin in read-only mode.';
+          _ready = true;
           _busy = false;
         });
       }
