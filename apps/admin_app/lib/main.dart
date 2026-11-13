@@ -10,6 +10,7 @@ import 'package:quick_ride_notifications/quick_ride_notifications.dart';
 import 'src/admin_home_screen.dart';
 import 'src/operations_screen.dart';
 import 'src/notification_center_screen.dart';
+import 'src/admin_navigation_drawer.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -184,6 +185,12 @@ class QuickRideAdminApp extends StatelessWidget {
     GoRoute(path: '/', builder: (_, __) => const AdminHomeScreen()),
     GoRoute(path: '/operations', builder: (_, __) => const AdminOperationsScreen()),
     GoRoute(path: '/notifications', builder: (_, __) => const AdminNotificationCenterScreen()),
+    GoRoute(
+      path: '/info/:section',
+      builder: (_, state) => AdminInfoScreen(
+        section: state.pathParameters['section'] ?? 'about',
+      ),
+    ),
   ]);
 
   @override
