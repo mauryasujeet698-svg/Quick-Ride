@@ -504,19 +504,48 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
     }
   }
 
+  Widget _bookingLocationChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.96),
+      elevation: 2,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(13),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Icon(icon, size: 18),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              const Icon(Icons.edit_outlined, size: 17),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Book a ride'),
-        leading: IconButton(
-          onPressed: () => context.pop(),
-          icon: const Icon(Icons.arrow_back),
-        ),
-      ),
       body: CustomScrollView(
         slivers: [
           CollapsibleMapSliver(
+            expandedHeightFactor: 0.54,
+            collapsedHeightFactor: 0.20,
             child: SizedBox.expand(
               child: Stack(
               children: [
@@ -557,10 +586,40 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                     }
                   },
                   fitRouteBottomInset: 70,
-                  onTap: (point) => _setPoint(
-                    longitude: point.longitude,
-                    latitude: point.latitude,
-                    pickup: _selectPickup,
+                ),
+                Positioned(
+                  left: 14,
+                  top: MediaQuery.paddingOf(context).top + 10,
+                  child: Material(
+                    color: Theme.of(context).colorScheme.surface,
+                    shape: const CircleBorder(),
+                    elevation: 3,
+                    child: IconButton(
+                      tooltip: 'Back',
+                      onPressed: () => context.pop(),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 68,
+                  right: 14,
+                  top: MediaQuery.paddingOf(context).top + 10,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _bookingLocationChip(
+                        icon: Icons.trip_origin_rounded,
+                        label: _pickup?.address ?? 'Choose pickup',
+                        onTap: () => setState(() => _selectPickup = true),
+                      ),
+                      const SizedBox(height: 6),
+                      _bookingLocationChip(
+                        icon: Icons.flag_rounded,
+                        label: _destination?.address ?? 'Choose destination',
+                        onTap: () => setState(() => _selectPickup = false),
+                      ),
+                    ],
                   ),
                 ),
                 if (_loadingPreviewRoute)
@@ -584,34 +643,6 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                 if (!_loadingCategories && _categories.isEmpty)
                   const Text('No vehicle services are configured yet.'),
                 const SizedBox(height: 10),
-                Card(
-                  elevation: 1,
-                  child: Column(
-                    children: [
-                      ListTile(
-                        selected: _selectPickup,
-                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer,
-                        leading: const Icon(Icons.trip_origin_rounded, color: Color(0xFF159B65)),
-                        title: const Text('Pickup', style: TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: Text(_pickup?.address ?? 'Choose pickup location',
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
-                        trailing: Icon(_selectPickup ? Icons.edit_location_alt_rounded : Icons.chevron_right_rounded),
-                        onTap: () => setState(() => _selectPickup = true),
-                      ),
-                      const Divider(height: 1, indent: 14, endIndent: 14),
-                      ListTile(
-                        selected: !_selectPickup,
-                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer,
-                        leading: const Icon(Icons.flag_rounded, color: Color(0xFFD94747)),
-                        title: const Text('Destination', style: TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: Text(_destination?.address ?? 'Choose destination',
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
-                        trailing: Icon(!_selectPickup ? Icons.edit_location_alt_rounded : Icons.chevron_right_rounded),
-                        onTap: () => setState(() => _selectPickup = false),
-                      ),
-                    ],
-                  ),
-                ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
                   Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
