@@ -102,7 +102,7 @@ class _QuickRideAdminBootstrapState extends State<QuickRideAdminBootstrap> {
         });
       }
     } catch (error, stack) {
-      debugPrint('Quick-Ride Admin startup failed: $error\n$stack');
+      debugPrint('Quick-Ride Admin startup failed (' + error.runtimeType.toString() + ').');
       if (mounted) {
         setState(() {
           // Keep the complete read-only Admin preview navigable even if the
