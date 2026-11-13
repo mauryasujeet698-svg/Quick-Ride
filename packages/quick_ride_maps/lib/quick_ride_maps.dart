@@ -27,7 +27,6 @@ class QuickRideMaps {
   static const String defaultLanguage = 'en';
   static const String accessToken = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
   static final http.Client _http = http.Client();
-  static final Random _random = Random.secure();
 
   // Keep recently used location and route responses in memory so tab changes,
   // repeated selections and rebuilds do not trigger duplicate network calls.
