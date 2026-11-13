@@ -70,7 +70,7 @@ class _QuickRideCustomerBootstrapState extends State<QuickRideCustomerBootstrap>
         final initial = await QuickRideNotifications.consumeInitialMessage();
         if (initial != null) _handleOpenedMessage(initial);
       }
-    } catch (error, stack) {
+    } catch (error) {
       debugPrint('Quick-Ride Customer startup failed (' + error.runtimeType.toString() + ').');
     } finally {
       if (mounted) setState(() => _ready = true);
