@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
+import 'admin_navigation_drawer.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -504,6 +505,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Widget _previewScreen() {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
+      drawer: const AdminNavigationDrawer(),
       appBar: AppBar(
         title: const Text('Admin'),
         actions: [
@@ -641,6 +643,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
     final areas = directory?['service_areas'] as List<dynamic>? ?? [];
     return Scaffold(
+      drawer: const AdminNavigationDrawer(),
       appBar: AppBar(
         title: const Text('Operations centre'),
         actions: [
