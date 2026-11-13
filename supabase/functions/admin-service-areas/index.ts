@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
   });
 
   const [{ data: roles, error: roleError }, { data: profile, error: profileError }] = await Promise.all([
-    admin.from("user_roles").select("role").eq("user_id", user.id).in("role", ["admin", "operations"]),
+    admin.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin"),
     admin.from("profiles").select("account_status").eq("id", user.id).maybeSingle(),
   ]);
   if (roleError || profileError) return fail(500, "Unable to verify administrator permissions");
