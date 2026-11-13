@@ -13,6 +13,7 @@ import 'package:quick_ride_maps/quick_ride_maps.dart';
 import 'src/home_screen.dart';
 import 'src/navigation_screen.dart';
 import 'src/offer_screen.dart';
+import 'src/driver_section_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -146,6 +147,12 @@ class QuickRideDriverApp extends StatelessWidget {
 
   static final router = GoRouter(routes: [
     GoRoute(path: '/', builder: (_, __) => const DriverHomeScreen()),
+    GoRoute(
+      path: '/section/:section',
+      builder: (_, state) => DriverSectionScreen(
+        section: state.pathParameters['section'] ?? 'about',
+      ),
+    ),
     GoRoute(
       path: '/offer/:offerId',
       builder: (_, state) => DriverOfferScreen(
