@@ -665,6 +665,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
         }
 
         await markers.deleteAll();
+        await route.deleteAll();
         final markerOptions = <mb.CircleAnnotationOptions>[];
         void addMarker(LatLng? point, Color color, double radius) {
           if (point == null) return;
@@ -697,8 +698,13 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
             lineColor: const Color(0xFF263238).toARGB32(),
             lineWidth: 2.5,
           ));
-        } else {
-          addMarker(widget.pickup, const Color(0xFF159B65), 8);
+        }
+        final pickup = widget.pickup;
+        if (pickup != null &&
+            (location == null ||
+                pickup.latitude != location.latitude ||
+                pickup.longitude != location.longitude)) {
+          addMarker(pickup, const Color(0xFF159B65), 8);
         }
         addMarker(widget.destination, const Color(0xFFD94747), 8);
         if (markerOptions.isNotEmpty) {
