@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
+import 'admin_navigation_drawer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class AdminOperationsScreen extends StatefulWidget {
@@ -246,6 +247,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
       );
 
   Widget _previewScreen() => Scaffold(
+        drawer: const AdminNavigationDrawer(),
         appBar: AppBar(
           title: const Text('Operations preview'),
           leading: IconButton(
@@ -331,6 +333,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
     final summary = _summary ?? const <String, dynamic>{};
     final commission = summary['commission_totals'] as Map<String, dynamic>? ?? {};
     return Scaffold(
+      drawer: const AdminNavigationDrawer(),
       appBar: AppBar(
         title: const Text('Operations'),
         leading: IconButton(onPressed: () => context.pop(), icon: const Icon(Icons.arrow_back)),
