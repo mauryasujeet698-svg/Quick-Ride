@@ -179,6 +179,19 @@ jobs:
               path.write_text(text)
               print(f"Pinned flutter_tts Android buildscript AGP to 8.11.1: {path}")
           PY
+      - name: Verify Google OAuth client configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GOOGLE_WEB_CLIENT_ID//[[:space:]]/}" ]]; then
+            echo "::error::GOOGLE_WEB_CLIENT_ID is missing. Configure the Web OAuth client ID used by native Google sign-in."
+            exit 1
+          fi
+          if [[ ! "$GOOGLE_WEB_CLIENT_ID" =~ ^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$ ]]; then
+            echo "::error::GOOGLE_WEB_CLIENT_ID does not look like a Google OAuth Web client ID."
+            exit 1
+          fi
+          echo "Google OAuth Web client ID is configured (value redacted)."
       - name: Verify Mapbox token and native services
         shell: bash
         run: |
