@@ -419,7 +419,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         final details = error.toString().toLowerCase();
         final message = details.contains('canceled') || details.contains('cancelled')
             ? 'Google sign-in was cancelled. You can try again when ready.'
-            : 'Google sign-in failed. Please try again.');
+            : 'Google sign-in failed. Please try again.';
         if (mounted) setState(() => _error = message);
         return;
       }
