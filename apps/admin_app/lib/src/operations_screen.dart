@@ -87,7 +87,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
             .toList();
       });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = 'Operations request failed. Please try again.');
     }
   }
 
@@ -120,7 +120,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
             .toList();
       });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = 'Operations request failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -132,7 +132,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
       await _call('review_driver_application', {'driverId': id, 'decision': decision});
       await _refresh();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = 'Operations request failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -144,7 +144,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
       await _call('review_driver_pincode', {'requestId': id, 'decision': decision});
       await _refresh();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = 'Operations request failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -162,7 +162,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
       });
       await _refresh();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = 'Operations request failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -177,7 +177,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
       });
       await _refresh();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = 'Operations request failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -210,7 +210,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
       await _call('resolve_safety_event', {'eventId': id});
       await _refresh();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = 'Operations request failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
