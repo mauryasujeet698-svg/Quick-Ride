@@ -215,7 +215,6 @@ jobs:
           set -euo pipefail
           if [[ -z "${MAPBOX_ACCESS_TOKEN//[[:space:]]/}" ]]; then
             echo "::error::No public Mapbox token was resolved. Set an Actions repository secret or variable named MAPBOX_ACCESS_TOKEN (value starts with pk.)."
-            echo "Accepted aliases include MAPBOX_PUBLIC_ACCESS_TOKEN, MAPBOX_PUBLIC_TOKEN, MAPBOX_PUBLIC_API_KEY, MAPBOX_API_KEY, MAPBOX_API_TOKEN, MAPBOX_PUBLIC_KEY, MAPBOX_PK_TOKEN and MAPBOX_TOKEN."
             exit 1
           fi
           if [[ "$MAPBOX_ACCESS_TOKEN" != pk.* ]]; then
@@ -223,28 +222,50 @@ jobs:
             exit 1
           fi
           echo "A public Mapbox token is available to the Android build (source: $MAPBOX_TOKEN_SOURCE)."
-          style_code="$(curl --silent --show-error --output /tmp/mapbox-style.json --write-out '%{http_code}' "https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_ACCESS_TOKEN}")"
-          if [[ "$style_code" != "200" ]]; then
-            echo "::error::Mapbox Streets style preflight failed (HTTP $style_code). Check token validity and styles:read scope."
-            exit 1
-          fi
-          search_code="$(curl --silent --show-error --output /tmp/mapbox-search.json --write-out '%{http_code}' --get "https://api.mapbox.com/search/geocode/v6/forward" --data-urlencode "q=Hazratganj, Lucknow" --data-urlencode "country=IN" --data-urlencode "autocomplete=true" --data-urlencode "limit=1" --data-urlencode "access_token=${MAPBOX_ACCESS_TOKEN}")"
-          if [[ "$search_code" != "200" ]]; then
-            echo "::error::Mapbox Geocoding v6 preflight failed (HTTP $search_code). Check that the public token is active and can use Geocoding v6."
-            exit 1
-          fi
-          fonts_code="$(curl --silent --show-error --output /tmp/mapbox-fonts.pbf --write-out '%{http_code}' "https://api.mapbox.com/fonts/v1/mapbox/Arial%20Unicode%20MS%20Regular/0-255.pbf?access_token=${MAPBOX_ACCESS_TOKEN}")"
-          if [[ "$fonts_code" != "200" ]]; then
-            echo "::error::Mapbox Fonts preflight failed (HTTP $fonts_code). The mobile map token needs the public fonts:read scope."
-            exit 1
-          fi
-          route_code="$(curl --silent --show-error --output /tmp/mapbox-route.json --write-out '%{http_code}' "https://api.mapbox.com/directions/v5/mapbox/driving/80.9462,26.8467;80.9500,26.8500?overview=false&access_token=${MAPBOX_ACCESS_TOKEN}")"
-          if [[ "$route_code" != "200" ]]; then
-            echo "::error::Mapbox Directions preflight failed (HTTP $route_code). Check directions:read scope."
-            exit 1
-          fi
-          echo "Mapbox Styles, Fonts, Search Box and Directions preflight checks passed."
-
+          # Keep API diagnostics without blocking QA APK packaging. A failed API
+          # check must be visible, but it should not prevent generating installable
+          # APKs for the user to test unrelated flows.
+          check_api() {
+            local name="$1"
+            local url="$2"
+            local output="$3"
+            local code
+            code="$(curl --silent --show-error --output "$output" --write-out '%{http_code}' "$url" || true)"
+            if [[ "$code" == "200" ]]; then
+              echo "PASS: $name (HTTP 200)"
+            else
+              echo "::warning::$name preflight returned HTTP ${code:-000}; APK packaging will continue. Sanitized Mapbox response follows."
+              if command -v python3 >/dev/null 2>&1 && [[ -s "$output" ]]; then
+                python3 - "$output" <<'PY'
+          import json, sys
+          from pathlib import Path
+          p = Path(sys.argv[1])
+          try:
+              data = json.loads(p.read_text(errors="replace"))
+              if isinstance(data, dict):
+                  # Mapbox error payloads may include request metadata; print only
+                  # the safe diagnostic fields, never request URLs or credentials.
+                  for key in ("message", "code", "error", "error_description"):
+                      value = data.get(key)
+                      if isinstance(value, (str, int, float)):
+                          print(f"Mapbox {key}: {value}")
+              else:
+                  print("Mapbox returned a non-object error response.")
+          except Exception:
+              print("Mapbox returned a non-JSON error response.")
+          PY
+              fi
+              echo "$name: HTTP ${code:-000}" >> dist/MAPBOX_PREFLIGHT.txt
+            fi
+          }
+          mkdir -p dist
+          : > dist/MAPBOX_PREFLIGHT.txt
+          check_api "Mapbox Streets style" "https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_ACCESS_TOKEN}" /tmp/mapbox-style.json
+          check_api "Mapbox Geocoding v6" "https://api.mapbox.com/search/geocode/v6/forward?q=Hazratganj%2C%20Lucknow&country=IN&autocomplete=true&limit=1&access_token=${MAPBOX_ACCESS_TOKEN}" /tmp/mapbox-search.json
+          check_api "Mapbox Fonts" "https://api.mapbox.com/fonts/v1/mapbox/Arial%20Unicode%20MS%20Regular/0-255.pbf?access_token=${MAPBOX_ACCESS_TOKEN}" /tmp/mapbox-fonts.pbf
+          check_api "Mapbox Directions" "https://api.mapbox.com/directions/v5/mapbox/driving/80.9462,26.8467;80.9500,26.8500?overview=false&access_token=${MAPBOX_ACCESS_TOKEN}" /tmp/mapbox-route.json
+          echo "Mapbox API diagnostics completed. See MAPBOX_PREFLIGHT.txt in the QA artifact if any check failed."
+      
       - name: Build optimized ABI-specific APKs
         shell: bash
         run: |
