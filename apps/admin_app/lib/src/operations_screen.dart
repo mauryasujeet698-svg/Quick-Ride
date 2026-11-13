@@ -24,17 +24,20 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
   StreamSubscription<dynamic>? _authSubscription;
   Timer? _refreshTimer;
 
+  bool get _isDesignatedAdmin =>
+      QuickRideAuth.currentUser?.email?.toLowerCase() == 'mauryasujeet698@gmail.com';
+
   @override
   void initState() {
     super.initState();
     if (QuickRideBackend.isInitialized) {
-      if (QuickRideAuth.currentUser != null) {
+      if (_isDesignatedAdmin) {
         unawaited(_refresh());
         _startRefreshTimer();
       }
       _authSubscription = QuickRideAuth.authStateChanges.listen((_) {
         if (!mounted) return;
-        if (QuickRideAuth.currentUser != null) {
+        if (_isDesignatedAdmin) {
           setState(() {});
           _startRefreshTimer();
           if (_summary == null && !_busy) unawaited(_refresh());
@@ -326,8 +329,7 @@ class _AdminOperationsScreenState extends State<AdminOperationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!QuickRideBackend.isInitialized ||
-        QuickRideAuth.currentUser == null) {
+    if (!QuickRideBackend.isInitialized || !_isDesignatedAdmin) {
       return _previewScreen();
     }
     final summary = _summary ?? const <String, dynamic>{};
