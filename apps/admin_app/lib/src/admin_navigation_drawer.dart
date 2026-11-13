@@ -15,8 +15,9 @@ class AdminNavigationDrawer extends StatelessWidget {
         leading: Icon(icon),
         title: Text(label),
         onTap: () {
+          final router = GoRouter.of(context);
           Navigator.of(context).pop();
-          context.push(route);
+          router.push(route);
         },
       );
 
