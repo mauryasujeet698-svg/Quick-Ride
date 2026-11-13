@@ -182,8 +182,9 @@ class QuickRideAdminApp extends StatelessWidget {
   const QuickRideAdminApp({super.key});
 
   static final router = GoRouter(routes: [
-    GoRoute(path: '/', builder: (_, __) => const AdminHomeScreen()),
+    GoRoute(path: '/', builder: (_, __) => const AdminOperationsScreen()),
     GoRoute(path: '/operations', builder: (_, __) => const AdminOperationsScreen()),
+    GoRoute(path: '/service-areas', builder: (_, __) => const AdminHomeScreen()),
     GoRoute(path: '/notifications', builder: (_, __) => const AdminNotificationCenterScreen()),
     GoRoute(
       path: '/info/:section',
