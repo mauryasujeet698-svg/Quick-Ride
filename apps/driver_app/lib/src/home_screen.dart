@@ -122,7 +122,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       if (mounted) {
         setState(() {
           _earningsLoaded = true;
-          _earningsError = error.toString();
+          _earningsError = 'Earnings could not be loaded. Please refresh.';
         });
       }
     } finally {
@@ -1299,7 +1299,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('Shared Auto route unavailable: ${snapshot.error}'),
+              child: const Text('Shared Auto route is temporarily unavailable.'),
             ),
           );
         }
