@@ -57,7 +57,7 @@ class _QuickRideDriverBootstrapState extends State<QuickRideDriverBootstrap> {
       }
     } catch (error, stack) {
       debugPrint('Quick-Ride Driver startup failed: $error\n$stack');
-      _startupError = error.toString();
+      _startupError = 'Connection unavailable. Preview mode is active.';
     } finally {
       if (mounted) setState(() => _ready = true);
     }
