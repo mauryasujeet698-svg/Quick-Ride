@@ -1,4 +1,4 @@
-name: Build Quick-Ride Native Android Release APKs
+name: Build Quick-Ride Functional Test APKs
 on:
   pull_request:
     branches: [main]
@@ -209,63 +209,21 @@ jobs:
           else
             echo "Stable Android release signing is configured."
           fi
-      - name: Verify Mapbox token and native services
+      - name: Confirm OpenStreetMap test provider
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${MAPBOX_ACCESS_TOKEN//[[:space:]]/}" ]]; then
-            echo "::error::No public Mapbox token was resolved. Set an Actions repository secret or variable named MAPBOX_ACCESS_TOKEN (value starts with pk.)."
-            exit 1
-          fi
-          if [[ "$MAPBOX_ACCESS_TOKEN" != pk.* ]]; then
-            echo "::error::The resolved Mapbox token is not a public pk.* token."
-            exit 1
-          fi
-          echo "A public Mapbox token is available to the Android build (source: $MAPBOX_TOKEN_SOURCE)."
-          # Keep API diagnostics without blocking QA APK packaging. A failed API
-          # check must be visible, but it should not prevent generating installable
-          # APKs for the user to test unrelated flows.
-          check_api() {
-            local name="$1"
-            local url="$2"
-            local output="$3"
-            local code
-            code="$(curl --silent --show-error --output "$output" --write-out '%{http_code}' "$url" || true)"
-            if [[ "$code" == "200" ]]; then
-              echo "PASS: $name (HTTP 200)"
-            else
-              echo "::warning::$name preflight returned HTTP ${code:-000}; APK packaging will continue. Sanitized Mapbox response follows."
-              if command -v python3 >/dev/null 2>&1 && [[ -s "$output" ]]; then
-                python3 - "$output" <<'PY'
-          import json, sys
-          from pathlib import Path
-          p = Path(sys.argv[1])
-          try:
-              data = json.loads(p.read_text(errors="replace"))
-              if isinstance(data, dict):
-                  # Mapbox error payloads may include request metadata; print only
-                  # the safe diagnostic fields, never request URLs or credentials.
-                  for key in ("message", "code", "error", "error_description"):
-                      value = data.get(key)
-                      if isinstance(value, (str, int, float)):
-                          print(f"Mapbox {key}: {value}")
-              else:
-                  print("Mapbox returned a non-object error response.")
-          except Exception:
-              print("Mapbox returned a non-JSON error response.")
-          PY
-              fi
-              echo "$name: HTTP ${code:-000}" >> dist/MAPBOX_PREFLIGHT.txt
-            fi
-          }
           mkdir -p dist
-          : > dist/MAPBOX_PREFLIGHT.txt
-          check_api "Mapbox Streets style" "https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_ACCESS_TOKEN}" /tmp/mapbox-style.json
-          check_api "Mapbox Geocoding v6" "https://api.mapbox.com/search/geocode/v6/forward?q=Hazratganj%2C%20Lucknow&country=IN&autocomplete=true&limit=1&access_token=${MAPBOX_ACCESS_TOKEN}" /tmp/mapbox-search.json
-          check_api "Mapbox Fonts" "https://api.mapbox.com/fonts/v1/mapbox/Arial%20Unicode%20MS%20Regular/0-255.pbf?access_token=${MAPBOX_ACCESS_TOKEN}" /tmp/mapbox-fonts.pbf
-          check_api "Mapbox Directions" "https://api.mapbox.com/directions/v5/mapbox/driving/80.9462,26.8467;80.9500,26.8500?overview=false&access_token=${MAPBOX_ACCESS_TOKEN}" /tmp/mapbox-route.json
-          echo "Mapbox API diagnostics completed. See MAPBOX_PREFLIGHT.txt in the QA artifact if any check failed."
-      
+          cat > dist/MAP_PROVIDER.txt <<'EOF'
+          Active map provider: OpenStreetMap
+          Map tiles: https://tile.openstreetmap.org
+          Location search and reverse geocoding: Photon (OpenStreetMap data)
+          Route geometry and navigation steps: OSRM demo routing service
+          Mapbox public API token: intentionally not required or called in this test build
+          Mapbox Flutter integration: preserved in packages/quick_ride_maps/lib/quick_ride_maps_mapbox.dart
+          Switch back only after the user enables Mapbox pay-as-you-go and provides an active public token.
+          EOF
+          echo "OpenStreetMap test provider selected. No Mapbox public APIs will be called by this build."
       - name: Build optimized ABI-specific APKs
         shell: bash
         run: |
@@ -306,7 +264,7 @@ jobs:
           ]
           if any(not defines[key] for key in required):
               raise SystemExit("One or more required build defines are empty")
-          if not defines["MAPBOX_ACCESS_TOKEN"].startswith("pk."):
+          # Mapbox is deliberately inactive in this OpenStreetMap test build.
               raise SystemExit("MAPBOX_ACCESS_TOKEN must be a public pk.* token; Mapbox maps and search cannot initialize without it.")
           if not defines["GOOGLE_WEB_CLIENT_ID"]:
               raise SystemExit("GOOGLE_WEB_CLIENT_ID is required for native Google sign-in.")
@@ -399,7 +357,7 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "QA APK size report (strict maximum: 25,000,000 bytes per APK)."
+            echo "Quick-Ride functional test APK size report (strict maximum: 25,000,000 bytes per APK)."
             echo "Only Android phone ABIs are included: armeabi-v7a and arm64-v8a."
             find dist -type f -name '*.apk' -printf '%p %s bytes\\n' | sort
           } > dist/APK_SIZES.txt
@@ -433,7 +391,7 @@ jobs:
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: quick-ride-android-25mb-apks
+          name: quick-ride-functional-test-builds
           path: dist/*
           if-no-files-found: error
 
