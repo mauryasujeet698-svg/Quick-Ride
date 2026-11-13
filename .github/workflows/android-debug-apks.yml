@@ -228,9 +228,9 @@ jobs:
             echo "::error::Mapbox Streets style preflight failed (HTTP $style_code). Check token validity and styles:read scope."
             exit 1
           fi
-          search_code="$(curl --silent --show-error --output /tmp/mapbox-search.json --write-out '%{http_code}' --get "https://api.mapbox.com/search/searchbox/v1/suggest" --data-urlencode "q=Lucknow" --data-urlencode "limit=1" --data-urlencode "session_token=00000000-0000-4000-8000-000000000001" --data-urlencode "access_token=${MAPBOX_ACCESS_TOKEN}")"
+          search_code="$(curl --silent --show-error --output /tmp/mapbox-search.json --write-out '%{http_code}' --get "https://api.mapbox.com/search/geocode/v6/forward" --data-urlencode "q=Hazratganj, Lucknow" --data-urlencode "country=IN" --data-urlencode "autocomplete=true" --data-urlencode "limit=1" --data-urlencode "access_token=${MAPBOX_ACCESS_TOKEN}")"
           if [[ "$search_code" != "200" ]]; then
-            echo "::error::Mapbox Search Box preflight failed (HTTP $search_code). Check Search Box access for this token."
+            echo "::error::Mapbox Geocoding v6 preflight failed (HTTP $search_code). Check that the public token is active and can use Geocoding v6."
             exit 1
           fi
           fonts_code="$(curl --silent --show-error --output /tmp/mapbox-fonts.pbf --write-out '%{http_code}' "https://api.mapbox.com/fonts/v1/mapbox/Arial%20Unicode%20MS%20Regular/0-255.pbf?access_token=${MAPBOX_ACCESS_TOKEN}")"
