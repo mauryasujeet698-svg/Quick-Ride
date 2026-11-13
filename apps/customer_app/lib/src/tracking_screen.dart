@@ -193,7 +193,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = error.toString();
+        _error = 'Ride information is temporarily unavailable.';
       });
     } finally {
       _refreshing = false;
@@ -323,7 +323,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
       });
     } catch (error) {
       if (mounted) {
-        setState(() => _error = 'Route/ETA temporarily unavailable: $error');
+        setState(() => _error = 'Route and ETA are temporarily unavailable.');
       }
     } finally {
       _routeRequestInFlight = false;
@@ -387,7 +387,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not share this ride: $error')),
+          SnackBar(content: Text('Could not share this ride. Please try again.')),
         );
       }
     } finally {
@@ -435,7 +435,7 @@ class _CustomerRideTrackingScreenState extends State<CustomerRideTrackingScreen>
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not stop trip sharing: $error')),
+          SnackBar(content: Text('Could not stop trip sharing. Please try again.')),
         );
       }
     } finally {
