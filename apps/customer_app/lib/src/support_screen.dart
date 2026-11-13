@@ -65,7 +65,7 @@ class _CustomerSupportScreenState extends State<CustomerSupportScreen> {
       if (!mounted) return;
       setState(() => _rides = rows);
     } catch (error) {
-      if (mounted) setState(() => _message = 'Could not load your rides: ' + error.toString());
+      if (mounted) setState(() => _message = 'Your rides are temporarily unavailable.');
     } finally {
       if (mounted) setState(() => _loadingRides = false);
     }
@@ -101,7 +101,7 @@ class _CustomerSupportScreenState extends State<CustomerSupportScreen> {
         _message = 'Your support request has been submitted.';
       });
     } catch (error) {
-      if (mounted) setState(() => _message = 'Support request failed: ' + error.toString());
+      if (mounted) setState(() => _message = 'Your support request could not be sent. Please try again.');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
