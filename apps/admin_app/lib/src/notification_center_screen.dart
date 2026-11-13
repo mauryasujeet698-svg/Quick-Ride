@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:quick_ride_auth/quick_ride_auth.dart';
 import 'package:quick_ride_backend/quick_ride_backend.dart';
+import 'admin_navigation_drawer.dart';
 
 class AdminNotificationCenterScreen extends StatefulWidget {
   const AdminNotificationCenterScreen({super.key});
@@ -109,6 +110,7 @@ class _AdminNotificationCenterScreenState
     final hasAdminSession =
         QuickRideBackend.isInitialized && QuickRideAuth.currentUser != null;
     return Scaffold(
+      drawer: const AdminNavigationDrawer(),
       appBar: AppBar(title: const Text('Notification centre')),
       body: ListView(
         padding: const EdgeInsets.all(18),
