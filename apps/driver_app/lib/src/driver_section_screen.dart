@@ -174,7 +174,7 @@ class _DriverSectionScreenState extends State<DriverSectionScreen> {
           child: Column(
             children: [
               ListTile(title: const Text('Completed rides'), trailing: Text((data['completed_ride_count'] ?? 0).toString())),
-              ListTile(title: const Text('Total earnings'), trailing: Text(_money(inr['total'] ?? inr['earned']))),
+              ListTile(title: const Text('Total earnings'), trailing: Text(_money(inr['after_commission'] ?? inr['gross_fare']))),
               ListTile(title: const Text('Recent rides'), trailing: Text((data['recent_window_ride_count'] ?? 0).toString())),
             ],
           ),
