@@ -175,7 +175,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _categories = [];
         _serviceQuotes = [];
         _loadingCategories = false;
-        _error = 'Vehicle options could not be loaded: ' + error.toString();
+        _error = 'Vehicle options are temporarily unavailable. Please try again.';
       });
     }
   }
@@ -196,7 +196,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
       if (mounted) setState(() => _previewRoutePoints = route.points);
     } catch (error) {
       // A route-preview failure should not block quote/fare retrieval.
-      debugPrint('Quick-Ride route preview unavailable: $error');
+      debugPrint('Quick-Ride route preview unavailable (' + error.runtimeType.toString() + ').');
       if (mounted) setState(() => _previewRoutePoints = const []);
     } finally {
       if (mounted) setState(() => _loadingPreviewRoute = false);
@@ -319,7 +319,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         final details = error.toString().toLowerCase();
         final message = details.contains('canceled') || details.contains('cancelled')
             ? 'Google sign-in was cancelled. You can try again when ready.'
-            : 'Google sign-in failed: ' + error.toString();
+            : 'Google sign-in failed. Please try again.');
         if (mounted) setState(() => _error = message);
         return;
       }
@@ -405,7 +405,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             }
           }
         } catch (error) {
-          failures.add(name + ': ' + error.toString());
+          failures.add(name + ': unavailable');
           results.add({
             'category_id': id,
             'category_name': name,
@@ -414,7 +414,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
             'passenger_count': 1,
             'quote': null,
             'quote_status': 'fare_unavailable',
-            'error': error.toString(),
+            'error': 'unavailable',
           });
         }
       }
@@ -428,7 +428,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _error = results.every((item) => item['quote'] == null)
             ? (failures.isEmpty
                 ? 'Vehicle types are listed, but fares are not configured yet.'
-                : 'Vehicle types are listed, but fares could not be loaded. ' + failures.first)
+                : 'Vehicle types are listed, but fares could not be loaded. Please try again.')
             : null;
       });
     });
@@ -458,7 +458,7 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
           redirectTo: 'in.quickride.customer://login-callback',
         );
       } catch (error) {
-        if (mounted) setState(() => _error = 'Google sign-in failed: ' + error.toString());
+        if (mounted) setState(() => _error = 'Google sign-in failed. Please try again.');
       }
       return;
     }
