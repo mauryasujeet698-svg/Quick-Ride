@@ -44,6 +44,7 @@ class AdminNavigationDrawer extends StatelessWidget {
             ),
             _entry(context, Icons.dashboard_outlined, 'Dashboard', '/'),
             _entry(context, Icons.monitor_heart_outlined, 'Operations', '/operations'),
+            _entry(context, Icons.location_city_outlined, 'Service areas & fares', '/service-areas'),
             _entry(context, Icons.notifications_active_outlined, 'Notifications', '/notifications'),
             const Divider(),
             _entry(context, Icons.admin_panel_settings_outlined, 'Admin profile', '/info/profile'),
