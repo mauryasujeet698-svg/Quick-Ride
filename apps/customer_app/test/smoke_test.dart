@@ -11,8 +11,8 @@ void main() {
     expect(find.text('Quick Ride'), findsNothing);
     expect(find.byType(CustomerHomeScreen), findsOneWidget);
     expect(find.text('Pickup'), findsOneWidget);
-    expect(find.text('Destination'), findsOneWidget);
-    expect(find.text('Where would you like to go?'), findsOneWidget);
+    expect(find.text('Destination'), findsNothing);
+    expect(find.text('Enter destination'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     expect(find.byTooltip('Search by voice'), findsOneWidget);
     expect(find.text('View ride options'), findsNothing);
