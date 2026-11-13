@@ -134,7 +134,7 @@ class _DriverRideNavigationScreenState
         onError: (Object error) {
           if (mounted) {
             setState(() {
-              _error = 'Live GPS updates are unavailable: $error';
+              _error = 'Live GPS updates are unavailable. Check GPS and try again.';
             });
           }
         },
@@ -142,7 +142,7 @@ class _DriverRideNavigationScreenState
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = error.toString();
+          _error = 'Navigation is temporarily unavailable. Please try again.';
           _loading = false;
         });
       }
@@ -242,7 +242,7 @@ class _DriverRideNavigationScreenState
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = 'Route guidance is temporarily unavailable: $error';
+          _error = 'Route guidance is temporarily unavailable. Please try again.';
         });
       }
     } finally {
