@@ -95,7 +95,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     try {
       await task();
     } catch (error) {
-      if (mounted) setState(() => errorText = error.toString());
+      if (mounted) setState(() => errorText = 'Admin request failed. Please try again.');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -279,7 +279,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         await loadWithoutBusy();
       });
     } catch (error) {
-      if (mounted) setState(() => errorText = error.toString());
+      if (mounted) setState(() => errorText = 'Admin request failed. Please try again.');
     } finally {
       for (final controller in fields.values) {
         controller.dispose();
