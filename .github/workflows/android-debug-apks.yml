@@ -382,6 +382,18 @@ jobs:
               fi
             done
           done
+          # Keep a direct, single-file ARM64 APK artifact for each app as well
+          # as the combined six-APK QA bundle below.
+          mkdir -p dist/standalone
+          for app in customer driver admin; do
+            source="dist/${app}/quick-ride-${app}-arm64-v8a.apk"
+            if [[ ! -s "$source" ]]; then
+              echo "::error::Required ARM64 APK is missing for ${app}; cannot publish its standalone download."
+              touch dist/BUILD_FAILED
+              continue
+            fi
+            cp "$source" "dist/standalone/quick-ride-${app}-arm64.apk"
+          done
       - name: Write APK size report, content breakdown and checksums
         shell: bash
         run: |
@@ -401,6 +413,24 @@ jobs:
           (cd dist && find . -type f -name '*.apk' -print0 | sort -z | xargs -0 sha256sum) > dist/SHA256SUMS.txt
           cat dist/APK_SIZES.txt
           cat dist/APK_CONTENT_BREAKDOWN.txt
+      - name: Upload Customer ARM64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-ride-customer-arm64-apk
+          path: dist/standalone/quick-ride-customer-arm64.apk
+          if-no-files-found: error
+      - name: Upload Driver ARM64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-ride-driver-arm64-apk
+          path: dist/standalone/quick-ride-driver-arm64.apk
+          if-no-files-found: error
+      - name: Upload Admin ARM64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-ride-admin-arm64-apk
+          path: dist/standalone/quick-ride-admin-arm64.apk
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: quick-ride-android-25mb-apks
