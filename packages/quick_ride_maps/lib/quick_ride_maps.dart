@@ -589,6 +589,14 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
 
   Future<void> _onMapCreated(mb.MapboxMap map) async {
     _controller = QuickRideMapController._(map);
+    // Keep Mapbox attribution visible and functional, but use a neutral tone
+    // so its info control does not compete with Quick Ride map controls.
+    unawaited(map.attribution.updateSettings(
+      mb.AttributionSettings(
+        iconColor: const Color(0xFF59636B).toARGB32(),
+        clickable: true,
+      ),
+    ));
 
     map.addInteraction(mb.TapInteraction.onMap((context) {
       final coordinate = context.point.coordinates;
