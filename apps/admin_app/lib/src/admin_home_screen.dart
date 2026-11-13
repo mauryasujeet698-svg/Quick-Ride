@@ -645,7 +645,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Scaffold(
       drawer: const AdminNavigationDrawer(),
       appBar: AppBar(
-        title: const Text('Operations centre'),
+        title: const Text('Service areas & fares'),
         actions: [
           IconButton(
             onPressed: () => context.push('/notifications'),
