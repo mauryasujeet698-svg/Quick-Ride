@@ -576,6 +576,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
   bool _syncing = false;
   bool _syncAgain = false;
   String? _mapError;
+  int _mapInstanceKey = 0;
 
   LatLng get _initial =>
       widget.currentPosition ?? widget.initialCenter ?? const LatLng(25.4358, 81.8463);
@@ -617,19 +618,34 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
 
   void _onMapLoadError(dynamic event) {
     if (!mounted) return;
+    // Never surface raw native SDK errors; they may contain request URLs or configuration details.
+    debugPrint('Quick Ride map resource load failed (' + event.runtimeType.toString() + ').');
     setState(() {
-      _mapError =
-          'Mapbox could not load map resources. Check the public access token, token permissions and internet connection.';
+      _mapError = 'Map temporarily unavailable. Check your connection and retry.';
+    });
+  }
+
+  void _retryMap() {
+    if (!mounted) return;
+    setState(() {
+      _mapError = null;
+      _mapReady = false;
+      _styleLoaded = false;
+      _markerManager = null;
+      _routeManager = null;
+      _controller = null;
+      _syncing = false;
+      _syncAgain = false;
+      _mapInstanceKey++;
     });
   }
 
   void _setMapError(Object error) {
     if (!mounted) return;
     setState(() {
-      _mapError =
-          'Mapbox could not initialize. Check the public access token and network connection.';
+      _mapError = 'Map temporarily unavailable. Check your connection and retry.';
     });
-    debugPrint('Quick Ride native Mapbox initialization failed: $error');
+    debugPrint('Quick Ride native Mapbox initialization failed (' + error.runtimeType.toString() + ').');
   }
 
   Future<void> _syncMap() async {
@@ -752,7 +768,7 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
       fit: StackFit.expand,
       children: [
         mb.MapWidget(
-          key: const ValueKey('quickRideNativeMap'),
+          key: ValueKey('quickRideNativeMap_' + _mapInstanceKey.toString()),
           styleUri: mb.MapboxStyles.MAPBOX_STREETS,
           viewport: mb.CameraViewportState(
             center: mb.Point(
@@ -780,13 +796,28 @@ class _QuickRideMapViewState extends State<QuickRideMapView> {
               borderRadius: BorderRadius.circular(12),
               child: Padding(
                 padding: const EdgeInsets.all(10),
-                child: Text(
-                  _mapError!,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onErrorContainer,
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _mapError!,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _retryMap,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text('Retry map'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
