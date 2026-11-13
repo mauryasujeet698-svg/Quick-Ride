@@ -16,7 +16,7 @@ class AdminNavigationDrawer extends StatelessWidget {
         title: Text(label),
         onTap: () {
           Navigator.of(context).pop();
-          context.go(route);
+          context.push(route);
         },
       );
 
