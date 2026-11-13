@@ -47,6 +47,11 @@ class CustomerBookingScreen extends StatefulWidget {
 
 class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   final _pin = TextEditingController();
+  final _locationSearch = TextEditingController();
+  Timer? _locationSearchDebounce;
+  List<QuickRideSearchResult> _locationSuggestions = const [];
+  bool _editingLocation = false;
+  bool _searchingLocation = false;
   QuickRideMapController? _mapController;
   RidePoint? _pickup;
   RidePoint? _destination;
@@ -83,6 +88,8 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
   @override
   void dispose() {
     _pin.dispose();
+    _locationSearch.dispose();
+    _locationSearchDebounce?.cancel();
     super.dispose();
   }
 
@@ -177,6 +184,99 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
         _loadingCategories = false;
         _error = 'Vehicle options are temporarily unavailable. Please try again.';
       });
+    }
+  }
+
+  void _editLocation(bool pickup) {
+    setState(() {
+      _selectPickup = pickup;
+      _editingLocation = true;
+      _locationSearch.clear();
+      _locationSuggestions = const [];
+      _error = null;
+    });
+  }
+
+  void _onLocationSearchChanged(String value) {
+    _locationSearchDebounce?.cancel();
+    if (value.trim().length < 2) {
+      setState(() => _locationSuggestions = const []);
+      return;
+    }
+    _locationSearchDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _loadLocationSuggestions(value),
+    );
+  }
+
+  Future<void> _loadLocationSuggestions(String value) async {
+    if (!mounted) return;
+    setState(() => _searchingLocation = true);
+    try {
+      final proximity = _pickup == null
+          ? null
+          : LatLng(_pickup!.latitude, _pickup!.longitude);
+      final results = await QuickRideMaps.searchSuggestions(
+        query: value,
+        proximity: proximity,
+      );
+      if (!mounted) return;
+      setState(() => _locationSuggestions = results);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Location search is temporarily unavailable.');
+      }
+    } finally {
+      if (mounted) setState(() => _searchingLocation = false);
+    }
+  }
+
+  Future<void> _chooseLocationSuggestion(
+    QuickRideSearchResult suggestion,
+  ) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final place = await QuickRideMaps.retrieveSuggestion(suggestion);
+      if (!mounted) return;
+      final point = RidePoint(
+        longitude: place.point.longitude,
+        latitude: place.point.latitude,
+        address: place.address,
+        pincode: place.postalCode,
+      );
+      setState(() {
+        if (_selectPickup) {
+          _pickup = point;
+          _pin.text = point.pincode ?? '';
+          _mapRecenterSignal++;
+        } else {
+          _destination = point;
+        }
+        _editingLocation = false;
+        _locationSearch.clear();
+        _locationSuggestions = const [];
+        _quote = null;
+        _serviceQuotes = [];
+        _booking = null;
+        _sharedAuto = null;
+        _pickupOtp = null;
+      });
+      if (_selectPickup) {
+        await _loadCategories();
+      }
+      if (_pickup != null && _destination != null) {
+        await _refreshPreviewRoute();
+        if (QuickRideAuth.currentUser != null && _categories.isNotEmpty) {
+          unawaited(_getQuote());
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Could not select this location. Please search again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -611,13 +711,13 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
                       _bookingLocationChip(
                         icon: Icons.trip_origin_rounded,
                         label: _pickup?.address ?? 'Choose pickup',
-                        onTap: () => setState(() => _selectPickup = true),
+                        onTap: () => _editLocation(true),
                       ),
                       const SizedBox(height: 6),
                       _bookingLocationChip(
                         icon: Icons.flag_rounded,
                         label: _destination?.address ?? 'Choose destination',
-                        onTap: () => setState(() => _selectPickup = false),
+                        onTap: () => _editLocation(false),
                       ),
                     ],
                   ),
@@ -639,6 +739,44 @@ class _CustomerBookingScreenState extends State<CustomerBookingScreen> {
               physics: const NeverScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
               children: [
+                if (_editingLocation) ...[
+                  TextField(
+                    controller: _locationSearch,
+                    autofocus: true,
+                    textInputAction: TextInputAction.search,
+                    onChanged: _onLocationSearchChanged,
+                    onSubmitted: _loadLocationSuggestions,
+                    decoration: InputDecoration(
+                      hintText: _selectPickup ? 'Search pickup location' : 'Search destination',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _searchingLocation
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            )
+                          : IconButton(
+                              onPressed: () => setState(() {
+                                _editingLocation = false;
+                                _locationSuggestions = const [];
+                                _locationSearch.clear();
+                              }),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                    ),
+                  ),
+                  if (_locationSuggestions.isNotEmpty)
+                    ..._locationSuggestions.map((suggestion) => ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.place_outlined),
+                          title: Text(suggestion.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(suggestion.address, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          onTap: _busy ? null : () => _chooseLocationSuggestion(suggestion),
+                        )),
+                ],
                 if (_loadingCategories) const LinearProgressIndicator(),
                 if (!_loadingCategories && _categories.isEmpty)
                   const Text('No vehicle services are configured yet.'),
