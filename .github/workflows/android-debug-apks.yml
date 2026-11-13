@@ -203,12 +203,17 @@ jobs:
             echo "::error::Mapbox Search Box preflight failed (HTTP $search_code). Check Search Box access for this token."
             exit 1
           fi
+          fonts_code="$(curl --silent --show-error --output /tmp/mapbox-fonts.pbf --write-out '%{http_code}' "https://api.mapbox.com/fonts/v1/mapbox/Arial%20Unicode%20MS%20Regular/0-255.pbf?access_token=${MAPBOX_ACCESS_TOKEN}")"
+          if [[ "$fonts_code" != "200" ]]; then
+            echo "::error::Mapbox Fonts preflight failed (HTTP $fonts_code). The mobile map token needs the public fonts:read scope."
+            exit 1
+          fi
           route_code="$(curl --silent --show-error --output /tmp/mapbox-route.json --write-out '%{http_code}' "https://api.mapbox.com/directions/v5/mapbox/driving/80.9462,26.8467;80.9500,26.8500?overview=false&access_token=${MAPBOX_ACCESS_TOKEN}")"
           if [[ "$route_code" != "200" ]]; then
             echo "::error::Mapbox Directions preflight failed (HTTP $route_code). Check directions:read scope."
             exit 1
           fi
-          echo "Mapbox Styles, Search Box and Directions preflight checks passed."
+          echo "Mapbox Styles, Fonts, Search Box and Directions preflight checks passed."
 
       - name: Build optimized ABI-specific APKs
         shell: bash
@@ -256,6 +261,18 @@ jobs:
               raise SystemExit("GOOGLE_WEB_CLIENT_ID is required for native Google sign-in.")
           Path("build/quick_ride.defines.json").write_text(
               json.dumps(defines, separators=(",", ":")),
+              encoding="utf-8",
+          )
+          # The native Android SDK also reads this resource during map startup.
+          # It contains only the restricted public pk.* token, never a secret.
+          from xml.sax.saxutils import escape
+          values_dir = Path("android/app/src/main/res/values")
+          values_dir.mkdir(parents=True, exist_ok=True)
+          (values_dir / "mapbox_access_token.xml").write_text(
+              '<?xml version="1.0" encoding="utf-8"?>\n'
+              '<resources><string name="mapbox_access_token">'
+              + escape(defines["MAPBOX_ACCESS_TOKEN"])
+              + '</string></resources>\n',
               encoding="utf-8",
           )
           PY
