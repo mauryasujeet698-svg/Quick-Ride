@@ -55,7 +55,7 @@ class _QuickRideDriverBootstrapState extends State<QuickRideDriverBootstrap> {
         final initial = await QuickRideNotifications.consumeInitialMessage();
         if (initial != null) _handleOpenedMessage(initial);
       }
-    } catch (error, stack) {
+    } catch (error) {
       debugPrint('Quick-Ride Driver startup failed (' + error.runtimeType.toString() + ').');
       _startupError = 'Connection unavailable. Preview mode is active.';
     } finally {
