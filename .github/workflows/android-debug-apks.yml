@@ -1,4 +1,4 @@
-name: Build Quick-Ride Native Android Release APKs
+name: Build Quick-Ride Functional Test APKs
 on:
   pull_request:
     branches: [main]
@@ -201,47 +201,29 @@ jobs:
           for value in "${signing_values[@]}"; do
             [[ -n "$value" ]] && signing_count=$((signing_count + 1))
           done
-          if [[ "$signing_count" != "4" ]]; then
-            echo "::error::Stable Android signing is required for reliable Google sign-in. Configure ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD in GitHub Actions secrets."
+          if [[ "$signing_count" == "0" ]]; then
+            echo "::warning::Stable release-signing secrets are not configured. Continuing with an Android debug certificate for this functional test build. Google sign-in will only work when this certificate's SHA-1 is registered with the Android OAuth client."
+          elif [[ "$signing_count" != "4" ]]; then
+            echo "::error::Android signing secrets are only partially configured. Set all four (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD), or remove all four to use test-build debug signing."
             exit 1
+          else
+            echo "Stable Android release signing is configured."
           fi
-          echo "Stable Android release signing is configured."
-      - name: Verify Mapbox token and native services
+      - name: Confirm OpenStreetMap test provider
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${MAPBOX_ACCESS_TOKEN//[[:space:]]/}" ]]; then
-            echo "::error::No public Mapbox token was resolved. Set an Actions repository secret or variable named MAPBOX_ACCESS_TOKEN (value starts with pk.)."
-            echo "Accepted aliases include MAPBOX_PUBLIC_ACCESS_TOKEN, MAPBOX_PUBLIC_TOKEN, MAPBOX_PUBLIC_API_KEY, MAPBOX_API_KEY, MAPBOX_API_TOKEN, MAPBOX_PUBLIC_KEY, MAPBOX_PK_TOKEN and MAPBOX_TOKEN."
-            exit 1
-          fi
-          if [[ "$MAPBOX_ACCESS_TOKEN" != pk.* ]]; then
-            echo "::error::The resolved Mapbox token is not a public pk.* token."
-            exit 1
-          fi
-          echo "A public Mapbox token is available to the Android build (source: $MAPBOX_TOKEN_SOURCE)."
-          style_code="$(curl --silent --show-error --output /tmp/mapbox-style.json --write-out '%{http_code}' "https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_ACCESS_TOKEN}")"
-          if [[ "$style_code" != "200" ]]; then
-            echo "::error::Mapbox Streets style preflight failed (HTTP $style_code). Check token validity and styles:read scope."
-            exit 1
-          fi
-          search_code="$(curl --silent --show-error --output /tmp/mapbox-search.json --write-out '%{http_code}' --get "https://api.mapbox.com/search/searchbox/v1/suggest" --data-urlencode "q=Lucknow" --data-urlencode "limit=1" --data-urlencode "session_token=00000000-0000-4000-8000-000000000001" --data-urlencode "access_token=${MAPBOX_ACCESS_TOKEN}")"
-          if [[ "$search_code" != "200" ]]; then
-            echo "::error::Mapbox Search Box preflight failed (HTTP $search_code). Check Search Box access for this token."
-            exit 1
-          fi
-          fonts_code="$(curl --silent --show-error --output /tmp/mapbox-fonts.pbf --write-out '%{http_code}' "https://api.mapbox.com/fonts/v1/mapbox/Arial%20Unicode%20MS%20Regular/0-255.pbf?access_token=${MAPBOX_ACCESS_TOKEN}")"
-          if [[ "$fonts_code" != "200" ]]; then
-            echo "::error::Mapbox Fonts preflight failed (HTTP $fonts_code). The mobile map token needs the public fonts:read scope."
-            exit 1
-          fi
-          route_code="$(curl --silent --show-error --output /tmp/mapbox-route.json --write-out '%{http_code}' "https://api.mapbox.com/directions/v5/mapbox/driving/80.9462,26.8467;80.9500,26.8500?overview=false&access_token=${MAPBOX_ACCESS_TOKEN}")"
-          if [[ "$route_code" != "200" ]]; then
-            echo "::error::Mapbox Directions preflight failed (HTTP $route_code). Check directions:read scope."
-            exit 1
-          fi
-          echo "Mapbox Styles, Fonts, Search Box and Directions preflight checks passed."
-
+          mkdir -p dist
+          cat > dist/MAP_PROVIDER.txt <<'EOF'
+          Active map provider: OpenStreetMap
+          Map tiles: https://tile.openstreetmap.org
+          Location search and reverse geocoding: Photon (OpenStreetMap data)
+          Route geometry and navigation steps: OSRM demo routing service
+          Mapbox public API token: intentionally not required or called in this test build
+          Mapbox Flutter integration: preserved in packages/quick_ride_maps/lib/quick_ride_maps_mapbox.dart
+          Switch back only after the user enables Mapbox pay-as-you-go and provides an active public token.
+          EOF
+          echo "OpenStreetMap test provider selected. No Mapbox public APIs will be called by this build."
       - name: Build optimized ABI-specific APKs
         shell: bash
         run: |
@@ -282,8 +264,7 @@ jobs:
           ]
           if any(not defines[key] for key in required):
               raise SystemExit("One or more required build defines are empty")
-          if not defines["MAPBOX_ACCESS_TOKEN"].startswith("pk."):
-              raise SystemExit("MAPBOX_ACCESS_TOKEN must be a public pk.* token; Mapbox maps and search cannot initialize without it.")
+          # Mapbox is deliberately inactive in this OpenStreetMap test build.
           if not defines["GOOGLE_WEB_CLIENT_ID"]:
               raise SystemExit("GOOGLE_WEB_CLIENT_ID is required for native Google sign-in.")
           Path("build/quick_ride.defines.json").write_text(
@@ -353,17 +334,29 @@ jobs:
               mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n/1000000 }')"
               echo "${output}: ${mib} MB (${bytes} bytes)"
               if [ "$bytes" -gt "$MAX_APK_BYTES" ]; then
-                echo "::warning::${output} exceeds the strict 25 MB per-APK limit (${mib} MB); keeping it in the QA artifact for size analysis."
+                echo "::warning::${output} exceeds the strict 25 MB per-APK limit (${mib} MB); keeping it in the functional test artifact for size analysis."
                 touch dist/SIZE_LIMIT_EXCEEDED
               fi
             done
+          done
+          # Keep a direct, single-file ARM64 APK artifact for each app as well
+          # as the combined six-APK functional test bundle below.
+          mkdir -p dist/standalone
+          for app in customer driver admin; do
+            source="dist/${app}/quick-ride-${app}-arm64-v8a.apk"
+            if [[ ! -s "$source" ]]; then
+              echo "::error::Required ARM64 APK is missing for ${app}; cannot publish its standalone download."
+              touch dist/BUILD_FAILED
+              continue
+            fi
+            cp "$source" "dist/standalone/quick-ride-${app}-arm64.apk"
           done
       - name: Write APK size report, content breakdown and checksums
         shell: bash
         run: |
           set -euo pipefail
           {
-            echo "QA APK size report (strict maximum: 25,000,000 bytes per APK)."
+            echo "Quick-Ride functional test APK size report (strict maximum: 25,000,000 bytes per APK)."
             echo "Only Android phone ABIs are included: armeabi-v7a and arm64-v8a."
             find dist -type f -name '*.apk' -printf '%p %s bytes\\n' | sort
           } > dist/APK_SIZES.txt
@@ -377,9 +370,27 @@ jobs:
           (cd dist && find . -type f -name '*.apk' -print0 | sort -z | xargs -0 sha256sum) > dist/SHA256SUMS.txt
           cat dist/APK_SIZES.txt
           cat dist/APK_CONTENT_BREAKDOWN.txt
+      - name: Upload Customer ARM64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-ride-customer-arm64-apk
+          path: dist/standalone/quick-ride-customer-arm64.apk
+          if-no-files-found: error
+      - name: Upload Driver ARM64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-ride-driver-arm64-apk
+          path: dist/standalone/quick-ride-driver-arm64.apk
+          if-no-files-found: error
+      - name: Upload Admin ARM64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-ride-admin-arm64-apk
+          path: dist/standalone/quick-ride-admin-arm64.apk
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: quick-ride-android-25mb-apks
+          name: quick-ride-functional-test-builds
           path: dist/*
           if-no-files-found: error
 
