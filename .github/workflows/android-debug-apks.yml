@@ -382,6 +382,7 @@ jobs:
           name: quick-ride-android-25mb-apks
           path: dist/*
           if-no-files-found: error
+          retention-days: 1
 
       - name: Enforce 25 MB APK limit
         if: always()
